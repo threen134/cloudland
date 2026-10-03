@@ -7,12 +7,10 @@ SPDX-License-Identifier: Apache-2.0
 package model
 
 import (
-	"strings"
 	"api/src/dbs"
 )
 
 type VolumeStatus string
-type BackupStatus string
 
 const (
 	VolumeStatusResizing  VolumeStatus = "resizing"
@@ -20,49 +18,27 @@ const (
 	VolumeStatusAttached  VolumeStatus = "attached"
 	VolumeStatusAttaching VolumeStatus = "attaching"
 	VolumeStatusDetaching VolumeStatus = "detaching"
-	VolumeStatusRestoring VolumeStatus = "restoring"
-	VolumeStatusBackuping VolumeStatus = "backuping"
 	VolumeStatusError     VolumeStatus = "error"
 	VolumeStatusPending   VolumeStatus = "pending"
+	// The node is deleting the file; the record goes away when it reports back
+	VolumeStatusDeleting VolumeStatus = "deleting"
+	// Deleting timed out: the file may be gone already, so the volume can only be deleted again
+	VolumeStatusDeleteFailed VolumeStatus = "delete_failed"
+	// The pool holding the file was declared lost
+	VolumeStatusLost VolumeStatus = "lost"
+	// The host holding the file was deleted with its pools kept for adoption
+	VolumeStatusOrphaned VolumeStatus = "orphaned"
 )
 
 func (s VolumeStatus) String() string {
 	return string(s)
 }
 
-const (
-	BackupStatusPending   BackupStatus = "pending"
-	BackupStatusReady     BackupStatus = "available"
-	BackupStatusError     BackupStatus = "error"
-	BackupStatusRestoring BackupStatus = "restoring"
-)
-
-func (s BackupStatus) String() string {
-	return string(s)
-}
-
-const (
-	// in cloudland, the bps limit is in MB/s, while the bps of WDS is in B/s
-	// so we need to convert the bps limit to B/s when invoking WDS API (WDSBpsFactor = 1024 * 1024)
-	VolumeBpsLimitMax  int32 = 102400 // max is 100GB/s
-	VolumeBpsLimitMin  int32 = 10     // min is 10MB/s
-	VolumeIopsLimitMax int32 = 10000000
-	VolumeIopsLimitMin int32 = 100
-)
-
 type Volume struct {
 	Model
 	Owner int64  `gorm:"default:1;index"` /* The organization ID of the resource */
 	Name  string `gorm:"type:varchar(128)"`
-	/*
-		The path of the volume, format is:
-		<volume driver>://<volume-path>
-		for example:
-		Local storage: local:///var/lib/cloudland/volumes/volume-1.qcow2
-		WDS Vhost: wds_vhost://<pool-id>/<volume-id>
-		WDS ISCSI: wds_iscsi://<pool-id>/<volume-id>
-		The volume driver is the name of the driver that is used to create the volume.
-	*/
+	// Path of the file relative to the root of its storage pool
 	Path       string `gorm:"type:varchar(256)"`
 	Size       int32
 	Booting    bool
@@ -72,21 +48,17 @@ type Volume struct {
 	Href       string       `gorm:"type:varchar(256)"`
 	InstanceID int64
 	Instance   *Instance `gorm:"foreignkey:InstanceID"`
-	IopsLimit  int32
-	IopsBurst  int32
-	BpsLimit   int32
-	BpsBurst   int32
-	PoolID     string        `gorm:"type:varchar(128)"`
-	OwnerInfo  *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
+	// Host holding the file; 0 means not created yet (created on the host of the first attach)
+	Hyper         int32
+	StoragePoolID int64         `gorm:"index"`
+	StoragePool   *StoragePool  `gorm:"foreignkey:StoragePoolID"`
+	Reason        string        `gorm:"type:varchar(512)"`
+	OwnerInfo     *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
 }
 
 func (v *Volume) IsBusy() bool {
-	if v.Status == VolumeStatusPending ||
-		v.Status == VolumeStatusResizing ||
-		v.Status == VolumeStatusAttaching ||
-		v.Status == VolumeStatusDetaching ||
-		v.Status == VolumeStatusRestoring ||
-		v.Status == VolumeStatusBackuping {
+	switch v.Status {
+	case VolumeStatusPending, VolumeStatusResizing, VolumeStatusAttaching, VolumeStatusDetaching, VolumeStatusDeleting:
 		return true
 	}
 	return false
@@ -104,127 +76,6 @@ func (v *Volume) IsAttached() bool {
 	return v.Status == VolumeStatusAttached
 }
 
-func (v *Volume) ParsePath() []string {
-	if v.Path != "" {
-		parts := strings.SplitN(v.Path, "://", 2)
-		if len(parts) == 2 {
-			driver := parts[0]
-			if driver == "local" {
-				return []string{driver, parts[1]}
-			} else {
-				res := []string{driver}
-				res = append(res, strings.Split(parts[1], "/")...)
-				return res
-			}
-		}
-	}
-	return nil
-}
-
-func (v *Volume) GetVolumeDriver() string {
-	return parseDriver(v.Path)
-}
-
-func (v *Volume) GetVolumePath() string {
-	return parsePath(v.Path)
-}
-
-func (v *Volume) GetVolumePoolID() string {
-	return parsePoolID(v.Path)
-}
-
-func (v *Volume) GetOriginVolumeID() string {
-	return parseOriginID(v.Path, v.UUID)
-}
-
-type VolumeBackup struct {
-	Model
-	Owner      int64         `gorm:"default:1;index"` /* The organization ID of the resource */
-	Name       string        `gorm:"type:varchar(128)"`
-	VolumeID   int64         `gorm:"index"`
-	Volume     *Volume       `gorm:"foreignkey:VolumeID"`
-	BackupType string        `gorm:"type:varchar(32);index"` // snapshot or backup
-	Status     BackupStatus  `gorm:"type:varchar(32)"`
-	Size       int32
-	Path       string        `gorm:"type:varchar(256)"`
-	SnapshotID string        `gorm:"type:varchar(128)"` // for cross pool backup, the snapshot ID in the source pool
-	TaskID     int64         `gorm:"index"`             // the task ID for the backup or restore
-	Task       *Task         `gorm:"foreignkey:TaskID"`
-	OwnerInfo  *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
-}
-
-func (v *VolumeBackup) CanDelete() bool {
-	return v.Status != BackupStatusRestoring && v.Status != BackupStatusPending
-}
-func (v *VolumeBackup) CanRestore() bool {
-	return v.Status == BackupStatusReady
-}
-
-func (v *VolumeBackup) GetBackupDriver() string {
-	return parseDriver(v.Path)
-}
-
-func (v *VolumeBackup) GetBackupPath() string {
-	return parsePath(v.Path)
-}
-
-func (v *VolumeBackup) GetBackupPoolID() string {
-	return parsePoolID(v.Path)
-}
-
-func (v *VolumeBackup) GetOriginBackupID() string {
-	return parseOriginID(v.Path, "")
-}
-
-func parse(path string) []string {
-	if path != "" {
-		parts := strings.SplitN(path, "://", 2)
-		if len(parts) == 2 {
-			driver := parts[0]
-			if driver == "local" {
-				return []string{driver, parts[1]}
-			} else {
-				res := []string{driver}
-				res = append(res, strings.Split(parts[1], "/")...)
-				return res
-			}
-		}
-	}
-	return nil
-}
-
-func parseDriver(path string) string {
-	parts := parse(path)
-	if len(parts) > 0 {
-		return parts[0]
-	}
-	return ""
-}
-
-func parsePath(path string) string {
-	parts := parse(path)
-	if (len(parts) > 1) && (parts[0] == "local") {
-		return parts[1]
-	}
-	return path
-}
-
-func parsePoolID(path string) string {
-	parts := parse(path)
-	if len(parts) == 3 {
-		return parts[1]
-	}
-	return ""
-}
-
-func parseOriginID(path string, id string) string {
-	parts := parse(path)
-	if len(parts) == 3 {
-		return parts[2]
-	}
-	return id
-}
-
 func init() {
-	dbs.AutoMigrate(&Volume{}, &VolumeBackup{})
+	dbs.AutoMigrate(&Volume{})
 }

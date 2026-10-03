@@ -9,8 +9,10 @@ vm_ID=inst-$1
 vol_ID=$2
 vol_UUID=$3
 vol_xml=$xml_dir/$vm_ID/disk-${vol_ID}.xml
-virsh detach-device $vm_ID $vol_xml --config --persistent
+virsh detach-device $vm_ID $vol_xml --config --persistent >/dev/null 2>&1
 if [ $? -eq 0 ]; then
+    # The description is only needed while the disk is attached; a stale one would travel with migrations
+    rm -f $vol_xml
     echo "|:-COMMAND-:| $(basename $0) '$1' '$vol_ID' 'available'"
 else
     echo "|:-COMMAND-:| $(basename $0) '$1' '$vol_ID' 'attached'"

@@ -1,0 +1,25 @@
+# 统一编辑器的缩进与换行，避免 Windows / Linux 之间来回改写整文件
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[web/**.vue]
+indent_size = 2
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.go]
+indent_style = tab
+
+[Makefile]
+indent_style = tab
+
+[*.md]
+trim_trailing_whitespace = false

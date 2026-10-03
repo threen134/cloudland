@@ -9,7 +9,7 @@ package model
 import (
 	"api/src/dbs"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 const (
@@ -25,16 +25,6 @@ const (
 
 // OSCodes is a list of supported operating systems
 var OSCodes = []string{OS_LINUX, OS_WINDOWS, OS_OTHER}
-
-type StorageStatus string
-
-const (
-	StorageStatusSynced   StorageStatus = "synced"
-	StorageStatusError    StorageStatus = "error"
-	StorageStatusUnknown  StorageStatus = "unknown"
-	StorageStatusSyncing  StorageStatus = "syncing"
-	StorageStatusNotFound StorageStatus = "not_found"
-)
 
 type Image struct {
 	Model
@@ -60,28 +50,18 @@ type Image struct {
 	UserName              string    `gorm:"type:varchar(128)"`
 	QAEnabled             bool      `gorm:"default:false"`
 	CaptureFromInstanceID int64     `gorm:"default:0"`
-	CaptureFromInstance   *Instance `gorm:"foreignkey:InstanceID"`
+	CaptureFromInstance   *Instance `gorm:"foreignKey:CaptureFromInstanceID"`
 	IsRescue              bool      `gorm:"default:false"`
 	RescueImage           int64     `gorm:"default:0"`
-	StorageType           string    `gorm:"type:varchar(36);"`
 	OsFamily              string    `gorm:"type:varchar(128);"`
 }
 
-type ImageStorage struct {
-	Model
-	ImageID  int64         `gorm:"default:0"`
-	Image    *Image        `gorm:"foreignkey:ImageID"`
-	VolumeID string        `gorm:"type:varchar(128)"`
-	PoolID   string        `gorm:"type:varchar(128)"`
-	Status   StorageStatus `gorm:"type:varchar(128);default:'syncing'"` // syncing, synced, error, not-found
-}
-
 func init() {
-	dbs.AutoMigrate(&Image{}, &ImageStorage{})
+	dbs.AutoMigrate(&Image{})
 	dbs.AutoUpgrade("image_visibility_default", func(db *gorm.DB) error {
 		// Set visibility to 'public' for system org images that have no visibility set yet
 		if err := db.Exec(
-			"UPDATE images SET visibility = ? WHERE (visibility = '' OR visibility IS NULL) AND owner IN (SELECT id FROM organizations WHERE type = ?)",
+			"UPDATE images SET visibility = ? WHERE (visibility = '' OR visibility IS NULL) AND owner IN (SELECT id FROM organizations WHERE org_type = ?)",
 			ImageVisibilityPublic, OrgTypeSystem,
 		).Error; err != nil {
 			return err
@@ -121,7 +101,6 @@ func (i *Image) Clone() *Image {
 		QAEnabled:             i.QAEnabled,
 		CaptureFromInstanceID: i.CaptureFromInstanceID,
 		CaptureFromInstance:   i.CaptureFromInstance,
-		StorageType:           i.StorageType,
 		OsFamily:              i.OsFamily,
 	}
 }

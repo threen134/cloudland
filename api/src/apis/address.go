@@ -7,9 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
+	"api/src/model"
 	"context"
 	"net/http"
-	"api/src/model"
 
 	. "api/src/common"
 	"api/src/services"
@@ -58,7 +58,7 @@ func (v *AddressAPI) Remark(c *gin.Context) {
 
 	payload := &AddressRemarkPayload{}
 	if err := c.ShouldBindJSON(payload); err != nil {
-		logger.Errorf("Invalid input JSON %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid input JSON %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
@@ -67,7 +67,7 @@ func (v *AddressAPI) Remark(c *gin.Context) {
 	for _, addr := range payload.Addresses {
 		address, err := addressAdmin.GetAddressByUUID(ctx, addr.ID)
 		if err != nil {
-			logger.Errorf("Failed to query address %s, %v", addr.ID, err)
+			logger.Ctx(ctx).Errorf("Failed to query address %s, %v", addr.ID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid address", err)
 			return
 		}
@@ -79,13 +79,13 @@ func (v *AddressAPI) Remark(c *gin.Context) {
 	for _, addr := range addresses {
 		err := addressAdmin.Update(ctx, addr)
 		if err != nil {
-			logger.Errorf("Failed to update address: %s %v", addr.Address, err)
+			logger.Ctx(ctx).Errorf("Failed to update address: %s %v", addr.Address, err)
 			ErrorResponse(c, http.StatusInternalServerError, "Failed to update address "+addr.Address, err)
 			return
 		}
 		addrResp, err := v.getAddressResponse(ctx, addr)
 		if err != nil {
-			logger.Errorf("Failed to get response for address %s: %v", addr.Address, err)
+			logger.Ctx(ctx).Errorf("Failed to get response for address %s: %v", addr.Address, err)
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}
@@ -109,7 +109,7 @@ func (v *AddressAPI) UpdateLock(c *gin.Context) {
 
 	payload := &AddressUpdateLockPayload{}
 	if err := c.ShouldBindJSON(payload); err != nil {
-		logger.Errorf("Invalid input JSON %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid input JSON %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
@@ -118,7 +118,7 @@ func (v *AddressAPI) UpdateLock(c *gin.Context) {
 	for _, addr := range payload.Addresses {
 		address, err := addressAdmin.GetAddressByUUID(ctx, addr.ID)
 		if err != nil {
-			logger.Errorf("Failed to query address %s, %v", addr.ID, err)
+			logger.Ctx(ctx).Errorf("Failed to query address %s, %v", addr.ID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid address", err)
 			return
 		}
@@ -130,13 +130,13 @@ func (v *AddressAPI) UpdateLock(c *gin.Context) {
 	for _, addr := range addresses {
 		err := addressAdmin.Update(ctx, addr)
 		if err != nil {
-			logger.Errorf("Failed to update address: %s %v", addr.Address, err)
+			logger.Ctx(ctx).Errorf("Failed to update address: %s %v", addr.Address, err)
 			ErrorResponse(c, http.StatusInternalServerError, "Failed to update address "+addr.Address, err)
 			return
 		}
 		addrResp, err := v.getAddressResponse(ctx, addr)
 		if err != nil {
-			logger.Errorf("Failed to get response for address %s: %v", addr.Address, err)
+			logger.Ctx(ctx).Errorf("Failed to get response for address %s: %v", addr.Address, err)
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}
@@ -168,7 +168,7 @@ func (v *AddressAPI) ListIpBySubnetUUID(c *gin.Context) {
 	// Validate subnet exists
 	subnet, err := subnetAdmin.GetSubnetByUUID(ctx, subnetUUID)
 	if err != nil {
-		logger.Errorf("Failed to query subnet %s, %v", subnetUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to query subnet %s, %v", subnetUUID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid subnet", err)
 		return
 	}
@@ -176,7 +176,7 @@ func (v *AddressAPI) ListIpBySubnetUUID(c *gin.Context) {
 	// Get addresses for the subnet
 	addresses, err := addressAdmin.ListBySubnetID(ctx, subnet.ID)
 	if err != nil {
-		logger.Errorf("Failed to list addresses for subnet %s, %v", subnetUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to list addresses for subnet %s, %v", subnetUUID, err)
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to list addresses", err)
 		return
 	}
@@ -191,7 +191,7 @@ func (v *AddressAPI) ListIpBySubnetUUID(c *gin.Context) {
 	for i, addr := range addresses {
 		addressListResp.Addresses[i], err = v.getAddressResponse(ctx, addr)
 		if err != nil {
-			logger.Errorf("Failed to get address response, %v", err)
+			logger.Ctx(ctx).Errorf("Failed to get address response, %v", err)
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}

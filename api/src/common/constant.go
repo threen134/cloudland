@@ -32,6 +32,7 @@ const (
 	PublicFloating     ElasticType = "floating"
 	PublicSite         ElasticType = "site"
 	PublicLoadBalancer ElasticType = "loadbalancer"
+	PublicVpnGateway   ElasticType = "vpngateway"
 
 	ResourceIpGroupType IpGroupType = "resource"
 	SystemIpGroupType   IpGroupType = "system"

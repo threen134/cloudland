@@ -1,7 +1,0 @@
-<disk type='vhostuser' device='disk'>
-  <driver name='qemu' type='raw' queues='VHOST_QUEUE_NUM'/>
-  <source type='unix' path='VM_UNIX_SOCK'>
-    <reconnect enabled='yes' timeout='10'/>
-  </source>
-  <target dev='VOLUME_TARGET' bus='virtio'/>
-</disk>

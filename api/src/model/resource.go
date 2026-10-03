@@ -16,7 +16,7 @@ type Resource struct {
 	ID          int64 `gorm:"primary_key"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
-	Hostid      int32 `gorm:"unique_index"`
+	Hostid      int32 `gorm:"uniqueIndex"`
 	Cpu         int64
 	CpuTotal    int64
 	Memory      int64

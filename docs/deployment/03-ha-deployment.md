@@ -30,7 +30,7 @@ CloudLand 支持双控制节点 **Active/Standby (主备)** 模式。通过 Keep
 1. **MASTER 故障**: 当主节点宕机后，Keepalived 在 3 秒内检测到心跳丢失。
 2. **VIP 漂移**: 漂移到备节点 (BACKUP)，并执行 `ha-notify.sh` 脚本。
 3. **容器启动**: 备节点自动执行 `docker compose start`。
-4. **计算节点接入**: 计算节点检测到与主控通信断开，会自动重连到 `MANAGEMENT_VIP:9988`。
+4. **计算节点接入**: 计算节点 cloudlet-go 检测到与主控的 gRPC 连接断开后，按指数退避（1 秒至 1 分钟）自动重连到 `MANAGEMENT_VIP:5006`。
 
 ---
 
@@ -68,8 +68,11 @@ export DB_HOST=10.0.0.200                # 外部数据库地址
 export ADMIN_PASSWORD=your_admin_password
 
 # 执行 HA 部署脚本
-sudo -E bash scripts/deploy-ha-node.sh
+bash scripts/deploy-ha-node.sh
 ```
+
+> [!IMPORTANT]
+> 请以 root 身份执行（例如先 `sudo -i`，再 export 环境变量并执行命令）；Ubuntu 26.04 默认的 sudo-rs 会忽略 `sudo -E`，导出的环境变量不会传入脚本。
 
 ### 3. 部署 BACKUP 节点 (控制节点 B)
 ```bash
@@ -84,8 +87,11 @@ export DB_HOST=10.0.0.200                # 指向同一个外部数据库
 export ADMIN_PASSWORD=your_admin_password
 
 # 执行 HA 部署脚本
-sudo -E bash scripts/deploy-ha-node.sh
+bash scripts/deploy-ha-node.sh
 ```
+
+> [!IMPORTANT]
+> 请以 root 身份执行（例如先 `sudo -i`，再 export 环境变量并执行命令）；Ubuntu 26.04 默认的 sudo-rs 会忽略 `sudo -E`，导出的环境变量不会传入脚本。
 
 ---
 
@@ -164,13 +170,10 @@ ls /var/log/cloudland-ha-deploy-*.log
 
 ## 计算节点 HA 配置
 
-HA 模式下，计算节点需开启 SCI 自动重连，以便主控切换后自动重连新 MASTER：
+计算节点无需额外配置：cloudlet-go 连接的是 `MANAGEMENT_VIP:5006`，主控切换后 VIP 漂移到新 MASTER，cloudlet-go 断线后自动重连并重新注册。计算节点照常使用控制面生成的部署命令加入集群即可。
 
-```bash
-export SCI_ENABLE_FAILOVER=yes
-# ... 其他计算节点环境变量 ...
-sudo -E bash deploy/docker/scripts/deploy-compute-node.sh
-```
+> [!IMPORTANT]
+> 请以 root 身份执行（例如先 `sudo -i`，再 export 环境变量并执行命令）；Ubuntu 26.04 默认的 sudo-rs 会忽略 `sudo -E`，导出的环境变量不会传入脚本。
 
 ---
 

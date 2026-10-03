@@ -24,7 +24,15 @@ if [ $? -ne 0 ]; then
     apply_vnic -I ln-$vrrp_vlan
     ip netns exec $router ip link set ns-$vrrp_vlan address $local_mac
 else
-    local_mac=$(ip netns exec $router cat /sys/class/net/ns-$vrrp_vlan/address)
+    cur_mac=$(ip netns exec $router cat /sys/class/net/ns-$vrrp_vlan/address)
+    if [ "$cur_mac" = "$(subnet_gw_mac $vrrp_vlan)" ]; then
+        # 设备只是被 add_fwrule.sh → set_subnet_gw.sh 当作普通网关口建出来的（节点重启后 launch_vm sync 下发的转发条目
+        # 可能先于负载均衡恢复到达），还不是 VRRP 网卡：改成数据库记录的 MAC，否则对端按该 MAC 写的转发条目收不到本端，双主
+        ip netns exec $router ip link set ns-$vrrp_vlan address $local_mac
+    else
+        # 同一 VPC 的多个负载均衡共用 VRRP 子网网卡，已被其他 VRRP 实例使用时沿用其 MAC（回调会把实际 MAC 写回数据库）
+        local_mac=$cur_mac
+    fi
 fi
 brctl addif br$vrrp_vlan ln-$vrrp_vlan
 ip netns exec $router ip addr add $local_ip dev ns-$vrrp_vlan
@@ -38,5 +46,5 @@ read -d'\n' -r gateway < <(ipcalc -nb $local_ip | awk '/HostMin/ {print $2}')
 ./set_subnet_gw.sh $router $vrrp_vlan $gateway/$prefix
 
 if [ "$reply" = "true" ]; then
-    echo "|:-COMMAND-:| $(basename $0) '$vrrp_ID' '$SCI_CLIENT_ID' '$role' '$local_mac'"
+    echo "|:-COMMAND-:| $(basename $0) '$vrrp_ID' '$NODE_ID' '$role' '$local_mac'"
 fi

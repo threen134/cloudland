@@ -24,8 +24,8 @@ func (SystemSettingMirror) TableName() string {
 // SystemSettingMirrorVersion 记录本地镜像的配置版本号（单行，id=1）。
 // 用于乱序保护：只接受 version >= local_version 的同步请求。
 type SystemSettingMirrorVersion struct {
-	ID      int64     `gorm:"primary_key"      json:"id"`
-	Version int64     `gorm:"default:0"        json:"version"`
+	ID        int64     `gorm:"primary_key"      json:"id"`
+	Version   int64     `gorm:"default:0"        json:"version"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 

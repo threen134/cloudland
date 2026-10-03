@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"api/src/utils/log"
+	"api/src/utils/tracing"
 
 	"github.com/spf13/viper"
 	"gopkg.in/macaron.v1"
@@ -53,6 +54,7 @@ func Run() (err error) {
 
 func New() (m *macaron.Macaron) {
 	m = macaron.Classic()
+	m.Use(tracing.MacaronMiddleware())
 	m.Use(macaron.Renderer(
 		macaron.RenderOptions{
 			Funcs: []template.FuncMap{
@@ -64,6 +66,9 @@ func New() (m *macaron.Macaron) {
 		},
 	))
 	m.Post("/internal/execute", frontbackService.Execute)
+	// cland-go 节点校验端点（与 /internal/execute 同在内部端口，无需 JWT）
+	m.Get("/internal/nodes/valid", ListValidNodes)
+	m.Get("/internal/node/verify", VerifyNode)
 	m.Get("/consoleresolver/token/:token", consoleAdmin.ConsoleResolve)
 	return
 }

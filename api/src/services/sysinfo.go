@@ -8,7 +8,7 @@ package services
 import "os"
 
 var (
-	Version = "unknown"
+	Version              = "unknown"
 	sysInfoAdminInstance = &SysInfoAdmin{}
 )
 

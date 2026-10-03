@@ -195,24 +195,16 @@
     /* ============================  
        Z-INDEX
        ============================ */
+    /* 应用级层次一律用这些变量，不要再写字面量。组件内部的局部层叠（控制台的遮罩、
+       登录页的装饰圆）不属于这里，保持 0/1/2 这种小数值即可 */
+    --z-dropdown-backdrop: 90; /* 点击空白关闭下拉用的透明层，压在菜单下面 */
     --z-dropdown: 100;
     --z-sticky: 200;
-    --z-fixed: 300;
+    --z-fixed: 300; /* 顶栏 */
+    --z-sidebar: 320; /* 侧栏要压住顶栏 */
     --z-modal-backdrop: 400;
     --z-modal: 500;
+    --z-modal-nested: 550; /* 弹窗里再开的弹窗 */
     --z-tooltip: 600;
-}
-
-/* Dark theme variables (dashboard) */
-.dark-theme {
-    --bg-primary: #0f172a;
-    --bg-secondary: #1e293b;
-    --bg-tertiary: #334155;
-
-    --text-primary: #f8fafc;
-    --text-secondary: #cbd5e1;
-    --text-tertiary: #94a3b8;
-
-    --border-light: #334155;
-    --border-default: #475569;
+    --z-toast: 700; /* 最上层：弹窗打开时也要能看到提示 */
 }

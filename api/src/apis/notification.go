@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -62,19 +63,11 @@ func (a *NotificationAPI) SyncChannel(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "channel is required for upsert"})
 			return
 		}
-		configJSON, err := json.Marshal(req.Channel.Config)
+		ch, err := req.Channel.toModel()
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel config: " + err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		ch := &model.NotificationChannel{
-			OrgID:   req.Channel.OrgID,
-			Name:    req.Channel.Name,
-			Type:    req.Channel.Type,
-			Config:  string(configJSON),
-			Enabled: req.Channel.Enabled,
-		}
-		ch.UUID = req.Channel.UUID
 		if err := a.admin.UpsertChannel(ctx, ch); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -92,20 +85,13 @@ func (a *NotificationAPI) SyncChannel(c *gin.Context) {
 
 	case "bulk_sync":
 		channels := make([]model.NotificationChannel, len(req.Channels))
-		for i, ch := range req.Channels {
-			configJSON, err := json.Marshal(ch.Config)
+		for i := range req.Channels {
+			ch, err := req.Channels[i].toModel()
 			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel config: " + err.Error()})
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
-			channels[i] = model.NotificationChannel{
-				OrgID:   ch.OrgID,
-				Name:    ch.Name,
-				Type:    ch.Type,
-				Config:  string(configJSON),
-				Enabled: ch.Enabled,
-			}
-			channels[i].UUID = ch.UUID
+			channels[i] = *ch
 		}
 		if err := a.admin.BulkSyncChannels(ctx, channels); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -120,13 +106,40 @@ func (a *NotificationAPI) SyncChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
+// channelPayload is one channel as CPGateway pushes it. The owner is the organization's UUID: CPGateway's
+// own organization ID means nothing in a region, which numbers its organizations itself (it used to be
+// sent and stored as is, binding the channels of every organization but the first to the wrong one).
 type channelPayload struct {
 	UUID    string                 `json:"uuid"`
-	OrgID   int64                  `json:"org_id"`
+	OrgUUID string                 `json:"org_uuid"`
 	Name    string                 `json:"name"`
 	Type    string                 `json:"type"`
 	Config  map[string]interface{} `json:"config"`
 	Enabled bool                   `json:"enabled"`
+}
+
+// toModel checks a pushed channel and turns it into a mirror row; the local organization ID is resolved
+// from OrgUUID when the row is written
+func (p *channelPayload) toModel() (*model.NotificationChannel, error) {
+	if p.UUID == "" {
+		return nil, errors.New("channel uuid is required")
+	}
+	if p.OrgUUID == "" {
+		return nil, fmt.Errorf("org_uuid is required for channel %s", p.UUID)
+	}
+	configJSON, err := json.Marshal(p.Config)
+	if err != nil {
+		return nil, fmt.Errorf("invalid channel config: %w", err)
+	}
+	ch := &model.NotificationChannel{
+		OrgUUID: p.OrgUUID,
+		Name:    p.Name,
+		Type:    p.Type,
+		Config:  string(configJSON),
+		Enabled: p.Enabled,
+	}
+	ch.UUID = p.UUID
+	return ch, nil
 }
 
 // --- 告警规则绑定渠道 ---
@@ -139,7 +152,8 @@ type channelPayload struct {
 // @Produce json
 // @Success 200 {object} map[string]interface{} "Binding successful"
 // @Failure 400 {object} map[string]interface{} "Bad request"
-// @Failure 403 {object} map[string]interface{} "Channel not owned"
+// @Failure 403 {object} map[string]interface{} "Channel or rule group not owned"
+// @Failure 404 {object} map[string]interface{} "Rule group not found"
 // @Failure 409 {object} map[string]interface{} "Channel not synced"
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /alarm/rule-channels [post]
@@ -155,6 +169,10 @@ func (a *NotificationAPI) BindRuleChannels(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	memberShip := GetMemberShip(ctx)
+
+	if !a.checkRuleGroupAccess(c, req.RuleGroupUUID) {
+		return
+	}
 
 	// 校验渠道归属权（租户级，空数组时跳过）
 	if len(req.ChannelUUIDs) > 0 {
@@ -192,11 +210,16 @@ func (a *NotificationAPI) BindRuleChannels(c *gin.Context) {
 // @Produce json
 // @Param uuid path string true "Rule group UUID"
 // @Success 200 {object} map[string]interface{} "Rule channel bindings"
+// @Failure 403 {object} map[string]interface{} "Rule group not owned"
+// @Failure 404 {object} map[string]interface{} "Rule group not found"
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /alarm/rule-channels/{uuid} [get]
 func (a *NotificationAPI) GetRuleChannels(c *gin.Context) {
 	ruleGroupUUID := c.Param("uuid")
 	ctx := c.Request.Context()
+	if !a.checkRuleGroupAccess(c, ruleGroupUUID) {
+		return
+	}
 
 	bindings, err := a.admin.GetRuleBindings(ctx, ruleGroupUUID)
 	if err != nil {
@@ -205,6 +228,25 @@ func (a *NotificationAPI) GetRuleChannels(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"bindings": bindings})
+}
+
+// checkRuleGroupAccess answers the request itself and returns false when the caller may not see or change
+// the channel bindings of the rule group
+func (a *NotificationAPI) checkRuleGroupAccess(c *gin.Context, ruleGroupUUID string) bool {
+	ctx := c.Request.Context()
+	memberShip := GetMemberShip(ctx)
+	err := a.admin.CheckRuleGroupAccess(ctx, ruleGroupUUID, memberShip.OrgID, memberShip.IsSystemAdmin())
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, services.ErrRuleGroupNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": "rule_group_not_found", "message": "Alarm rule not found."})
+	case errors.Is(err, services.ErrRuleGroupNotOwned):
+		c.JSON(http.StatusForbidden, gin.H{"error": "rule_group_not_owned", "message": "The alarm rule does not belong to you."})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
+	return false
 }
 
 // --- 告警事件查询 ---
@@ -227,6 +269,7 @@ func (a *NotificationAPI) ListAlarmEvents(c *gin.Context) {
 	memberShip := GetMemberShip(ctx)
 
 	statusFilter := c.Query("status")
+	searchStr := c.Query("query")
 	countOnly := c.Query("count_only")
 
 	// count_only 模式：只返回数量（按当前组织过滤）
@@ -250,7 +293,7 @@ func (a *NotificationAPI) ListAlarmEvents(c *gin.Context) {
 	}
 
 	// 按当前用户的组织 ID 过滤，实现租户隔离（owner 字段存储的是 OrgID 字符串）
-	total, events, err := a.admin.ListAlarmEvents(ctx, strconv.FormatInt(memberShip.OrgID, 10), statusFilter, page, pageSize)
+	total, events, err := a.admin.ListAlarmEvents(ctx, strconv.FormatInt(memberShip.OrgID, 10), statusFilter, searchStr, page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -351,7 +394,7 @@ func (a *NotificationAPI) InternalListAlarmEvents(c *gin.Context) {
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	total, events, err := a.admin.ListAlarmEvents(ctx, owner, statusFilter, page, pageSize)
+	total, events, err := a.admin.ListAlarmEvents(ctx, owner, statusFilter, "", page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -398,7 +441,7 @@ func (a *NotificationAPI) ProcessAlertWebhookV2(c *gin.Context) {
 
 	for _, alert := range notification.Alerts {
 		if alert.Fingerprint == "" {
-			logger.Warningf("Alert missing fingerprint, skipping")
+			logger.Ctx(ctx).Warningf("Alert missing fingerprint, skipping")
 			continue
 		}
 
@@ -416,12 +459,12 @@ func (a *NotificationAPI) ProcessAlertWebhookV2(c *gin.Context) {
 			ctx, alert.Fingerprint, alertData, alert.Status, alert.StartsAt,
 		)
 		if err != nil {
-			logger.Errorf("Failed to upsert alarm event (fingerprint=%s): %v", alert.Fingerprint, err)
+			logger.Ctx(ctx).Errorf("Failed to upsert alarm event (fingerprint=%s): %v", alert.Fingerprint, err)
 			continue
 		}
 
-		// 查找绑定的渠道并发送通知
-		if event.RuleGroupUUID != "" {
+		// Notify the channels bound to the rule; an empty notifyType is a resolved alert reported again, already notified
+		if event.RuleGroupUUID != "" && notifyType != "" {
 			go a.sendNotifications(event, notifyType)
 		}
 		processedCount++
@@ -437,7 +480,7 @@ func (a *NotificationAPI) ProcessAlertWebhookV2(c *gin.Context) {
 				"reason":     "Block IP for detect attack",
 				"comments":   alert.Annotations["summary"],
 			}
-			go alarmAPI.sendSwitchAPIRequest(reqBody)
+			go alarmAPI.sendSwitchAPIRequest(context.WithoutCancel(ctx), reqBody)
 		}
 	}
 
@@ -460,7 +503,7 @@ func (a *NotificationAPI) sendNotifications(event *model.AlarmEvent, notifyType 
 	ctx = SetContextDB(ctx, DB())
 	channels, err := a.admin.GetBoundChannels(ctx, event.RuleGroupUUID)
 	if err != nil {
-		logger.Errorf("Failed to get bound channels for rule %s: %v", event.RuleGroupUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to get bound channels for rule %s: %v", event.RuleGroupUUID, err)
 		return
 	}
 	if len(channels) == 0 {
@@ -468,7 +511,7 @@ func (a *NotificationAPI) sendNotifications(event *model.AlarmEvent, notifyType 
 	}
 
 	for _, channel := range channels {
-		result := a.notifier.SendNotification(channel, event, notifyType)
+		result := a.notifier.SendNotification(ctx, channel, event, notifyType)
 
 		// 记录发送流水
 		deliveryLog := &model.AlarmDeliveryLog{
@@ -482,7 +525,7 @@ func (a *NotificationAPI) sendNotifications(event *model.AlarmEvent, notifyType 
 			SentAt:       time.Now(),
 		}
 		if err := a.admin.CreateDeliveryLog(ctx, deliveryLog); err != nil {
-			logger.Errorf("Failed to create delivery log: %v", err)
+			logger.Ctx(ctx).Errorf("Failed to create delivery log: %v", err)
 		}
 	}
 }

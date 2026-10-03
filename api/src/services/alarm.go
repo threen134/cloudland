@@ -1,11 +1,15 @@
 package services
 
 import (
+	"api/src/common"
+	"api/src/model"
+	"api/src/utils/tracing"
 	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,17 +18,17 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 	"unsafe"
-	"api/src/common"
-	"api/src/model"
 
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
 
-	"github.com/jinzhu/gorm"
+	"go.opentelemetry.io/otel/trace"
+	"gorm.io/gorm"
 )
 
 const (
@@ -37,12 +41,25 @@ const (
 	RuleTypeHypervisorVCPU = "hypervisor_vcpu"
 	RuleTypePacketDrop     = "packet_drop"
 	RuleTypeIPBlock        = "ip_block"
+	RuleTypeLocalPool      = "local_pool"
 	RulesEnabled           = "/etc/prometheus/rules_enabled"
 	RulesGeneral           = "/etc/prometheus/general_rules"
 	RulesSpecial           = "/etc/prometheus/special_rules"
 	RulesNode              = "/etc/prometheus/node_rules"
 	RuleTemplate           = "/etc/prometheus/node_templates"
 )
+
+// RuleTemplateDir is where the rule templates are read from (RuleTemplate; tests point it at the repository)
+var RuleTemplateDir = RuleTemplate
+
+// UseLocalRuleTemplates reads the rule templates from dir, and does every rule file operation on the local
+// disk whatever monitor.host says; it returns what undoes it. For tests: without a monitor.host setting clapi
+// takes Prometheus for remote.
+func UseLocalRuleTemplates(dir string) (restore func()) {
+	savedDir, savedRemote := RuleTemplateDir, isRemotePrometheus
+	RuleTemplateDir, isRemotePrometheus = dir, false
+	return func() { RuleTemplateDir, isRemotePrometheus = savedDir, savedRemote }
+}
 
 var (
 	alarmPrometheusIP      string
@@ -103,31 +120,25 @@ type (
 	}
 
 	CPURule struct {
-		ID           int       `gorm:"primaryKey;autoIncrement"`
-		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
-		Name         string    `json:"name" gorm:"size:255"`
-		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
-		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
-		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
-		Over         int       `json:"over" gorm:"check:over >= 1"`
-		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
-		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
-		Level        string    `json:"level" binding:"required,oneof=critical warning info"`
-		CreatedAt    time.Time `gorm:"autoCreateTime"`
+		ID        int       `gorm:"primaryKey;autoIncrement"`
+		GroupUUID string    `gorm:"column:group_uuid;type:varchar(36);index"`
+		Name      string    `json:"name" gorm:"size:255"`
+		Limit     int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
+		Rule      string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
+		Duration  int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
+		Level     string    `json:"level" binding:"required,oneof=critical warning info"`
+		CreatedAt time.Time `gorm:"autoCreateTime"`
 	}
 
 	MemoryRule struct {
-		ID           int       `gorm:"primaryKey;autoIncrement"`
-		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
-		Name         string    `json:"name" gorm:"size:255"`
-		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
-		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
-		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
-		Over         int       `json:"over" gorm:"check:over >= 1"`
-		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
-		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
-		Level        string    `json:"level" binding:"required,oneof=critical warning info"`
-		CreatedAt    time.Time `gorm:"autoCreateTime"`
+		ID        int       `gorm:"primaryKey;autoIncrement"`
+		GroupUUID string    `gorm:"column:group_uuid;type:varchar(36);index"`
+		Name      string    `json:"name" gorm:"size:255"`
+		Limit     int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
+		Rule      string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
+		Duration  int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
+		Level     string    `json:"level" binding:"required,oneof=critical warning info"`
+		CreatedAt time.Time `gorm:"autoCreateTime"`
 	}
 
 	BWRule struct {
@@ -311,12 +322,12 @@ func IsRemotePrometheus() bool {
 }
 
 func (a *AlarmOperator) GetCPURulesByGroupID(ctx context.Context, groupUUID string, rules *[]model.CPURuleDetail) (err error) {
-	logger.Infof("ENTER AlarmOperator.GetCPURulesByGroupID: groupUUID=%s", groupUUID)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetCPURulesByGroupID: groupUUID=%s", groupUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetCPURulesByGroupID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetCPURulesByGroupID: error=%v", err)
 		} else {
-			logger.Infof("EXIT AlarmOperator.GetCPURulesByGroupID: rulesCount=%d", len(*rules))
+			logger.Ctx(ctx).Infof("EXIT AlarmOperator.GetCPURulesByGroupID: rulesCount=%d", len(*rules))
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
@@ -324,12 +335,12 @@ func (a *AlarmOperator) GetCPURulesByGroupID(ctx context.Context, groupUUID stri
 }
 
 func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID string) (rg *model.RuleGroupV2, err error) {
-	logger.Infof("ENTER AlarmOperator.GetRulesByGroupUUID: groupUUID=%s", groupUUID)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetRulesByGroupUUID: groupUUID=%s", groupUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetRulesByGroupUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetRulesByGroupUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.GetRulesByGroupUUID: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.GetRulesByGroupUUID: success")
 		}
 	}()
 	ctx, _ = common.GetContextDB(ctx)
@@ -338,12 +349,12 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 		PageSize:  1,
 	})
 	if err != nil {
-		logger.Errorf("rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("rules query failed: %v", err)
 	}
 
 	if len(groups) == 0 {
-		logger.Errorf("rule not found: groupID=%s", groupUUID)
+		logger.Ctx(ctx).Errorf("rule not found: groupID=%s", groupUUID)
 		return nil, gorm.ErrRecordNotFound
 	}
 
@@ -353,7 +364,7 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 	case "cpu":
 		details, err := a.GetCPURuleDetails(ctx, groupUUID)
 		if err != nil {
-			logger.Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+			logger.Ctx(ctx).Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 			return nil, fmt.Errorf("detail rules query failed: %w", err)
 		}
 		type ResultGroup struct {
@@ -368,7 +379,7 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 	case "memory":
 		details, err := a.GetMemoryRuleDetails(ctx, groupUUID)
 		if err != nil {
-			logger.Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+			logger.Ctx(ctx).Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 			return nil, fmt.Errorf("detail rules query failed: %w", err)
 		}
 		type ResultGroup struct {
@@ -383,7 +394,7 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 	case "bw":
 		details, err := a.GetBWRuleDetails(ctx, groupUUID)
 		if err != nil {
-			logger.Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+			logger.Ctx(ctx).Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 			return nil, fmt.Errorf("detail rules query failed: %w", err)
 		}
 		type ResultGroup struct {
@@ -396,19 +407,19 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 		}
 		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
 	default:
-		logger.Errorf("unsupported rule type groupID %s type %s", groupUUID, ruleType)
+		logger.Ctx(ctx).Errorf("unsupported rule type groupID %s type %s", groupUUID, ruleType)
 		return nil, fmt.Errorf("unsupported rule type: %s", ruleType)
 	}
 }
 
 // GetRulesByRuleID 通过 rule_id 获取规则组（支持告警规则）
 func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (rg *model.RuleGroupV2, err error) {
-	logger.Infof("ENTER AlarmOperator.GetRulesByRuleID: ruleID=%s", ruleID)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetRulesByRuleID: ruleID=%s", ruleID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetRulesByRuleID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetRulesByRuleID: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.GetRulesByRuleID: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.GetRulesByRuleID: success")
 		}
 	}()
 	ctx, _ = common.GetContextDB(ctx)
@@ -417,12 +428,12 @@ func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (rg
 		PageSize: 1,
 	})
 	if err != nil {
-		logger.Errorf("rules query failed: ruleID=%s, error=%v", ruleID, err)
+		logger.Ctx(ctx).Errorf("rules query failed: ruleID=%s, error=%v", ruleID, err)
 		return nil, fmt.Errorf("rules query failed: %v", err)
 	}
 
 	if len(groups) == 0 {
-		logger.Errorf("rule not found: ruleID=%s", ruleID)
+		logger.Ctx(ctx).Errorf("rule not found: ruleID=%s", ruleID)
 		return nil, gorm.ErrRecordNotFound
 	}
 
@@ -432,7 +443,7 @@ func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (rg
 	case "cpu":
 		details, err := a.GetCPURuleDetails(ctx, groups[0].UUID)
 		if err != nil {
-			logger.Errorf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			logger.Ctx(ctx).Errorf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
 			return nil, fmt.Errorf("detail rules query failed: %w", err)
 		}
 		type ResultGroup struct {
@@ -447,7 +458,7 @@ func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (rg
 	case "bw":
 		details, err := a.GetBWRuleDetails(ctx, groups[0].UUID)
 		if err != nil {
-			logger.Errorf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			logger.Ctx(ctx).Errorf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
 			return nil, fmt.Errorf("detail rules query failed: %w", err)
 		}
 		type ResultGroup struct {
@@ -462,7 +473,7 @@ func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (rg
 	case "memory":
 		details, err := a.GetMemoryRuleDetails(ctx, groups[0].UUID)
 		if err != nil {
-			logger.Errorf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			logger.Ctx(ctx).Errorf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
 			return nil, fmt.Errorf("detail rules query failed: %w", err)
 		}
 		type ResultGroup struct {
@@ -475,18 +486,18 @@ func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (rg
 		}
 		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
 	default:
-		logger.Errorf("unsupported rule type ruleID %s type %s", ruleID, ruleType)
+		logger.Ctx(ctx).Errorf("unsupported rule type ruleID %s type %s", ruleID, ruleType)
 		return nil, fmt.Errorf("unsupported rule type: %s", ruleType)
 	}
 }
 
 func (a *AlarmOperator) GetCPURulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (rg *model.RuleGroupV2, err error) {
-	logger.Infof("ENTER AlarmOperator.GetCPURulesByGroupUUID: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetCPURulesByGroupUUID: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetCPURulesByGroupUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetCPURulesByGroupUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.GetCPURulesByGroupUUID: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.GetCPURulesByGroupUUID: success")
 		}
 	}()
 	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
@@ -495,13 +506,13 @@ func (a *AlarmOperator) GetCPURulesByGroupUUID(ctx context.Context, groupUUID st
 		PageSize:  1,
 	})
 	if err != nil || len(groups) == 0 {
-		logger.Errorf("rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("rules query failed: %w", err)
 	}
 
 	details, err := a.GetCPURuleDetails(ctx, groupUUID)
 	if err != nil {
-		logger.Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("detail rules query failed: %w", err)
 	}
 	type ResultGroup struct {
@@ -515,12 +526,12 @@ func (a *AlarmOperator) GetCPURulesByGroupUUID(ctx context.Context, groupUUID st
 	return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
 }
 func (a *AlarmOperator) GetMemoryRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (rg *model.RuleGroupV2, err error) {
-	logger.Infof("ENTER AlarmOperator.GetMemoryRulesByGroupUUID: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetMemoryRulesByGroupUUID: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetMemoryRulesByGroupUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetMemoryRulesByGroupUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.GetMemoryRulesByGroupUUID: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.GetMemoryRulesByGroupUUID: success")
 		}
 	}()
 	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
@@ -529,13 +540,13 @@ func (a *AlarmOperator) GetMemoryRulesByGroupUUID(ctx context.Context, groupUUID
 		PageSize:  1,
 	})
 	if err != nil || len(groups) == 0 {
-		logger.Errorf("rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("rules query failed: %w", err)
 	}
 
 	details, err := a.GetMemoryRuleDetails(ctx, groupUUID)
 	if err != nil {
-		logger.Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("detail rules query failed: %w", err)
 	}
 	type ResultGroup struct {
@@ -550,12 +561,12 @@ func (a *AlarmOperator) GetMemoryRulesByGroupUUID(ctx context.Context, groupUUID
 }
 
 func (a *AlarmOperator) GetBWRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (rg *model.RuleGroupV2, err error) {
-	logger.Infof("ENTER AlarmOperator.GetBWRulesByGroupUUID: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetBWRulesByGroupUUID: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetBWRulesByGroupUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetBWRulesByGroupUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.GetBWRulesByGroupUUID: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.GetBWRulesByGroupUUID: success")
 		}
 	}()
 	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
@@ -564,13 +575,13 @@ func (a *AlarmOperator) GetBWRulesByGroupUUID(ctx context.Context, groupUUID str
 		PageSize:  1,
 	})
 	if err != nil || len(groups) == 0 {
-		logger.Errorf("rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("rules query failed: %w", err)
 	}
 
 	details, err := a.GetBWRuleDetails(ctx, groupUUID)
 	if err != nil {
-		logger.Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("detail rules query failed: %w", err)
 	}
 	type ResultGroup struct {
@@ -585,12 +596,12 @@ func (a *AlarmOperator) GetBWRulesByGroupUUID(ctx context.Context, groupUUID str
 }
 
 func (a *AlarmOperator) UpdateRuleGroupStatus(ctx context.Context, groupID string, enabled bool) (err error) {
-	logger.Infof("ENTER AlarmOperator.UpdateRuleGroupStatus: groupID=%s, enabled=%v", groupID, enabled)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.UpdateRuleGroupStatus: groupID=%s, enabled=%v", groupID, enabled)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.UpdateRuleGroupStatus: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.UpdateRuleGroupStatus: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.UpdateRuleGroupStatus: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.UpdateRuleGroupStatus: success")
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
@@ -599,7 +610,7 @@ func (a *AlarmOperator) UpdateRuleGroupStatus(ctx context.Context, groupID strin
 			Where("uuid = ?", groupID).
 			Update("enabled", enabled)
 		if result.Error != nil {
-			logger.Errorf("update satus failed groupID %s error %v", groupID, result.Error)
+			logger.Ctx(ctx).Errorf("update satus failed groupID %s error %v", groupID, result.Error)
 			return fmt.Errorf("update satus failed: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
@@ -626,12 +637,12 @@ func (a *AlarmOperator) CheckVMLinkExists(ctx context.Context, groupUUID, vmUUID
 
 // CreateVMLink creates a single VM link
 func (a *AlarmOperator) CreateVMLink(ctx context.Context, groupUUID, vmUUID, iface string) (err error) {
-	logger.Infof("ENTER AlarmOperator.CreateVMLink: groupUUID=%s, vmUUID=%s, iface=%s", groupUUID, vmUUID, iface)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.CreateVMLink: groupUUID=%s, vmUUID=%s, iface=%s", groupUUID, vmUUID, iface)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.CreateVMLink: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.CreateVMLink: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.CreateVMLink: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.CreateVMLink: success")
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
@@ -641,7 +652,7 @@ func (a *AlarmOperator) CreateVMLink(ctx context.Context, groupUUID, vmUUID, ifa
 		Interface: iface,
 	}
 	if err = db.Create(link).Error; err != nil {
-		logger.Errorf("create link failed: GroupUUID=%s, vmUUID=%s, interface=%s, error=%v",
+		logger.Ctx(ctx).Errorf("create link failed: GroupUUID=%s, vmUUID=%s, interface=%s, error=%v",
 			groupUUID, vmUUID, iface, err)
 		return fmt.Errorf("create link failed: %w", err)
 	}
@@ -649,8 +660,8 @@ func (a *AlarmOperator) CreateVMLink(ctx context.Context, groupUUID, vmUUID, ifa
 }
 
 func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, GroupUUID string, vmUUIDs []string, iface string) error {
-	logger.Infof("ENTER AlarmOperator.BatchLinkVMs: GroupUUID=%s, vmUUIDs=%v, iface=%s", GroupUUID, vmUUIDs, iface)
-	defer logger.Info("EXIT AlarmOperator.BatchLinkVMs")
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.BatchLinkVMs: GroupUUID=%s, vmUUIDs=%v, iface=%s", GroupUUID, vmUUIDs, iface)
+	defer logger.Ctx(ctx).Info("EXIT AlarmOperator.BatchLinkVMs")
 	ctx, db := common.GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
 		for _, vmUUID := range vmUUIDs {
@@ -666,12 +677,12 @@ func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, GroupUUID string, vmUU
 					Interface: iface,
 				}
 				if err := tx.Create(link).Error; err != nil {
-					logger.Errorf("create link failed: GroupUUID=%s, vmUUID=%s, interface=%s, error=%v",
+					logger.Ctx(ctx).Errorf("create link failed: GroupUUID=%s, vmUUID=%s, interface=%s, error=%v",
 						GroupUUID, vmUUID, iface, err)
 					return fmt.Errorf("create link failed: %w", err)
 				}
 			} else {
-				logger.Infof("link already exists, skipping: GroupUUID=%s, vmUUID=%s, interface=%s",
+				logger.Ctx(ctx).Infof("link already exists, skipping: GroupUUID=%s, vmUUID=%s, interface=%s",
 					GroupUUID, vmUUID, iface)
 			}
 		}
@@ -679,32 +690,13 @@ func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, GroupUUID string, vmUU
 	})
 }
 
-func (a *AlarmOperator) DeleteRuleGroup(ctx context.Context, groupUUID, ruleType string) (err error) {
-	logger.Infof("ENTER AlarmOperator.DeleteRuleGroup: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
-	defer func() {
-		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.DeleteRuleGroup: error=%v", err)
-		} else {
-			logger.Info("EXIT AlarmOperator.DeleteRuleGroup: success")
-		}
-	}()
-	ctx, db := common.GetContextDB(ctx)
-	result := db.Where("uuid = ? AND type = ?", groupUUID, ruleType).
-		Delete(&model.RuleGroupV2{})
-	if result.Error != nil {
-		logger.Errorf("delete rule failed: groupUUID=%s, type=%s, error=%v",
-			groupUUID, ruleType, result.Error)
-	}
-	return result.Error
-}
-
 func (a *AlarmOperator) DeleteVMLink(ctx context.Context, groupUUID, vmUUID, iface string) (rowsAffected int64, err error) {
-	logger.Infof("ENTER AlarmOperator.DeleteVMLink: groupUUID=%s, vmUUID=%s, iface=%s", groupUUID, vmUUID, iface)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.DeleteVMLink: groupUUID=%s, vmUUID=%s, iface=%s", groupUUID, vmUUID, iface)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.DeleteVMLink: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.DeleteVMLink: error=%v", err)
 		} else {
-			logger.Infof("EXIT AlarmOperator.DeleteVMLink: rowsAffected=%d", rowsAffected)
+			logger.Ctx(ctx).Infof("EXIT AlarmOperator.DeleteVMLink: rowsAffected=%d", rowsAffected)
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
@@ -716,18 +708,18 @@ func (a *AlarmOperator) DeleteVMLink(ctx context.Context, groupUUID, vmUUID, ifa
 
 	result := query.Delete(&model.VMRuleLink{})
 	if result.Error != nil {
-		logger.Errorf("delete link failed groupUUID %s vmUUID %s interface %s error %v", groupUUID, vmUUID, iface, result.Error)
+		logger.Ctx(ctx).Errorf("delete link failed groupUUID %s vmUUID %s interface %s error %v", groupUUID, vmUUID, iface, result.Error)
 	}
 	return result.RowsAffected, result.Error
 }
 
 func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupUUID string) (links []model.VMRuleLink, err error) {
-	logger.Infof("ENTER AlarmOperator.GetLinkedVMs: groupUUID=%s", groupUUID)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetLinkedVMs: groupUUID=%s", groupUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetLinkedVMs: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetLinkedVMs: error=%v", err)
 		} else {
-			logger.Infof("EXIT AlarmOperator.GetLinkedVMs: found %d links", len(links))
+			logger.Ctx(ctx).Infof("EXIT AlarmOperator.GetLinkedVMs: found %d links", len(links))
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
@@ -736,11 +728,11 @@ func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupUUID string) (lin
 	if groupUUID != "" {
 		query = query.Where("group_uuid = ?", groupUUID)
 	} else {
-		logger.Info("query all group found, TBD")
+		logger.Ctx(ctx).Info("query all group found, TBD")
 	}
 
 	if err := query.Find(&links).Error; err != nil {
-		logger.Errorf("get link data failed: groupUUID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("get link data failed: groupUUID=%s, error=%v", groupUUID, err)
 		return nil, err
 	}
 	return links, nil
@@ -751,12 +743,12 @@ func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupUUID string) (lin
 // Input: instanceUUID - single instance UUID to query
 // Output: []string - list of rule_id values
 func (a *AlarmOperator) GetRuleIDsByInstance(ctx context.Context, instanceUUID string) (ruleIDs []string, err error) {
-	logger.Infof("ENTER AlarmOperator.GetRuleIDsByInstance: instanceUUID=%s", instanceUUID)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetRuleIDsByInstance: instanceUUID=%s", instanceUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetRuleIDsByInstance: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetRuleIDsByInstance: error=%v", err)
 		} else {
-			logger.Infof("EXIT AlarmOperator.GetRuleIDsByInstance: found %d rule IDs", len(ruleIDs))
+			logger.Ctx(ctx).Infof("EXIT AlarmOperator.GetRuleIDsByInstance: found %d rule IDs", len(ruleIDs))
 		}
 	}()
 
@@ -779,7 +771,7 @@ func (a *AlarmOperator) GetRuleIDsByInstance(ctx context.Context, instanceUUID s
 		Scan(&alarmRuleIDs).Error
 
 	if err != nil {
-		logger.Errorf("[GetRuleIDsByInstance] Failed to query alarm rules for instance %s: %v", instanceUUID, err)
+		logger.Ctx(ctx).Errorf("[GetRuleIDsByInstance] Failed to query alarm rules for instance %s: %v", instanceUUID, err)
 		return nil, fmt.Errorf("failed to query alarm rules: %w", err)
 	}
 
@@ -796,7 +788,7 @@ func (a *AlarmOperator) GetRuleIDsByInstance(ctx context.Context, instanceUUID s
 		Scan(&adjustRuleIDs).Error
 
 	if err != nil {
-		logger.Errorf("[GetRuleIDsByInstance] Failed to query adjust rules for instance %s: %v", instanceUUID, err)
+		logger.Ctx(ctx).Errorf("[GetRuleIDsByInstance] Failed to query adjust rules for instance %s: %v", instanceUUID, err)
 		return nil, fmt.Errorf("failed to query adjust rules: %w", err)
 	}
 
@@ -812,12 +804,12 @@ func (a *AlarmOperator) GetRuleIDsByInstance(ctx context.Context, instanceUUID s
 // Input: ruleID - rule identifier
 // Output: interface{} - either *RuleGroupV2 (alarm) or *AdjustRuleGroup (adjust)
 func (a *AlarmOperator) GetCompleteRuleByRuleID(ctx context.Context, ruleID string) (result interface{}, err error) {
-	logger.Infof("ENTER AlarmOperator.GetCompleteRuleByRuleID: ruleID=%s", ruleID)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetCompleteRuleByRuleID: ruleID=%s", ruleID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetCompleteRuleByRuleID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetCompleteRuleByRuleID: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.GetCompleteRuleByRuleID: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.GetCompleteRuleByRuleID: success")
 		}
 	}()
 
@@ -842,7 +834,7 @@ func (a *AlarmOperator) GetCompleteRuleByRuleID(ctx context.Context, ruleID stri
 		case "bandwidth":
 			return a.GetBWRulesByGroupUUID(ctx, group.UUID, group.Type)
 		default:
-			logger.Errorf("[GetCompleteRuleByRuleID] Unknown alarm rule type: %s for rule_id: %s", group.Type, ruleID)
+			logger.Ctx(ctx).Errorf("[GetCompleteRuleByRuleID] Unknown alarm rule type: %s for rule_id: %s", group.Type, ruleID)
 			return nil, fmt.Errorf("unknown alarm rule type: %s", group.Type)
 		}
 	}
@@ -863,13 +855,13 @@ func (a *AlarmOperator) GetCompleteRuleByRuleID(ctx context.Context, ruleID stri
 		case "adjust_in_bw", "adjust_out_bw":
 			return adjustOperator.GetBWAdjustRulesByGroupUUID(ctx, group.UUID, group.Type)
 		default:
-			logger.Errorf("[GetCompleteRuleByRuleID] Unknown adjust rule type: %s for rule_id: %s", group.Type, ruleID)
+			logger.Ctx(ctx).Errorf("[GetCompleteRuleByRuleID] Unknown adjust rule type: %s for rule_id: %s", group.Type, ruleID)
 			return nil, fmt.Errorf("unknown adjust rule type: %s", group.Type)
 		}
 	}
 
 	// Rule not found in either table
-	logger.Infof("[GetCompleteRuleByRuleID] Rule not found: %s", ruleID)
+	logger.Ctx(ctx).Infof("[GetCompleteRuleByRuleID] Rule not found: %s", ruleID)
 	return nil, fmt.Errorf("rule not found: %s", ruleID)
 }
 
@@ -877,12 +869,12 @@ func (a *AlarmOperator) GetCompleteRuleByRuleID(ctx context.Context, ruleID stri
 // Input: instanceUUIDs - list of instance UUIDs to query
 // Output: map[instanceUUID][]VMRuleLink - grouped by instance UUID
 func (a *AlarmOperator) GetInstanceRuleLinks(ctx context.Context, instanceUUIDs []string) (linksMap map[string][]model.VMRuleLink, err error) {
-	logger.Infof("ENTER AlarmOperator.GetInstanceRuleLinks: instanceUUIDs=%v", instanceUUIDs)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetInstanceRuleLinks: instanceUUIDs=%v", instanceUUIDs)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetInstanceRuleLinks: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetInstanceRuleLinks: error=%v", err)
 		} else {
-			logger.Infof("EXIT AlarmOperator.GetInstanceRuleLinks: found %d links for %d instances", len(linksMap), len(instanceUUIDs))
+			logger.Ctx(ctx).Infof("EXIT AlarmOperator.GetInstanceRuleLinks: found %d links for %d instances", len(linksMap), len(instanceUUIDs))
 		}
 	}()
 
@@ -894,7 +886,7 @@ func (a *AlarmOperator) GetInstanceRuleLinks(ctx context.Context, instanceUUIDs 
 	var links []model.VMRuleLink
 
 	if err := db.Where("vm_uuid IN (?)", instanceUUIDs).Find(&links).Error; err != nil {
-		logger.Errorf("[GetInstanceRuleLinks] Query failed: %v", err)
+		logger.Ctx(ctx).Errorf("[GetInstanceRuleLinks] Query failed: %v", err)
 		return nil, fmt.Errorf("failed to query rule links: %w", err)
 	}
 
@@ -954,12 +946,12 @@ func cleanRuleData(data interface{}) interface{} {
 // Output: map with instance_id as key, containing complete rule information (both alarm and adjust rules)
 // Each rule group includes an "interfaces" array field containing the network interfaces linked to that rule group
 func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUIDs []string) (result map[string]interface{}, err error) {
-	logger.Infof("ENTER AlarmOperator.GetInstanceRuleDetails: instanceUUIDs=%v", instanceUUIDs)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetInstanceRuleDetails: instanceUUIDs=%v", instanceUUIDs)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetInstanceRuleDetails: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetInstanceRuleDetails: error=%v", err)
 		} else {
-			logger.Infof("EXIT AlarmOperator.GetInstanceRuleDetails: processed %d instances", len(result))
+			logger.Ctx(ctx).Infof("EXIT AlarmOperator.GetInstanceRuleDetails: processed %d instances", len(result))
 		}
 	}()
 
@@ -971,7 +963,7 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 		ctx, db := common.GetContextDB(ctx)
 		var links []model.VMRuleLink
 		if err := db.Where("vm_uuid = ? AND deleted_at IS NULL", instanceUUID).Find(&links).Error; err != nil {
-			logger.Errorf("[GetInstanceRuleDetails] Failed to get rule links for instance %s: %v", instanceUUID, err)
+			logger.Ctx(ctx).Errorf("[GetInstanceRuleDetails] Failed to get rule links for instance %s: %v", instanceUUID, err)
 		}
 
 		// 2. Build map: group_uuid -> []interfaces (using map for deduplication)
@@ -998,7 +990,7 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 		// 3. Get all rule_ids for this instance
 		ruleIDs, err := a.GetRuleIDsByInstance(ctx, instanceUUID)
 		if err != nil {
-			logger.Errorf("[GetInstanceRuleDetails] Failed to get rule IDs for instance %s: %v", instanceUUID, err)
+			logger.Ctx(ctx).Errorf("[GetInstanceRuleDetails] Failed to get rule IDs for instance %s: %v", instanceUUID, err)
 			// Continue with next instance instead of failing completely
 			result[instanceUUID] = map[string]interface{}{
 				"instance_id": instanceUUID,
@@ -1014,7 +1006,7 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 		for _, ruleID := range ruleIDs {
 			rule, err := a.GetCompleteRuleByRuleID(ctx, ruleID)
 			if err != nil {
-				logger.Errorf("[GetInstanceRuleDetails] Failed to get rule %s for instance %s: %v", ruleID, instanceUUID, err)
+				logger.Ctx(ctx).Errorf("[GetInstanceRuleDetails] Failed to get rule %s for instance %s: %v", ruleID, instanceUUID, err)
 				// Continue with next rule instead of failing
 				continue
 			}
@@ -1034,11 +1026,11 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 					jsonBytes, err := json.Marshal(cleanedRule)
 					if err == nil {
 						if err := json.Unmarshal(jsonBytes, &ruleMap); err != nil {
-							logger.Errorf("[GetInstanceRuleDetails] Failed to unmarshal rule to map: %v", err)
+							logger.Ctx(ctx).Errorf("[GetInstanceRuleDetails] Failed to unmarshal rule to map: %v", err)
 							ruleMap = make(map[string]interface{})
 						}
 					} else {
-						logger.Errorf("[GetInstanceRuleDetails] Failed to marshal rule: %v", err)
+						logger.Ctx(ctx).Errorf("[GetInstanceRuleDetails] Failed to marshal rule: %v", err)
 						ruleMap = make(map[string]interface{})
 					}
 				}
@@ -1063,7 +1055,7 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 				} else {
 					// If UUID not found, set empty array
 					interfaces = []string{}
-					logger.Warningf("[GetInstanceRuleDetails] Warning: Could not find UUID in rule for rule_id %s", ruleID)
+					logger.Ctx(ctx).Warningf("[GetInstanceRuleDetails] Warning: Could not find UUID in rule for rule_id %s", ruleID)
 				}
 
 				ruleMap["interfaces"] = interfaces
@@ -1071,7 +1063,7 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 
 				rules = append(rules, cleanedRule)
 			} else {
-				logger.Warningf("[GetInstanceRuleDetails] Nil rule returned for rule_id %s", ruleID)
+				logger.Ctx(ctx).Warningf("[GetInstanceRuleDetails] Nil rule returned for rule_id %s", ruleID)
 			}
 		}
 
@@ -1098,12 +1090,12 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 }
 
 func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, groupUUID, ruleType string) (err error) {
-	logger.Infof("ENTER AlarmOperator.DeleteRuleGroupWithDependencies: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.DeleteRuleGroupWithDependencies: groupUUID=%s, ruleType=%s", groupUUID, ruleType)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.DeleteRuleGroupWithDependencies: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.DeleteRuleGroupWithDependencies: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.DeleteRuleGroupWithDependencies: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.DeleteRuleGroupWithDependencies: success")
 		}
 	}()
 
@@ -1114,19 +1106,19 @@ func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, gro
 		case "cpu":
 			if err := tx.Where("group_uuid = ?", groupUUID).
 				Delete(&model.CPURuleDetail{}).Error; err != nil {
-				logger.Errorf("CPU rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
+				logger.Ctx(ctx).Errorf("CPU rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
 				return fmt.Errorf("CPU rules delete failed: %w", err)
 			}
 		case "memory":
 			if err := tx.Where("group_uuid = ?", groupUUID).
 				Delete(&model.MemoryRuleDetail{}).Error; err != nil {
-				logger.Errorf("Memory rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
+				logger.Ctx(ctx).Errorf("Memory rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
 				return fmt.Errorf("Memory rules delete failed: %w", err)
 			}
 		case "bw":
 			if err := tx.Where("group_uuid = ?", groupUUID).
 				Delete(&model.BWRuleDetail{}).Error; err != nil {
-				logger.Errorf("bw rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
+				logger.Ctx(ctx).Errorf("bw rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
 				return fmt.Errorf("bw rules delete failed: %w", err)
 			}
 		default:
@@ -1135,13 +1127,13 @@ func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, gro
 		// delete link db
 		if err := tx.Where("group_uuid = ?", groupUUID).
 			Delete(&model.VMRuleLink{}).Error; err != nil {
-			logger.Errorf("failed to del vm link: groupUUID=%s, error=%v", groupUUID, err)
+			logger.Ctx(ctx).Errorf("failed to del vm link: groupUUID=%s, error=%v", groupUUID, err)
 			return fmt.Errorf("failed to del vm link: %w", err)
 		}
 		// delete group rule db
 		if err := tx.Where("uuid = ? AND type = ?", groupUUID, ruleType).
 			Delete(&model.RuleGroupV2{}).Error; err != nil {
-			logger.Errorf("group del failed: groupUUID=%s, error=%v", groupUUID, err)
+			logger.Ctx(ctx).Errorf("group del failed: groupUUID=%s, error=%v", groupUUID, err)
 			return fmt.Errorf("group del failed: %w", err)
 		}
 
@@ -1156,31 +1148,13 @@ func Paginate(page, pageSize int) func(db *gorm.DB) *gorm.DB {
 	}
 }
 
-func (a *AlarmOperator) DeleteCPURulesByGroup(ctx context.Context, groupID string) (err error) {
-	logger.Infof("ENTER AlarmOperator.DeleteCPURulesByGroup: groupID=%s", groupID)
-	defer func() {
-		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.DeleteCPURulesByGroup: error=%v", err)
-		} else {
-			logger.Info("EXIT AlarmOperator.DeleteCPURulesByGroup: success")
-		}
-	}()
-	ctx, db := common.GetContextDB(ctx)
-	if err = db.Where("group_uuid = ?", groupID).
-		Delete(&CPURule{}).Error; err != nil {
-		logger.Errorf("CPU rule delete failed: groupID=%s, error=%v", groupID, err)
-		return err
-	}
-	return nil
-}
-
 func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroupsParams) (groups []model.RuleGroupV2, total int64, err error) {
-	logger.Infof("ENTER AlarmOperator.ListRuleGroups: type=%s, groupUUID=%s, ruleID=%s", params.RuleType, params.GroupUUID, params.RuleID)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.ListRuleGroups: type=%s, groupUUID=%s, ruleID=%s", params.RuleType, params.GroupUUID, params.RuleID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.ListRuleGroups: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.ListRuleGroups: error=%v", err)
 		} else {
-			logger.Infof("EXIT AlarmOperator.ListRuleGroups: total=%d", total)
+			logger.Ctx(ctx).Infof("EXIT AlarmOperator.ListRuleGroups: total=%d", total)
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
@@ -1201,12 +1175,12 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 	}
 
 	if err = query.Count(&total).Error; err != nil {
-		logger.Errorf("get rules count failed: ruleType=%s, error=%v", params.RuleType, err)
+		logger.Ctx(ctx).Errorf("get rules count failed: ruleType=%s, error=%v", params.RuleType, err)
 		return nil, 0, fmt.Errorf("get rules count failed: %w", err)
 	}
 	if err = query.Scopes(Paginate(params.Page, params.PageSize)).
 		Find(&groups).Error; err != nil {
-		logger.Errorf("page query failed: ruleType=%s, page=%d, pageSize=%d, error=%v",
+		logger.Ctx(ctx).Errorf("page query failed: ruleType=%s, page=%d, pageSize=%d, error=%v",
 			params.RuleType, params.Page, params.PageSize, err)
 		return nil, 0, fmt.Errorf("page query failed: %w", err)
 	}
@@ -1215,44 +1189,44 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 }
 
 func (a *AlarmOperator) GetCPURuleDetails(ctx context.Context, groupUUID string) (details []model.CPURuleDetail, err error) {
-	logger.Infof("ENTER AlarmOperator.GetCPURuleDetails: groupUUID=%s", groupUUID)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetCPURuleDetails: groupUUID=%s", groupUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetCPURuleDetails: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetCPURuleDetails: error=%v", err)
 		} else {
-			logger.Infof("EXIT AlarmOperator.GetCPURuleDetails: found %d details", len(details))
+			logger.Ctx(ctx).Infof("EXIT AlarmOperator.GetCPURuleDetails: found %d details", len(details))
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
 	if err := db.Where("group_uuid = ?", groupUUID).Order("id ASC").Find(&details).Error; err != nil {
-		logger.Errorf("query CPU rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("query CPU rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
 	}
 	return details, nil
 }
 
 func (a *AlarmOperator) GetMemoryRuleDetails(ctx context.Context, groupUUID string) (details []model.MemoryRuleDetail, err error) {
-	logger.Infof("ENTER AlarmOperator.GetMemoryRuleDetails: groupUUID=%s", groupUUID)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetMemoryRuleDetails: groupUUID=%s", groupUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetMemoryRuleDetails: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetMemoryRuleDetails: error=%v", err)
 		} else {
-			logger.Infof("EXIT AlarmOperator.GetMemoryRuleDetails: found %d details", len(details))
+			logger.Ctx(ctx).Infof("EXIT AlarmOperator.GetMemoryRuleDetails: found %d details", len(details))
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
 	if err := db.Where("group_uuid = ?", groupUUID).Order("id ASC").Find(&details).Error; err != nil {
-		logger.Errorf("query Memory rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("query Memory rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
 	}
 	return details, nil
 }
 
 func (a *AlarmOperator) IncrementTriggerCount(ctx context.Context, groupID string) (err error) {
-	logger.Infof("ENTER AlarmOperator.IncrementTriggerCount: groupID=%s", groupID)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.IncrementTriggerCount: groupID=%s", groupID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.IncrementTriggerCount: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.IncrementTriggerCount: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.IncrementTriggerCount: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.IncrementTriggerCount: success")
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
@@ -1262,27 +1236,24 @@ func (a *AlarmOperator) IncrementTriggerCount(ctx context.Context, groupID strin
 }
 
 func (a *AlarmOperator) CreateCPURules(ctx context.Context, groupUUID string, rules []CPURule) (err error) {
-	logger.Infof("ENTER AlarmOperator.CreateCPURules: groupUUID=%s, rulesCount=%d", groupUUID, len(rules))
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.CreateCPURules: groupUUID=%s, rulesCount=%d", groupUUID, len(rules))
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.CreateCPURules: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.CreateCPURules: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.CreateCPURules: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.CreateCPURules: success")
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
 		for i := range rules {
 			rule := &CPURule{
-				GroupUUID:    groupUUID,
-				Name:         rules[i].Name,
-				Duration:     rules[i].Duration,
-				Over:         rules[i].Over,
-				DownDuration: rules[i].DownDuration,
-				DownTo:       rules[i].DownTo,
+				GroupUUID: groupUUID,
+				Name:      rules[i].Name,
+				Duration:  rules[i].Duration,
 			}
 			if err := tx.Create(rule).Error; err != nil {
-				logger.Errorf("create cpu rule failed: groupUUID=%s, rule=%+v, error=%v", groupUUID, rules[i], err)
+				logger.Ctx(ctx).Errorf("create cpu rule failed: groupUUID=%s, rule=%+v, error=%v", groupUUID, rules[i], err)
 				return fmt.Errorf("create cpu rule failed: %w", err)
 			}
 		}
@@ -1291,17 +1262,17 @@ func (a *AlarmOperator) CreateCPURules(ctx context.Context, groupUUID string, ru
 }
 
 func (a *AlarmOperator) CreateBWRuleDetail(ctx context.Context, detail *model.BWRuleDetail) (err error) {
-	logger.Infof("ENTER AlarmOperator.CreateBWRuleDetail: groupUUID=%s, name=%s", detail.GroupUUID, detail.Name)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.CreateBWRuleDetail: groupUUID=%s, name=%s", detail.GroupUUID, detail.Name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.CreateBWRuleDetail: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.CreateBWRuleDetail: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.CreateBWRuleDetail: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.CreateBWRuleDetail: success")
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
 	if err := db.Create(detail).Error; err != nil {
-		logger.Errorf("create bw rule detail failed: groupUUID=%s, name=%s, error=%v",
+		logger.Ctx(ctx).Errorf("create bw rule detail failed: groupUUID=%s, name=%s, error=%v",
 			detail.GroupUUID, detail.Name, err)
 		return fmt.Errorf("create bw rule detail failed: %w", err)
 	}
@@ -1309,70 +1280,70 @@ func (a *AlarmOperator) CreateBWRuleDetail(ctx context.Context, detail *model.BW
 }
 
 func (a *AlarmOperator) GetBWRuleDetails(ctx context.Context, groupUUID string) (details []model.BWRuleDetail, err error) {
-	logger.Infof("ENTER AlarmOperator.GetBWRuleDetails: groupUUID=%s", groupUUID)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetBWRuleDetails: groupUUID=%s", groupUUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetBWRuleDetails: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetBWRuleDetails: error=%v", err)
 		} else {
-			logger.Infof("EXIT AlarmOperator.GetBWRuleDetails: found %d details", len(details))
+			logger.Ctx(ctx).Infof("EXIT AlarmOperator.GetBWRuleDetails: found %d details", len(details))
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
 	if err := db.Where("group_uuid = ?", groupUUID).Order("id ASC").Find(&details).Error; err != nil {
-		logger.Errorf("query db BW rules detailed: groupUUID=%s, error=%v", groupUUID, err)
+		logger.Ctx(ctx).Errorf("query db BW rules detailed: groupUUID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("query db BW rules detailed: %w", err)
 	}
 	return details, nil
 }
 
 func (a *AlarmOperator) CreateRuleGroup(ctx context.Context, group *model.RuleGroupV2) (err error) {
-	logger.Infof("ENTER AlarmOperator.CreateRuleGroup: name=%s, type=%s, uuid=%s", group.Name, group.Type, group.UUID)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.CreateRuleGroup: name=%s, type=%s, uuid=%s", group.Name, group.Type, group.UUID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.CreateRuleGroup: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.CreateRuleGroup: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.CreateRuleGroup: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.CreateRuleGroup: success")
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
 	if err = db.Create(group).Error; err != nil {
-		logger.Errorf("failed to create rule: UUID=%s, GroupUUID=%s, error=%v", group.UUID, group.UUID, err)
+		logger.Ctx(ctx).Errorf("failed to create rule: UUID=%s, GroupUUID=%s, error=%v", group.UUID, group.UUID, err)
 		return fmt.Errorf("failed to create rule: %w", err)
 	}
 	return nil
 }
 
 func (a *AlarmOperator) CreateCPURuleDetail(ctx context.Context, detail *model.CPURuleDetail) (err error) {
-	logger.Infof("ENTER AlarmOperator.CreateCPURuleDetail: groupUUID=%s, ruleName=%s", detail.GroupUUID, detail.Name)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.CreateCPURuleDetail: groupUUID=%s, ruleName=%s", detail.GroupUUID, detail.Name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.CreateCPURuleDetail: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.CreateCPURuleDetail: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.CreateCPURuleDetail: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.CreateCPURuleDetail: success")
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
 	detail.UUID = uuid.NewString()
 	if err := db.Create(detail).Error; err != nil {
-		logger.Errorf("create cpu rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
+		logger.Ctx(ctx).Errorf("create cpu rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
 		return fmt.Errorf("create cpu rule detail failed: %w", err)
 	}
 	return nil
 }
 
 func (a *AlarmOperator) CreateMemoryRuleDetail(ctx context.Context, detail *model.MemoryRuleDetail) (err error) {
-	logger.Infof("ENTER AlarmOperator.CreateMemoryRuleDetail: groupUUID=%s, ruleName=%s", detail.GroupUUID, detail.Name)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.CreateMemoryRuleDetail: groupUUID=%s, ruleName=%s", detail.GroupUUID, detail.Name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.CreateMemoryRuleDetail: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.CreateMemoryRuleDetail: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.CreateMemoryRuleDetail: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.CreateMemoryRuleDetail: success")
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
 	detail.UUID = uuid.NewString()
 	if err := db.Create(detail).Error; err != nil {
-		logger.Errorf("create memory rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
+		logger.Ctx(ctx).Errorf("create memory rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
 		return fmt.Errorf("create memory rule detail failed: %w", err)
 	}
 	return nil
@@ -1425,7 +1396,7 @@ func AlertRUleClient(baseURL, certFile, keyFile string) (*PrometheusClient, erro
 		}
 
 		client = &http.Client{
-			Transport: transport,
+			Transport: tracing.HTTPTransport(transport),
 			Timeout:   10 * time.Second,
 		}
 	} else if certFile != "" && keyFile != "" {
@@ -1455,12 +1426,13 @@ func AlertRUleClient(baseURL, certFile, keyFile string) (*PrometheusClient, erro
 		}
 
 		client = &http.Client{
-			Transport: transport,
+			Transport: tracing.HTTPTransport(transport),
 			Timeout:   10 * time.Second,
 		}
 	} else {
 		client = &http.Client{
-			Timeout: 10 * time.Second,
+			Transport: tracing.HTTPTransport(nil),
+			Timeout:   10 * time.Second,
 		}
 	}
 
@@ -1470,13 +1442,13 @@ func AlertRUleClient(baseURL, certFile, keyFile string) (*PrometheusClient, erro
 	}, nil
 }
 
-func (c *PrometheusClient) sendRequest(endpoint string, req RuleFileRequest) (resp []byte, err error) {
-	logger.Infof("ENTER PrometheusClient.sendRequest: endpoint=%s, operation=%s", endpoint, req.Operation)
+func (c *PrometheusClient) sendRequest(ctx context.Context, endpoint string, req RuleFileRequest) (resp []byte, err error) {
+	logger.Ctx(ctx).Infof("ENTER PrometheusClient.sendRequest: endpoint=%s, operation=%s", endpoint, req.Operation)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT PrometheusClient.sendRequest: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT PrometheusClient.sendRequest: error=%v", err)
 		} else {
-			logger.Infof("EXIT PrometheusClient.sendRequest: success, respSize=%d", len(resp))
+			logger.Ctx(ctx).Infof("EXIT PrometheusClient.sendRequest: success, respSize=%d", len(resp))
 		}
 	}()
 	reqBody, err := json.Marshal(req)
@@ -1485,7 +1457,7 @@ func (c *PrometheusClient) sendRequest(endpoint string, req RuleFileRequest) (re
 	}
 
 	url := c.BaseURL + endpoint
-	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("Create HTTP request failed: %v", err)
 	}
@@ -1510,26 +1482,26 @@ func (c *PrometheusClient) sendRequest(endpoint string, req RuleFileRequest) (re
 	return resp, nil
 }
 
-func (c *PrometheusClient) sendRequestNoResponse(endpoint string, req RuleFileRequest) (err error) {
-	logger.Infof("ENTER PrometheusClient.sendRequestNoResponse: endpoint=%s, operation=%s", endpoint, req.Operation)
+func (c *PrometheusClient) sendRequestNoResponse(ctx context.Context, endpoint string, req RuleFileRequest) (err error) {
+	logger.Ctx(ctx).Infof("ENTER PrometheusClient.sendRequestNoResponse: endpoint=%s, operation=%s", endpoint, req.Operation)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT PrometheusClient.sendRequestNoResponse: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT PrometheusClient.sendRequestNoResponse: error=%v", err)
 		} else {
-			logger.Info("EXIT PrometheusClient.sendRequestNoResponse: success")
+			logger.Ctx(ctx).Info("EXIT PrometheusClient.sendRequestNoResponse: success")
 		}
 	}()
-	_, err = c.sendRequest(endpoint, req)
+	_, err = c.sendRequest(ctx, endpoint, req)
 	return err
 }
 
-func (c *PrometheusClient) ClientReadRuleFile(path string) (content []byte, err error) {
-	logger.Infof("ENTER PrometheusClient.ClientReadRuleFile: path=%s", path)
+func (c *PrometheusClient) ClientReadRuleFile(ctx context.Context, path string) (content []byte, err error) {
+	logger.Ctx(ctx).Infof("ENTER PrometheusClient.ClientReadRuleFile: path=%s", path)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT PrometheusClient.ClientReadRuleFile: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT PrometheusClient.ClientReadRuleFile: error=%v", err)
 		} else {
-			logger.Infof("EXIT PrometheusClient.ClientReadRuleFile: success, contentSize=%d", len(content))
+			logger.Ctx(ctx).Infof("EXIT PrometheusClient.ClientReadRuleFile: success, contentSize=%d", len(content))
 		}
 	}()
 	req := RuleFileRequest{
@@ -1538,16 +1510,16 @@ func (c *PrometheusClient) ClientReadRuleFile(path string) (content []byte, err 
 		FileUser:  "prometheus",
 	}
 
-	respBody, err := c.sendRequest("/api/v1/rules/file", req)
+	respBody, err := c.sendRequest(ctx, "/api/v1/rules/file", req)
 	if err != nil {
-		logger.Errorf("prometheus server read file failed: %v", err)
+		logger.Ctx(ctx).Errorf("prometheus server read file failed: %v", err)
 		return nil, err
 	}
 
 	// Parse response
 	var response RuleFileResponse
 	if err = json.Unmarshal(respBody, &response); err != nil {
-		logger.Errorf("parse response failed: %v", err)
+		logger.Ctx(ctx).Errorf("parse response failed: %v", err)
 		return nil, fmt.Errorf("parse response failed: %v", err)
 	}
 
@@ -1557,13 +1529,13 @@ func (c *PrometheusClient) ClientReadRuleFile(path string) (content []byte, err 
 
 	return []byte(response.Content), nil
 }
-func (c *PrometheusClient) ClientWriteRuleFile(path string, content []byte, perm os.FileMode) (err error) {
-	logger.Infof("ENTER PrometheusClient.ClientWriteRuleFile: path=%s, contentSize=%d", path, len(content))
+func (c *PrometheusClient) ClientWriteRuleFile(ctx context.Context, path string, content []byte, perm os.FileMode) (err error) {
+	logger.Ctx(ctx).Infof("ENTER PrometheusClient.ClientWriteRuleFile: path=%s, contentSize=%d", path, len(content))
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT PrometheusClient.ClientWriteRuleFile: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT PrometheusClient.ClientWriteRuleFile: error=%v", err)
 		} else {
-			logger.Info("EXIT PrometheusClient.ClientWriteRuleFile: success")
+			logger.Ctx(ctx).Info("EXIT PrometheusClient.ClientWriteRuleFile: success")
 		}
 	}()
 	req := RuleFileRequest{
@@ -1572,14 +1544,14 @@ func (c *PrometheusClient) ClientWriteRuleFile(path string, content []byte, perm
 		Content:   string(content),
 		FileUser:  "prometheus",
 	}
-	err = c.sendRequestNoResponse("/api/v1/rules/file", req)
+	err = c.sendRequestNoResponse(ctx, "/api/v1/rules/file", req)
 	if err != nil {
-		logger.Errorf("prometheus server create file failed: %v", err)
+		logger.Ctx(ctx).Errorf("prometheus server create file failed: %v", err)
 	}
 	return err
 }
 
-func (c *PrometheusClient) ClientCreateSymlink(target, link string) error {
+func (c *PrometheusClient) ClientCreateSymlink(ctx context.Context, target, link string) error {
 	req := RuleFileRequest{
 		Operation: "symlink",
 		FilePath:  target,
@@ -1587,34 +1559,34 @@ func (c *PrometheusClient) ClientCreateSymlink(target, link string) error {
 		FileUser:  "prometheus",
 	}
 
-	err := c.sendRequestNoResponse("/api/v1/rules/symlink", req)
+	err := c.sendRequestNoResponse(ctx, "/api/v1/rules/symlink", req)
 	if err != nil {
-		logger.Errorf("prometheus server create link failed: %v", err)
+		logger.Ctx(ctx).Errorf("prometheus server create link failed: %v", err)
 	}
 	return err
 }
 
-func (c *PrometheusClient) ClientSetFileOwner(path string) error {
+func (c *PrometheusClient) ClientSetFileOwner(ctx context.Context, path string) error {
 	req := RuleFileRequest{
 		Operation: "chown",
 		FilePath:  path,
 		FileUser:  "prometheus",
 	}
 
-	err := c.sendRequestNoResponse("/api/v1/rules/chown", req)
+	err := c.sendRequestNoResponse(ctx, "/api/v1/rules/chown", req)
 	if err != nil {
-		logger.Errorf("prometheus server create link failed: %v", err)
+		logger.Ctx(ctx).Errorf("prometheus server create link failed: %v", err)
 	}
 	return err
 }
 
-func (c *PrometheusClient) ClientSetSymlinkOwner(path string) (err error) {
-	logger.Infof("ENTER PrometheusClient.ClientSetSymlinkOwner: path=%s", path)
+func (c *PrometheusClient) ClientSetSymlinkOwner(ctx context.Context, path string) (err error) {
+	logger.Ctx(ctx).Infof("ENTER PrometheusClient.ClientSetSymlinkOwner: path=%s", path)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT PrometheusClient.ClientSetSymlinkOwner: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT PrometheusClient.ClientSetSymlinkOwner: error=%v", err)
 		} else {
-			logger.Info("EXIT PrometheusClient.ClientSetSymlinkOwner: success")
+			logger.Ctx(ctx).Info("EXIT PrometheusClient.ClientSetSymlinkOwner: success")
 		}
 	}()
 	req := RuleFileRequest{
@@ -1623,20 +1595,20 @@ func (c *PrometheusClient) ClientSetSymlinkOwner(path string) (err error) {
 		FileUser:  "prometheus",
 	}
 
-	err = c.sendRequestNoResponse("/api/v1/rules/chown", req)
+	err = c.sendRequestNoResponse(ctx, "/api/v1/rules/chown", req)
 	if err != nil {
-		logger.Errorf("prometheus server set link owner failed: %v", err)
+		logger.Ctx(ctx).Errorf("prometheus server set link owner failed: %v", err)
 	}
 	return err
 }
 
-func (c *PrometheusClient) ClientRemoveRuleFile(path string) (err error) {
-	logger.Infof("ENTER PrometheusClient.ClientRemoveRuleFile: path=%s", path)
+func (c *PrometheusClient) ClientRemoveRuleFile(ctx context.Context, path string) (err error) {
+	logger.Ctx(ctx).Infof("ENTER PrometheusClient.ClientRemoveRuleFile: path=%s", path)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT PrometheusClient.ClientRemoveRuleFile: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT PrometheusClient.ClientRemoveRuleFile: error=%v", err)
 		} else {
-			logger.Info("EXIT PrometheusClient.ClientRemoveRuleFile: success")
+			logger.Ctx(ctx).Info("EXIT PrometheusClient.ClientRemoveRuleFile: success")
 		}
 	}()
 	req := RuleFileRequest{
@@ -1644,29 +1616,29 @@ func (c *PrometheusClient) ClientRemoveRuleFile(path string) (err error) {
 		FilePath:  path,
 	}
 
-	err = c.sendRequestNoResponse("/api/v1/rules/file", req)
+	err = c.sendRequestNoResponse(ctx, "/api/v1/rules/file", req)
 	if err != nil {
-		logger.Errorf("prometheus server remove file failed: %v", err)
+		logger.Ctx(ctx).Errorf("prometheus server remove file failed: %v", err)
 	}
 	return err
 }
 
-func (c *PrometheusClient) ClientCheckFileExists(path string) (exists bool, err error) {
-	logger.Infof("ENTER PrometheusClient.ClientCheckFileExists: path=%s", path)
+func (c *PrometheusClient) ClientCheckFileExists(ctx context.Context, path string) (exists bool, err error) {
+	logger.Ctx(ctx).Infof("ENTER PrometheusClient.ClientCheckFileExists: path=%s", path)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT PrometheusClient.ClientCheckFileExists: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT PrometheusClient.ClientCheckFileExists: error=%v", err)
 		} else {
-			logger.Infof("EXIT PrometheusClient.ClientCheckFileExists: exists=%v", exists)
+			logger.Ctx(ctx).Infof("EXIT PrometheusClient.ClientCheckFileExists: exists=%v", exists)
 		}
 	}()
 	req := RuleFileRequest{
 		Operation: "check",
 		FilePath:  path,
 	}
-	respBody, err := c.sendRequest("/api/v1/rules/file", req)
+	respBody, err := c.sendRequest(ctx, "/api/v1/rules/file", req)
 	if err != nil {
-		logger.Errorf("server check file failed: %v", err)
+		logger.Ctx(ctx).Errorf("server check file failed: %v", err)
 		return false, err
 	}
 	var resp RuleFileResponse
@@ -1676,13 +1648,13 @@ func (c *PrometheusClient) ClientCheckFileExists(path string) (exists bool, err 
 	return resp.Exists, nil
 }
 
-func (c *PrometheusClient) ClientRemoveSymlink(linkPath string) (err error) {
-	logger.Infof("ENTER PrometheusClient.ClientRemoveSymlink: linkPath=%s", linkPath)
+func (c *PrometheusClient) ClientRemoveSymlink(ctx context.Context, linkPath string) (err error) {
+	logger.Ctx(ctx).Infof("ENTER PrometheusClient.ClientRemoveSymlink: linkPath=%s", linkPath)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT PrometheusClient.ClientRemoveSymlink: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT PrometheusClient.ClientRemoveSymlink: error=%v", err)
 		} else {
-			logger.Info("EXIT PrometheusClient.ClientRemoveSymlink: success")
+			logger.Ctx(ctx).Info("EXIT PrometheusClient.ClientRemoveSymlink: success")
 		}
 	}()
 	req := RuleFileRequest{
@@ -1690,20 +1662,20 @@ func (c *PrometheusClient) ClientRemoveSymlink(linkPath string) (err error) {
 		FilePath:  linkPath,
 	}
 
-	err = c.sendRequestNoResponse("/api/v1/rules/file", req)
+	err = c.sendRequestNoResponse(ctx, "/api/v1/rules/file", req)
 	if err != nil {
-		logger.Errorf("prometheus server remove symlink failed: %v", err)
+		logger.Ctx(ctx).Errorf("prometheus server remove symlink failed: %v", err)
 	}
 	return err
 }
 
-func (c *PrometheusClient) ClientGetUser(username string) (int, int, error) {
+func (c *PrometheusClient) ClientGetUser(ctx context.Context, username string) (int, int, error) {
 	req := RuleFileRequest{
 		Operation: "getuser",
 		FileUser:  username,
 	}
 
-	resp, err := c.sendRequest("/api/v1/rules/user", req)
+	resp, err := c.sendRequest(ctx, "/api/v1/rules/user", req)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1726,22 +1698,22 @@ func (c *PrometheusClient) ClientGetUser(username string) (int, int, error) {
 	return response.UID, response.GID, nil
 }
 
-func (c *PrometheusClient) ClientReloadPrometheus() error {
-	logger.Info("ENTER PrometheusClient.ClientReloadPrometheus")
+func (c *PrometheusClient) ClientReloadPrometheus(ctx context.Context) error {
+	logger.Ctx(ctx).Info("ENTER PrometheusClient.ClientReloadPrometheus")
 	defer func() {
-		logger.Info("EXIT PrometheusClient.ClientReloadPrometheus")
+		logger.Ctx(ctx).Info("EXIT PrometheusClient.ClientReloadPrometheus")
 	}()
 	req := RuleFileRequest{
 		Operation: "reload",
 	}
 
-	return c.sendRequestNoResponse("/api/v1/rules/reload", req)
+	return c.sendRequestNoResponse(ctx, "/api/v1/rules/reload", req)
 }
 
-func GetUser(username string) (uid, gid int, err error) {
+func GetUser(ctx context.Context, username string) (uid, gid int, err error) {
 	if isRemotePrometheus {
 		// Get user ID from remote server
-		uid, gid, err = prometheusClient.ClientGetUser("prometheus")
+		uid, gid, err = prometheusClient.ClientGetUser(ctx, "prometheus")
 		if err != nil {
 			return 0, 0, fmt.Errorf("failed to get remote group ID for %s: %v", username, err)
 		}
@@ -1759,163 +1731,163 @@ func GetUser(username string) (uid, gid int, err error) {
 	}
 }
 
-func ReadFile(path string) ([]byte, error) {
-	logger.Infof("ENTER ReadFile: path=%s, isRemotePrometheus=%t", path, isRemotePrometheus)
+func ReadFile(ctx context.Context, path string) ([]byte, error) {
+	logger.Ctx(ctx).Infof("ENTER ReadFile: path=%s, isRemotePrometheus=%t", path, isRemotePrometheus)
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			logger.Errorf("The Prometheus client has not been initialized.")
+			logger.Ctx(ctx).Errorf("The Prometheus client has not been initialized.")
 			return nil, fmt.Errorf("The Prometheus client has not been initialized.")
 		}
-		return prometheusClient.ClientReadRuleFile(path)
+		return prometheusClient.ClientReadRuleFile(ctx, path)
 	} else {
 		return os.ReadFile(path)
 	}
 }
 
-func WriteFile(path string, content []byte, perm os.FileMode) error {
-	logger.Infof("ENTER WriteFile: path=%s, isRemotePrometheus=%t", path, isRemotePrometheus)
-	defer logger.Info("EXIT WriteFile")
+func WriteFile(ctx context.Context, path string, content []byte, perm os.FileMode) error {
+	logger.Ctx(ctx).Infof("ENTER WriteFile: path=%s, isRemotePrometheus=%t", path, isRemotePrometheus)
+	defer logger.Ctx(ctx).Info("EXIT WriteFile")
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			logger.Errorf("The Prometheus client has not been initialized.")
+			logger.Ctx(ctx).Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
-		return prometheusClient.ClientWriteRuleFile(path, content, perm)
+		return prometheusClient.ClientWriteRuleFile(ctx, path, content, perm)
 	} else {
 		if err := os.WriteFile(path, content, perm); err != nil {
-			logger.Errorf("Failed to write file locally: path=%s, error=%v", path, err)
+			logger.Ctx(ctx).Errorf("Failed to write file locally: path=%s, error=%v", path, err)
 			return err
 		}
-		uid, gid, err := GetUser("prometheus")
+		uid, gid, err := GetUser(ctx, "prometheus")
 		if err != nil {
-			logger.Errorf("Failed to get prometheus user for chown: %v", err)
+			logger.Ctx(ctx).Errorf("Failed to get prometheus user for chown: %v", err)
 			return err
 		}
-		return SetFileOwner(path, uid, gid)
+		return SetFileOwner(ctx, path, uid, gid)
 	}
 }
 
-func SetFileOwner(path string, uid, gid int) error {
-	logger.Infof("ENTER SetFileOwner: path=%s, uid=%d, gid=%d, isRemotePrometheus=%t", path, uid, gid, isRemotePrometheus)
-	defer logger.Info("EXIT SetFileOwner")
+func SetFileOwner(ctx context.Context, path string, uid, gid int) error {
+	logger.Ctx(ctx).Infof("ENTER SetFileOwner: path=%s, uid=%d, gid=%d, isRemotePrometheus=%t", path, uid, gid, isRemotePrometheus)
+	defer logger.Ctx(ctx).Info("EXIT SetFileOwner")
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			logger.Errorf("The Prometheus client has not been initialized.")
+			logger.Ctx(ctx).Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 
-		return prometheusClient.ClientSetFileOwner(path)
+		return prometheusClient.ClientSetFileOwner(ctx, path)
 	} else {
 		return os.Chown(path, uid, gid)
 	}
 }
 
-func SetSymlinkOwner(path string, uid, gid int) error {
-	logger.Infof("ENTER SetSymlinkOwner: path=%s, uid=%d, gid=%d, isRemotePrometheus=%t", path, uid, gid, isRemotePrometheus)
-	defer logger.Info("EXIT SetSymlinkOwner")
+func SetSymlinkOwner(ctx context.Context, path string, uid, gid int) error {
+	logger.Ctx(ctx).Infof("ENTER SetSymlinkOwner: path=%s, uid=%d, gid=%d, isRemotePrometheus=%t", path, uid, gid, isRemotePrometheus)
+	defer logger.Ctx(ctx).Info("EXIT SetSymlinkOwner")
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			logger.Errorf("The Prometheus client has not been initialized.")
+			logger.Ctx(ctx).Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 
-		return prometheusClient.ClientSetSymlinkOwner(path)
+		return prometheusClient.ClientSetSymlinkOwner(ctx, path)
 	} else {
 		// GetUser is called inside this block, so uid, gid are not directly used from params
 		// This is a potential bug if the intent was to use the passed uid, gid.
-		// However, the original code also calls GetUser("prometheus") inside the else block.
+		// However, the original code also calls GetUser(ctx, "prometheus") inside the else block.
 		// Keeping the original logic for now, but logging the potential discrepancy.
-		logger.Warningf("SetSymlinkOwner: Ignoring passed uid, gid (%d, %d) and calling GetUser('prometheus') locally.", uid, gid)
-		localUid, localGid, err := GetUser("prometheus")
+		logger.Ctx(ctx).Warningf("SetSymlinkOwner: Ignoring passed uid, gid (%d, %d) and calling GetUser(ctx, 'prometheus') locally.", uid, gid)
+		localUid, localGid, err := GetUser(ctx, "prometheus")
 		if err != nil {
-			logger.Errorf("Prometheus server set link owner failed with %s", err)
+			logger.Ctx(ctx).Errorf("Prometheus server set link owner failed with %s", err)
 			return err
 		}
 		return os.Lchown(path, localUid, localGid)
 	}
 }
 
-func CreateSymlink(target, link string) error {
-	logger.Infof("ENTER CreateSymlink: target=%s, link=%s, isRemotePrometheus=%t", target, link, isRemotePrometheus)
-	defer logger.Info("EXIT CreateSymlink")
+func CreateSymlink(ctx context.Context, target, link string) error {
+	logger.Ctx(ctx).Infof("ENTER CreateSymlink: target=%s, link=%s, isRemotePrometheus=%t", target, link, isRemotePrometheus)
+	defer logger.Ctx(ctx).Info("EXIT CreateSymlink")
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			logger.Errorf("The Prometheus client has not been initialized.")
+			logger.Ctx(ctx).Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 
-		return prometheusClient.ClientCreateSymlink(target, link)
+		return prometheusClient.ClientCreateSymlink(ctx, target, link)
 	} else {
 		if _, err := os.Lstat(link); err == nil {
-			logger.Infof("Removing existing symlink: %s", link)
+			logger.Ctx(ctx).Infof("Removing existing symlink: %s", link)
 			os.Remove(link)
 		}
 		if err := os.Symlink(target, link); err != nil {
-			logger.Errorf("Failed to create symlink locally: target=%s, link=%s, error=%v", target, link, err)
+			logger.Ctx(ctx).Errorf("Failed to create symlink locally: target=%s, link=%s, error=%v", target, link, err)
 			return err
 		}
-		uid, gid, err := GetUser("prometheus")
+		uid, gid, err := GetUser(ctx, "prometheus")
 		if err != nil {
-			logger.Errorf("Failed to get prometheus user for symlink chown: %v", err)
+			logger.Ctx(ctx).Errorf("Failed to get prometheus user for symlink chown: %v", err)
 			return err
 		}
-		return SetSymlinkOwner(link, uid, gid)
+		return SetSymlinkOwner(ctx, link, uid, gid)
 
 	}
 }
 
-func RemoveSymlink(link string) error {
-	logger.Infof("ENTER RemoveSymlink: link=%s, isRemotePrometheus=%t", link, isRemotePrometheus)
-	defer logger.Info("EXIT RemoveSymlink")
+func RemoveSymlink(ctx context.Context, link string) error {
+	logger.Ctx(ctx).Infof("ENTER RemoveSymlink: link=%s, isRemotePrometheus=%t", link, isRemotePrometheus)
+	defer logger.Ctx(ctx).Info("EXIT RemoveSymlink")
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			logger.Errorf("The Prometheus client has not been initialized.")
+			logger.Ctx(ctx).Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 
-		return prometheusClient.ClientRemoveSymlink(link)
+		return prometheusClient.ClientRemoveSymlink(ctx, link)
 	} else {
 		if _, err := os.Lstat(link); os.IsNotExist(err) {
-			logger.Infof("Symlink does not exist, no need to remove: %s", link)
+			logger.Ctx(ctx).Infof("Symlink does not exist, no need to remove: %s", link)
 			return nil
 		}
 		if err := os.Remove(link); err != nil {
-			logger.Errorf("Failed to remove symlink locally: link=%s, error=%v", link, err)
+			logger.Ctx(ctx).Errorf("Failed to remove symlink locally: link=%s, error=%v", link, err)
 			return err
 		}
 		return nil
 	}
 }
 
-func ReloadPrometheus() (err error) {
-	logger.Info("ENTER ReloadPrometheus")
+func ReloadPrometheus(ctx context.Context) (err error) {
+	logger.Ctx(ctx).Info("ENTER ReloadPrometheus")
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ReloadPrometheus: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ReloadPrometheus: error=%v", err)
 		} else {
-			logger.Info("EXIT ReloadPrometheus: success")
+			logger.Ctx(ctx).Info("EXIT ReloadPrometheus: success")
 		}
 	}()
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			logger.Errorf("The Prometheus client has not been initialized.")
+			logger.Ctx(ctx).Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 
-		return prometheusClient.ClientReloadPrometheus()
+		return prometheusClient.ClientReloadPrometheus(ctx)
 	} else {
-		return ReloadPrometheusViaHTTP()
+		return ReloadPrometheusViaHTTP(ctx)
 	}
 }
 
 // ReloadPrometheusViaHTTP reloads Prometheus configuration via HTTP API (requires --web.enable-lifecycle)
-func ReloadPrometheusViaHTTP() (err error) {
-	logger.Info("ENTER ReloadPrometheusViaHTTP")
+func ReloadPrometheusViaHTTP(ctx context.Context) (err error) {
+	logger.Ctx(ctx).Info("ENTER ReloadPrometheusViaHTTP")
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ReloadPrometheusViaHTTP: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ReloadPrometheusViaHTTP: error=%v", err)
 		} else {
-			logger.Info("EXIT ReloadPrometheusViaHTTP: success")
+			logger.Ctx(ctx).Info("EXIT ReloadPrometheusViaHTTP: success")
 		}
 	}()
 	var reloadURL string
@@ -1926,23 +1898,28 @@ func ReloadPrometheusViaHTTP() (err error) {
 		pIP := GetPrometheusIP()
 		pPort := GetPrometheusPort()
 		reloadURL = fmt.Sprintf("http://%s:%d/-/reload", pIP, pPort)
-		logger.Infof("Reloading remote Prometheus via HTTP: %s", reloadURL)
+		logger.Ctx(ctx).Infof("Reloading remote Prometheus via HTTP: %s", reloadURL)
 	} else {
 		// Local scenario: use localhost
 		reloadURL = "http://localhost:9090/-/reload"
-		logger.Infof("Reloading local Prometheus via HTTP: %s", reloadURL)
+		logger.Ctx(ctx).Infof("Reloading local Prometheus via HTTP: %s", reloadURL)
 	}
 
 	// Step 2: Create HTTP client with timeout
 	// Use a longer timeout to handle slow Prometheus reloads on large deployments
 	client := &http.Client{
-		Timeout: 2 * time.Minute,
+		Transport: tracing.HTTPTransport(nil),
+		Timeout:   2 * time.Minute,
 	}
 
 	// Step 3: Send POST request
-	resp, err := client.Post(reloadURL, "", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reloadURL, nil)
 	if err != nil {
-		logger.Errorf("Failed to send reload request to Prometheus: %v", err)
+		return fmt.Errorf("failed to create reload request: %v", err)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Failed to send reload request to Prometheus: %v", err)
 		return fmt.Errorf("failed to reload Prometheus via HTTP: %v", err)
 	}
 	defer resp.Body.Close()
@@ -1951,7 +1928,7 @@ func ReloadPrometheusViaHTTP() (err error) {
 	if resp.StatusCode != 200 {
 		// Read response body for detailed error information
 		body, _ := io.ReadAll(resp.Body)
-		logger.Errorf("Prometheus reload failed with status %d: %s", resp.StatusCode, string(body))
+		logger.Ctx(ctx).Errorf("Prometheus reload failed with status %d: %s", resp.StatusCode, string(body))
 
 		// Handle 403 error specifically (lifecycle API not enabled)
 		if resp.StatusCode == 403 {
@@ -1963,42 +1940,42 @@ func ReloadPrometheusViaHTTP() (err error) {
 
 	// Step 5: Success log
 	if isRemotePrometheus {
-		logger.Infof("Successfully reloaded remote Prometheus configuration via HTTP API")
+		logger.Ctx(ctx).Infof("Successfully reloaded remote Prometheus configuration via HTTP API")
 	} else {
-		logger.Infof("Successfully reloaded local Prometheus configuration via HTTP API")
+		logger.Ctx(ctx).Infof("Successfully reloaded local Prometheus configuration via HTTP API")
 	}
 
 	return nil
 }
 
-func RemoveFile(path string) error {
-	logger.Infof("ENTER RemoveFile: path=%s, isRemotePrometheus=%t", path, isRemotePrometheus)
-	defer logger.Info("EXIT RemoveFile")
+func RemoveFile(ctx context.Context, path string) error {
+	logger.Ctx(ctx).Infof("ENTER RemoveFile: path=%s, isRemotePrometheus=%t", path, isRemotePrometheus)
+	defer logger.Ctx(ctx).Info("EXIT RemoveFile")
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			logger.Errorf("The Prometheus client has not been initialized.")
+			logger.Ctx(ctx).Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 
-		return prometheusClient.ClientRemoveRuleFile(path)
+		return prometheusClient.ClientRemoveRuleFile(ctx, path)
 	} else {
 		if _, err := os.Stat(path); os.IsNotExist(err) {
-			logger.Infof("File does not exist, no need to remove: %s", path)
+			logger.Ctx(ctx).Infof("File does not exist, no need to remove: %s", path)
 			return nil
 		}
 		if err := os.Remove(path); err != nil {
-			logger.Errorf("Failed to remove file locally: path=%s, error=%v", path, err)
+			logger.Ctx(ctx).Errorf("Failed to remove file locally: path=%s, error=%v", path, err)
 			return err
 		}
 		return nil
 	}
 }
 
-func CheckFileExists(path string) (bool, error) {
-	logger.Infof("ENTER CheckFileExists: path=%s, isRemotePrometheus=%t", path, isRemotePrometheus)
-	defer logger.Info("EXIT CheckFileExists")
+func CheckFileExists(ctx context.Context, path string) (bool, error) {
+	logger.Ctx(ctx).Infof("ENTER CheckFileExists: path=%s, isRemotePrometheus=%t", path, isRemotePrometheus)
+	defer logger.Ctx(ctx).Info("EXIT CheckFileExists")
 	if isRemotePrometheus {
-		return prometheusClient.ClientCheckFileExists(path)
+		return prometheusClient.ClientCheckFileExists(ctx, path)
 	} else {
 		_, err := os.Stat(path)
 		if os.IsNotExist(err) {
@@ -2008,25 +1985,24 @@ func CheckFileExists(path string) (bool, error) {
 	}
 }
 
-
 func (a *AlarmOperator) GetNodeAlarmRules(ctx context.Context, uuid string) (rules []model.NodeAlarmRule, err error) {
-	logger.Infof("ENTER AlarmOperator.GetNodeAlarmRules: uuid=%s", uuid)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetNodeAlarmRules: uuid=%s", uuid)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetNodeAlarmRules: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetNodeAlarmRules: error=%v", err)
 		} else {
-			logger.Infof("EXIT AlarmOperator.GetNodeAlarmRules: found %d rules", len(rules))
+			logger.Ctx(ctx).Infof("EXIT AlarmOperator.GetNodeAlarmRules: found %d rules", len(rules))
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
 	if uuid != "" {
 		if err := db.Where("uuid = ?", uuid).Find(&rules).Error; err != nil {
-			logger.Errorf("query db node alarm rules: uuid=%s, error=%v", uuid, err)
+			logger.Ctx(ctx).Errorf("query db node alarm rules: uuid=%s, error=%v", uuid, err)
 			return nil, fmt.Errorf("query db node alarm rules: %w", err)
 		}
 	} else {
 		if err := db.Find(&rules).Error; err != nil {
-			logger.Errorf("query all node alarm rules: error=%v", err)
+			logger.Ctx(ctx).Errorf("query all node alarm rules: error=%v", err)
 			return nil, fmt.Errorf("query all node alarm rules: %w", err)
 		}
 	}
@@ -2035,18 +2011,18 @@ func (a *AlarmOperator) GetNodeAlarmRules(ctx context.Context, uuid string) (rul
 
 // CreateNodeAlarmRules creates a new node alarm rule
 func (a *AlarmOperator) CreateNodeAlarmRules(ctx context.Context, rule *model.NodeAlarmRule) (err error) {
-	logger.Infof("ENTER AlarmOperator.CreateNodeAlarmRules: ruleType=%s, name=%s", rule.RuleType, rule.Name)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.CreateNodeAlarmRules: ruleType=%s, name=%s", rule.RuleType, rule.Name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.CreateNodeAlarmRules: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.CreateNodeAlarmRules: error=%v", err)
 		} else {
-			logger.Infof("EXIT AlarmOperator.CreateNodeAlarmRules: uuid=%s", rule.UUID)
+			logger.Ctx(ctx).Infof("EXIT AlarmOperator.CreateNodeAlarmRules: uuid=%s", rule.UUID)
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
 	rule.UUID = uuid.NewString()
 	if err := db.Create(rule).Error; err != nil {
-		logger.Errorf("Failed to create node alarm rule: ruleType=%s, name=%s, error=%v",
+		logger.Ctx(ctx).Errorf("Failed to create node alarm rule: ruleType=%s, name=%s, error=%v",
 			rule.RuleType,
 			rule.Name,
 			err)
@@ -2055,19 +2031,34 @@ func (a *AlarmOperator) CreateNodeAlarmRules(ctx context.Context, rule *model.No
 	return nil
 }
 
+// UpdateNodeAlarmRules writes the changed columns. Map, not struct: a struct would skip
+// zero values and silently drop `enabled = false`.
+func (a *AlarmOperator) UpdateNodeAlarmRules(ctx context.Context, uuID string, updates map[string]interface{}) (err error) {
+	ctx, db := common.GetContextDB(ctx)
+	result := db.Model(&model.NodeAlarmRule{}).Where("uuid = ?", uuID).Updates(updates)
+	if result.Error != nil {
+		logger.Ctx(ctx).Errorf("Failed to update node alarm rule: uuid=%s, error=%v", uuID, result.Error)
+		return fmt.Errorf("failed to update node alarm rule: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("node alarm rule not found: %s", uuID)
+	}
+	return nil
+}
+
 func (a *AlarmOperator) DeleteNodeAlarmRules(ctx context.Context, uuid string) (err error) {
-	logger.Infof("ENTER AlarmOperator.DeleteNodeAlarmRules: uuid=%s", uuid)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.DeleteNodeAlarmRules: uuid=%s", uuid)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.DeleteNodeAlarmRules: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.DeleteNodeAlarmRules: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.DeleteNodeAlarmRules: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.DeleteNodeAlarmRules: success")
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
 	result := db.Where("uuid = ?", uuid).Delete(&model.NodeAlarmRule{})
 	if result.Error != nil {
-		logger.Errorf("Failed to delete node alarm rule: uuid=%s, error=%v", uuid, result.Error)
+		logger.Ctx(ctx).Errorf("Failed to delete node alarm rule: uuid=%s, error=%v", uuid, result.Error)
 		return fmt.Errorf("failed to delete node alarm rule: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
@@ -2077,12 +2068,12 @@ func (a *AlarmOperator) DeleteNodeAlarmRules(ctx context.Context, uuid string) (
 }
 
 func (a *AlarmOperator) UpdateNodeAlarmRule(ctx context.Context, uuid string, updates map[string]interface{}) (err error) {
-	logger.Infof("ENTER AlarmOperator.UpdateNodeAlarmRule: uuid=%s, updates=%v", uuid, updates)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.UpdateNodeAlarmRule: uuid=%s, updates=%v", uuid, updates)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.UpdateNodeAlarmRule: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.UpdateNodeAlarmRule: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.UpdateNodeAlarmRule: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.UpdateNodeAlarmRule: success")
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
@@ -2097,12 +2088,12 @@ func (a *AlarmOperator) UpdateNodeAlarmRule(ctx context.Context, uuid string, up
 }
 
 func (a *AlarmOperator) DeleteNodeAlarmRuleByUUID(ctx context.Context, uuid string) (err error) {
-	logger.Infof("ENTER AlarmOperator.DeleteNodeAlarmRuleByUUID: uuid=%s", uuid)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.DeleteNodeAlarmRuleByUUID: uuid=%s", uuid)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.DeleteNodeAlarmRuleByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.DeleteNodeAlarmRuleByUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.DeleteNodeAlarmRuleByUUID: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.DeleteNodeAlarmRuleByUUID: success")
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
@@ -2110,12 +2101,12 @@ func (a *AlarmOperator) DeleteNodeAlarmRuleByUUID(ctx context.Context, uuid stri
 }
 
 func (a *AlarmOperator) UpdateNodeAlarmRuleByUUID(ctx context.Context, uuid string, updates map[string]interface{}) (err error) {
-	logger.Infof("ENTER AlarmOperator.UpdateNodeAlarmRuleByUUID: uuid=%s, updates=%v", uuid, updates)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.UpdateNodeAlarmRuleByUUID: uuid=%s, updates=%v", uuid, updates)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.UpdateNodeAlarmRuleByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.UpdateNodeAlarmRuleByUUID: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.UpdateNodeAlarmRuleByUUID: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.UpdateNodeAlarmRuleByUUID: success")
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
@@ -2124,69 +2115,90 @@ func (a *AlarmOperator) UpdateNodeAlarmRuleByUUID(ctx context.Context, uuid stri
 
 // GetNodeAlarmRulesByType retrieves node alarm rules by rule type
 func (a *AlarmOperator) GetNodeAlarmRulesByType(ctx context.Context, ruleType string) (rules []model.NodeAlarmRule, err error) {
-	logger.Infof("ENTER AlarmOperator.GetNodeAlarmRulesByType: ruleType=%s", ruleType)
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.GetNodeAlarmRulesByType: ruleType=%s", ruleType)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.GetNodeAlarmRulesByType: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.GetNodeAlarmRulesByType: error=%v", err)
 		} else {
-			logger.Infof("EXIT AlarmOperator.GetNodeAlarmRulesByType: found %d rules", len(rules))
+			logger.Ctx(ctx).Infof("EXIT AlarmOperator.GetNodeAlarmRulesByType: found %d rules", len(rules))
 		}
 	}()
 	ctx, db := common.GetContextDB(ctx)
 
 	if err := db.Where("rule_type = ?", ruleType).Find(&rules).Error; err != nil {
-		logger.Errorf("Failed to get node alarm rules by type: ruleType=%s, error=%v", ruleType, err)
+		logger.Ctx(ctx).Errorf("Failed to get node alarm rules by type: ruleType=%s, error=%v", ruleType, err)
 		return nil, fmt.Errorf("failed to get node alarm rules by type: %w", err)
 	}
 
 	return rules, nil
 }
 
-func ProcessTemplate(templateFile, outputFile string, data map[string]interface{}) (err error) {
-	logger.Infof("ENTER ProcessTemplate: templateFile=%s, outputFile=%s", templateFile, outputFile)
+func ProcessTemplate(ctx context.Context, templateFile, outputFile string, data map[string]interface{}) (err error) {
+	logger.Ctx(ctx).Infof("ENTER ProcessTemplate: templateFile=%s, outputFile=%s", templateFile, outputFile)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT ProcessTemplate: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT ProcessTemplate: error=%v", err)
 		} else {
-			logger.Info("EXIT ProcessTemplate: success")
+			logger.Ctx(ctx).Info("EXIT ProcessTemplate: success")
 		}
 	}()
+	renderedContent, err := renderRuleTemplate(ctx, templateFile, data)
+	if err != nil {
+		return err
+	}
+	return writeRuleFile(ctx, outputFile, renderedContent)
+}
 
-	templatePath := filepath.Join(RuleTemplate, templateFile)
+// renderRuleTemplate reads a rule template and renders it with data, without writing anything.
+func renderRuleTemplate(ctx context.Context, templateFile string, data map[string]interface{}) (string, error) {
+	templatePath := filepath.Join(RuleTemplateDir, templateFile)
+	templateContent, err := ReadFile(ctx, templatePath)
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Failed to read template file: path=%s, error=%v", templatePath, err)
+		return "", fmt.Errorf("failed to read template file %s: %w", templatePath, err)
+	}
+	logger.Ctx(ctx).Debugf("renderRuleTemplate templateContent: %s,  templatePath: %s", templateContent, templatePath)
+	return renderRuleContent(ctx, templateFile, string(templateContent), data)
+}
 
+// renderRuleContent renders the content of templateFile. A template variable the data does not fill is the
+// caller's mistake (a config key that does not match the template) and is reported as an AlarmRuleInputError.
+func renderRuleContent(ctx context.Context, templateFile, templateContent string, data map[string]interface{}) (string, error) {
+	var renderedContent string
+	var err error
+	if strings.Contains(templateContent, "name: compute-network-resources") {
+		renderedContent, err = renderNetworkResourcesTemplate(ctx, templateContent, data)
+	} else {
+		renderedContent, err = renderTemplateContent(ctx, templateContent, data)
+	}
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Failed to render template: template=%s, error=%v", templateFile, err)
+		return "", fmt.Errorf("failed to render template %s: %w", templateFile, err)
+	}
+	// A config key that does not match the template leaves the placeholder as-is
+	// (only `{{ x | default(y) }}` forms fall back). The literal `{{ x }}` then lands in
+	// the rule file and Prometheus refuses to load the *whole* rule set, rolling back to
+	// the previous one — one bad rule silently freezes every alarm rule. Fail here instead.
+	if missing := unresolvedPlaceholders(renderedContent); len(missing) > 0 {
+		logger.Ctx(ctx).Errorf("Template %s has unresolved variables: %v", templateFile, missing)
+		return "", alarmRuleInputErrorf("config is missing values for %s: %s", templateFile, strings.Join(missing, ", "))
+	}
+	return renderedContent, nil
+}
+
+// writeRuleFile writes a rendered rule file into the general rules directory and enables it.
+func writeRuleFile(ctx context.Context, outputFile, renderedContent string) error {
 	// All rule files are now stored in RulesGeneral directory (simplified from previous owner-based separation)
 	outputPath := filepath.Join(RulesGeneral, outputFile)
-
-	// Read template content
-	templateContent, err := ReadFile(templatePath)
-	if err != nil {
-		logger.Errorf("Failed to read template file: path=%s, error=%v", templatePath, err)
-		return fmt.Errorf("failed to read template file %s: %w", templatePath, err)
-	}
-	logger.Debugf("ProcessTemplate templateContent: %s,  templatePath: %s", templateContent, templatePath)
-
-	var renderedContent string
-	if strings.Contains(string(templateContent), "name: compute-network-resources") {
-		renderedContent, err = renderNetworkResourcesTemplate(data)
-	} else {
-		renderedContent, err = renderTemplateContent(string(templateContent), data)
-	}
-	logger.Debugf("ProcessTemplate templateContent: %s,  err: %s", templateContent, err)
-	if err != nil {
-		logger.Errorf("Failed to render template: template=%s, error=%v", templateFile, err)
-		return fmt.Errorf("failed to render template %s: %w", templateFile, err)
-	}
-	logger.Debugf("ProcessTemplate templateContent: %s,  outputPath: %s", templateContent, outputPath)
-	// Write rendered content to output file
-	if err := WriteFile(outputPath, []byte(renderedContent), 0640); err != nil {
-		logger.Errorf("Failed to write output file: path=%s, error=%v", outputPath, err)
+	if err := WriteFile(ctx, outputPath, []byte(renderedContent), 0640); err != nil {
+		logger.Ctx(ctx).Errorf("Failed to write output file: path=%s, error=%v", outputPath, err)
 		return fmt.Errorf("failed to write output file %s: %w", outputPath, err)
 	}
 
 	// Create symlink to RulesEnabled directory
 	enabledPath := filepath.Join(RulesEnabled, filepath.Base(outputPath))
-	if err := CreateSymlink(outputPath, enabledPath); err != nil {
-		logger.Errorf("Failed to create symlink: source=%s, target=%s, error=%v",
+	if err := CreateSymlink(ctx, outputPath, enabledPath); err != nil {
+		logger.Ctx(ctx).Errorf("Failed to create symlink: source=%s, target=%s, error=%v",
 			outputPath, enabledPath, err)
 		return fmt.Errorf("failed to create symlink: %w", err)
 	}
@@ -2194,23 +2206,63 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 	return nil
 }
 
-func renderNetworkResourcesTemplate(data map[string]interface{}) (renderedContent string, err error) {
-	logger.Info("ENTER renderNetworkResourcesTemplate")
+// AlarmRuleInputError marks an alarm rule rejected because of what the caller sent (an unknown rule type,
+// config keys the rule's templates do not use, values they need but did not get), as opposed to a failure on
+// this side (a template file missing, a rule file that cannot be written, the database). Handlers answer the
+// first with 400 and the second with 500.
+type AlarmRuleInputError struct {
+	Err error
+}
+
+func (e *AlarmRuleInputError) Error() string { return e.Err.Error() }
+func (e *AlarmRuleInputError) Unwrap() error { return e.Err }
+
+func alarmRuleInputErrorf(format string, args ...interface{}) error {
+	return &AlarmRuleInputError{Err: fmt.Errorf(format, args...)}
+}
+
+// IsAlarmRuleInputError tells whether err, or an error it wraps, is an AlarmRuleInputError.
+func IsAlarmRuleInputError(err error) bool {
+	var inputErr *AlarmRuleInputError
+	return errors.As(err, &inputErr)
+}
+
+// Placeholders left over after rendering, e.g. `{{ vcpu_usage_threshold }}`. Prometheus'
+// own templating (`{{ $labels.x }}`, `{{ if ... }}`) is written with a `$` or keywords and
+// is not matched here.
+var placeholderRE = regexp.MustCompile(`{{\s*([a-z][a-z0-9_]*)\s*}}`)
+
+// Go template keywords, which stand alone in a Prometheus annotation ({{ if ... }} ... {{ end }})
+var templateKeywords = map[string]bool{
+	"end": true, "else": true, "if": true, "range": true, "with": true,
+	"break": true, "continue": true, "define": true, "template": true, "block": true,
+}
+
+func unresolvedPlaceholders(content string) []string {
+	seen := map[string]bool{}
+	var names []string
+	for _, m := range placeholderRE.FindAllStringSubmatch(content, -1) {
+		if templateKeywords[m[1]] {
+			continue
+		}
+		if !seen[m[1]] {
+			seen[m[1]] = true
+			names = append(names, m[1])
+		}
+	}
+	return names
+}
+
+func renderNetworkResourcesTemplate(ctx context.Context, templateStr string, data map[string]interface{}) (renderedContent string, err error) {
+	logger.Ctx(ctx).Info("ENTER renderNetworkResourcesTemplate")
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT renderNetworkResourcesTemplate: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT renderNetworkResourcesTemplate: error=%v", err)
 		} else {
-			logger.Info("EXIT renderNetworkResourcesTemplate: success")
+			logger.Ctx(ctx).Info("EXIT renderNetworkResourcesTemplate: success")
 		}
 	}()
 
-	templatePath := filepath.Join(RuleTemplate, "compute-network-resources.yml.j2")
-	templateContent, err := ReadFile(templatePath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read network resources template: %w", err)
-	}
-
-	templateStr := string(templateContent)
 	ruleTemplate := ""
 	if strings.Contains(templateStr, "{% for net_type, params in network_types.items() %}") {
 		parts := strings.Split(templateStr, "{% for net_type, params in network_types.items() %}")
@@ -2228,13 +2280,13 @@ func renderNetworkResourcesTemplate(data map[string]interface{}) (renderedConten
 
 	networkTypes, ok := data["network_types"].(map[string]interface{})
 	if !ok {
-		return "", fmt.Errorf("network_types not found in data")
+		return "", alarmRuleInputErrorf("network_types not found in data")
 	}
 
 	for netType, params := range networkTypes {
 		paramsMap, ok := params.(map[string]interface{})
 		if !ok {
-			logger.Warningf("Skipping non-map params for net_type %s: %v", netType, params)
+			logger.Ctx(ctx).Warningf("Skipping non-map params for net_type %s: %v", netType, params)
 			continue
 		}
 
@@ -2282,13 +2334,13 @@ func renderNetworkResourcesTemplate(data map[string]interface{}) (renderedConten
 	return rulesContent.String(), nil
 }
 
-func renderTemplateContent(templateContent string, data map[string]interface{}) (result string, err error) {
-	logger.Info("ENTER renderTemplateContent")
+func renderTemplateContent(ctx context.Context, templateContent string, data map[string]interface{}) (result string, err error) {
+	logger.Ctx(ctx).Info("ENTER renderTemplateContent")
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT renderTemplateContent: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT renderTemplateContent: error=%v", err)
 		} else {
-			logger.Info("EXIT renderTemplateContent: success")
+			logger.Ctx(ctx).Info("EXIT renderTemplateContent: success")
 		}
 	}()
 
@@ -2363,37 +2415,231 @@ func validateNodeAlarmRule(rule *model.NodeAlarmRule) error {
 	logger.Infof("ENTER validateNodeAlarmRule: ruleType=%s, name=%s", rule.RuleType, rule.Name)
 	defer logger.Info("EXIT validateNodeAlarmRule")
 	if rule.RuleType == "" {
-		return fmt.Errorf("rule_type is required")
+		return alarmRuleInputErrorf("rule_type is required")
 	}
 	if rule.Name == "" {
-		return fmt.Errorf("name is required")
+		return alarmRuleInputErrorf("name is required")
 	}
 	if rule.Owner == "" {
-		return fmt.Errorf("owner is required")
+		return alarmRuleInputErrorf("owner is required")
 	}
 	if len(rule.Config.RawMessage) == 0 {
-		return fmt.Errorf("config is required")
+		return alarmRuleInputErrorf("config is required")
 	}
 
 	// Validate if config is valid JSON
 	var temp interface{}
 	if err := json.Unmarshal(rule.Config.RawMessage, &temp); err != nil {
-		return fmt.Errorf("config must be valid JSON: %w", err)
+		return alarmRuleInputErrorf("config must be valid JSON: %w", err)
 	}
 	return nil
 }
 
+// nodeAlarmTemplates returns the Jinja templates a rule type renders into Prometheus rules.
+func nodeAlarmTemplates(ruleType string) []string {
+	switch ruleType {
+	case RuleTypeAvailable:
+		return []string{"node-availability.yml.j2"}
+	case RuleTypeControl:
+		return []string{"management-resources.yml.j2"}
+	case RuleTypeCompute:
+		return []string{"compute-core-resources.yml.j2", "compute-network-resources.yml.j2"}
+	case RuleTypeHypervisorVCPU:
+		return []string{"compute-vcpu-resources.yml.j2"}
+	case RuleTypePacketDrop:
+		return []string{"packet-drop-monitor.yml.j2"}
+	case RuleTypeIPBlock:
+		return []string{"ip-block-monitor.yml.j2"}
+	case RuleTypeLocalPool:
+		return []string{"local-pool-monitor.yml.j2"}
+	case "ipgroup_available_ip":
+		return []string{"ipgroup-available-ip-monitor.yml.j2"}
+	case "service_monitoring":
+		return []string{"service_monitoring.yml.j2"}
+	}
+	return nil
+}
+
+// Variables a template reads: `{{ name }}` and `{{ name | default(...) }}`, plus the
+// collection a `{% for k, v in name.items() %}` loop walks
+var templateVarRE = regexp.MustCompile(`{{\s*([a-z][a-z0-9_]*)\s*(?:\||}})`)
+var templateLoopRE = regexp.MustCompile(`{%\s*for\s+[a-z0-9_,\s]+\s+in\s+([a-z][a-z0-9_]*)\.items\(\)`)
+
+// Template variables of the node alarm templates that clapi fills itself, never from the rule's config:
+// every node alert is labelled with the organization it belongs to (owner, which the alarm event list is
+// filtered by) and with the rule it comes from (rule_group, which notification channels are bound to).
+// Without these labels a node alert was an event nobody could see and nobody was notified of.
+var nodeAlarmReservedKeys = map[string]bool{"owner": true, "rule_group": true}
+
+// nodeAlarmAllowedKeys reads the rule type's templates and returns the config keys they
+// actually use. A key that is not among them does nothing: the template falls back to its
+// default and the value the user typed is silently ignored — which is how every threshold
+// entered in the UI used to be dropped.
+func nodeAlarmAllowedKeys(ctx context.Context, ruleType string) (map[string]bool, error) {
+	allowed := map[string]bool{}
+	for _, templateFile := range nodeAlarmTemplates(ruleType) {
+		content, err := ReadFile(ctx, filepath.Join(RuleTemplateDir, templateFile))
+		if err != nil {
+			return nil, fmt.Errorf("failed to read template file %s: %w", templateFile, err)
+		}
+		for _, m := range templateVarRE.FindAllStringSubmatch(string(content), -1) {
+			if !templateKeywords[m[1]] && !nodeAlarmReservedKeys[m[1]] {
+				allowed[m[1]] = true
+			}
+		}
+		for _, m := range templateLoopRE.FindAllStringSubmatch(string(content), -1) {
+			allowed[m[1]] = true
+		}
+	}
+	return allowed, nil
+}
+
+// validateNodeAlarmConfig rejects config keys the rule type's templates never read. Runs on
+// every write, including writes to a disabled rule: without it a rule can be saved with a
+// config that only blows up later, when someone enables it.
+func validateNodeAlarmConfig(ctx context.Context, rule *model.NodeAlarmRule) error {
+	if len(nodeAlarmTemplates(rule.RuleType)) == 0 {
+		return alarmRuleInputErrorf("unsupported rule type: %s", rule.RuleType)
+	}
+	allowed, err := nodeAlarmAllowedKeys(ctx, rule.RuleType)
+	if err != nil {
+		return err
+	}
+	var config map[string]interface{}
+	if err := json.Unmarshal(rule.Config.RawMessage, &config); err != nil {
+		return alarmRuleInputErrorf("failed to parse config JSON: %v", err)
+	}
+	unknown := []string{}
+	for key := range config {
+		if !allowed[key] {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		known := make([]string, 0, len(allowed))
+		for key := range allowed {
+			known = append(known, key)
+		}
+		sort.Strings(known)
+		return alarmRuleInputErrorf("config keys not used by %s rules: %s (supported: %s)",
+			rule.RuleType, strings.Join(unknown, ", "), strings.Join(known, ", "))
+	}
+	return nil
+}
+
+// applyNodeAlarmRuleFiles renders a rule's Prometheus rule files and writes them. Shared by create,
+// update and the startup rebuild so all go through the same validation. Every file is rendered before
+// any is written: a rule type with two templates is not left half updated.
+func applyNodeAlarmRuleFiles(ctx context.Context, rule *model.NodeAlarmRule) error {
+	files, err := renderNodeAlarmRuleFiles(ctx, rule, nodeAlarmOwner(ctx, rule))
+	if err != nil {
+		return err
+	}
+	for _, templateFile := range nodeAlarmTemplates(rule.RuleType) {
+		outputFile := strings.TrimSuffix(templateFile, ".j2")
+		if err := writeRuleFile(ctx, outputFile, files[outputFile]); err != nil {
+			return fmt.Errorf("failed to process template %s: %w", templateFile, err)
+		}
+	}
+	return nil
+}
+
+// renderNodeAlarmRuleFiles validates a rule's config and renders its rule files (output file name ->
+// content) without writing them. owner is the organization the alerts are labelled with.
+func renderNodeAlarmRuleFiles(ctx context.Context, rule *model.NodeAlarmRule, owner string) (map[string]string, error) {
+	if err := validateNodeAlarmConfig(ctx, rule); err != nil {
+		return nil, err
+	}
+	files := map[string]string{}
+	for _, templateFile := range nodeAlarmTemplates(rule.RuleType) {
+		var configData map[string]interface{}
+		if err := json.Unmarshal(rule.Config.RawMessage, &configData); err != nil {
+			return nil, alarmRuleInputErrorf("failed to parse config JSON: %v", err)
+		}
+		if rule.RuleType == RuleTypeAvailable {
+			if nodeDownDuration, ok := configData["node_down_duration"].(string); ok {
+				duration, err := time.ParseDuration(nodeDownDuration)
+				if err != nil {
+					return nil, alarmRuleInputErrorf("invalid node_down_duration format: %v", err)
+				}
+				configData["node_down_duration_minutes"] = int(duration.Minutes())
+			} else {
+				configData["node_down_duration_minutes"] = 5
+			}
+		}
+		// Set after the config: validateNodeAlarmConfig already refuses these keys, and whatever the
+		// config says, these labels are clapi's
+		configData["owner"] = owner
+		configData["rule_group"] = rule.UUID
+		rendered, err := renderRuleTemplate(ctx, templateFile, configData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to process template %s: %w", templateFile, err)
+		}
+		files[strings.TrimSuffix(templateFile, ".j2")] = rendered
+	}
+	return files, nil
+}
+
+// nodeAlarmOwner is the organization node alerts are labelled with: the system organization. Node alarm
+// rules watch the platform (nodes, zones, pools, address groups), not any tenant's resources, so their
+// events belong to the platform's operators, whichever organization the system admin who wrote the rule
+// was acting in. Falls back to the rule's own owner when the system organization cannot be read.
+func nodeAlarmOwner(ctx context.Context, rule *model.NodeAlarmRule) string {
+	if id := platformOrgID(ctx); id > 0 {
+		return strconv.FormatInt(id, 10)
+	}
+	return rule.Owner
+}
+
+// removeNodeAlarmRuleFiles drops a rule type's generated files and the symlinks that
+// enable them. Missing files are not an error: a disabled rule has none.
+func removeNodeAlarmRuleFiles(ctx context.Context, ruleType string) []string {
+	removed := []string{}
+	for _, templateFile := range nodeAlarmTemplates(ruleType) {
+		outputFile := strings.TrimSuffix(templateFile, ".j2")
+		for _, path := range []string{filepath.Join(RulesEnabled, outputFile), filepath.Join(RulesGeneral, outputFile)} {
+			if err := RemoveFile(ctx, path); err != nil {
+				logger.Ctx(ctx).Errorf("Failed to remove rule file: path=%s, error=%v", path, err)
+				continue
+			}
+			removed = append(removed, path)
+		}
+	}
+	return removed
+}
+
 func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule) (nr *model.NodeAlarmRule, err error) {
-	logger.Infof("ENTER createNodeAlarmRuleInternal: name=%s, ruleType=%s", rule.Name, rule.RuleType)
+	logger.Ctx(ctx).Infof("ENTER createNodeAlarmRuleInternal: name=%s, ruleType=%s", rule.Name, rule.RuleType)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT createNodeAlarmRuleInternal: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT createNodeAlarmRuleInternal: error=%v", err)
 		} else {
-			logger.Infof("EXIT createNodeAlarmRuleInternal: uuid=%s", nr.UUID)
+			logger.Ctx(ctx).Infof("EXIT createNodeAlarmRuleInternal: uuid=%s", nr.UUID)
 		}
 	}()
 	if err = validateNodeAlarmRule(rule); err != nil {
 		return nil, err
+	}
+
+	newRule := &model.NodeAlarmRule{
+		RuleType:    rule.RuleType,
+		Name:        rule.Name,
+		Config:      rule.Config,
+		Description: rule.Description,
+		Owner:       rule.Owner,
+		Enabled:     rule.Enabled,
+	}
+	// Validated before the database is touched, disabled rules included. An enabled rule is also
+	// rendered once, so that a value its templates need but the config lacks is reported as the caller's
+	// mistake before a row is written (the owner label does not affect whether the rule renders)
+	if err = validateNodeAlarmConfig(ctx, newRule); err != nil {
+		return nil, err
+	}
+	if newRule.Enabled {
+		if _, err = renderNodeAlarmRuleFiles(ctx, newRule, newRule.Owner); err != nil {
+			return nil, err
+		}
 	}
 
 	operator := &AlarmOperator{}
@@ -2405,85 +2651,108 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		return nil, fmt.Errorf("rule type %s already exists, only one rule per type is allowed", rule.RuleType)
 	}
 
-	newRule := &model.NodeAlarmRule{
-		RuleType:    rule.RuleType,
-		Name:        rule.Name,
-		Config:      rule.Config,
-		Description: rule.Description,
-		Owner:       rule.Owner,
-		Enabled:     true,
-	}
 	err = operator.CreateNodeAlarmRules(ctx, newRule)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save rule to database: %v", err)
 	}
 
-	var templateFiles []string
-	switch rule.RuleType {
-	case RuleTypeAvailable:
-		templateFiles = []string{"node-availability.yml.j2"}
-	case RuleTypeControl:
-		templateFiles = []string{"management-resources.yml.j2"}
-	case RuleTypeCompute:
-		templateFiles = []string{"compute-core-resources.yml.j2", "compute-network-resources.yml.j2"}
-	case RuleTypeHypervisorVCPU:
-		templateFiles = []string{"compute-vcpu-resources.yml.j2"}
-	case RuleTypePacketDrop:
-		templateFiles = []string{"packet-drop-monitor.yml.j2"}
-	case RuleTypeIPBlock:
-		templateFiles = []string{"ip-block-monitor.yml.j2"}
-	case "ipgroup_available_ip":
-		templateFiles = []string{"ipgroup-available-ip-monitor.yml.j2"}
-	default:
-		operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
-		return nil, fmt.Errorf("unsupported rule type: %s", rule.RuleType)
-	}
-
-	for _, templateFile := range templateFiles {
-		var configData map[string]interface{}
-		if err = json.Unmarshal(rule.Config.RawMessage, &configData); err != nil {
+	// A disabled rule is only a database row: writing its rule file would make it alert
+	// anyway, which is what "enabled" used to do (the flag was never acted upon)
+	if newRule.Enabled {
+		if err = applyNodeAlarmRuleFiles(ctx, newRule); err != nil {
 			operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
-			return nil, fmt.Errorf("failed to parse config JSON: %v", err)
+			return nil, err
 		}
-
-		if rule.RuleType == RuleTypeAvailable {
-			if nodeDownDuration, ok := configData["node_down_duration"].(string); ok {
-				duration, err := time.ParseDuration(nodeDownDuration)
-				if err != nil {
-					operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
-					return nil, fmt.Errorf("invalid node_down_duration format: %v", err)
-				}
-				configData["node_down_duration_minutes"] = int(duration.Minutes())
-			} else {
-				configData["node_down_duration_minutes"] = 5
-			}
+		if err := ReloadPrometheusViaHTTP(ctx); err != nil {
+			logger.Ctx(ctx).Errorf("Failed to reload Prometheus: %v", err)
 		}
-
-		outputFile := strings.TrimSuffix(templateFile, ".j2")
-
-		err = ProcessTemplate(templateFile, outputFile, configData)
-		if err != nil {
-			operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
-			return nil, fmt.Errorf("failed to process template %s: %v", templateFile, err)
-		}
-	}
-
-	if err := ReloadPrometheusViaHTTP(); err != nil {
-		logger.Errorf("Failed to reload Prometheus: %v", err)
 	}
 
 	return newRule, nil
 }
 
+// updateNodeAlarmRuleInternal changes an existing rule in place. Without it the only way to
+// fix a threshold was to delete the rule and create it again.
+func updateNodeAlarmRuleInternal(ctx context.Context, uuID string, name, description *string, config *model.ConfigWrapper, enabled *bool) (rule *model.NodeAlarmRule, err error) {
+	logger.Ctx(ctx).Infof("ENTER updateNodeAlarmRuleInternal: uuid=%s", uuID)
+	defer func() {
+		if err != nil {
+			logger.Ctx(ctx).Errorf("EXIT updateNodeAlarmRuleInternal: error=%v", err)
+		} else {
+			logger.Ctx(ctx).Info("EXIT updateNodeAlarmRuleInternal: success")
+		}
+	}()
+	operator := &AlarmOperator{}
+	rules, err := operator.GetNodeAlarmRules(ctx, uuID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get rule information: %v", err)
+	}
+	if len(rules) == 0 {
+		return nil, fmt.Errorf("node alarm rule not found")
+	}
+	rule = &rules[0]
+
+	updates := map[string]interface{}{}
+	if name != nil && *name != "" {
+		rule.Name = *name
+		updates["name"] = *name
+	}
+	if description != nil {
+		rule.Description = *description
+		updates["description"] = *description
+	}
+	if config != nil && len(config.RawMessage) > 0 {
+		var temp interface{}
+		if err = json.Unmarshal(config.RawMessage, &temp); err != nil {
+			return nil, alarmRuleInputErrorf("config must be valid JSON: %w", err)
+		}
+		rule.Config = *config
+		updates["config"] = *config
+	}
+	if enabled != nil {
+		rule.Enabled = *enabled
+		updates["enabled"] = *enabled
+	}
+	if len(updates) == 0 {
+		return rule, nil
+	}
+
+	// Rule files first: a config that does not match the template must fail before the
+	// database changes, otherwise the stored config and the running rules drift apart
+	if rule.Enabled {
+		if err = applyNodeAlarmRuleFiles(ctx, rule); err != nil {
+			return nil, err
+		}
+	} else {
+		// Still validate: a disabled rule saved with a bad config only fails later, when
+		// someone enables it
+		if err = validateNodeAlarmConfig(ctx, rule); err != nil {
+			return nil, err
+		}
+		removeNodeAlarmRuleFiles(ctx, rule.RuleType)
+	}
+	if err = operator.UpdateNodeAlarmRules(ctx, uuID, updates); err != nil {
+		return nil, err
+	}
+	if err := ReloadPrometheusViaHTTP(ctx); err != nil {
+		logger.Ctx(ctx).Errorf("Failed to reload Prometheus: %v", err)
+	}
+	return rule, nil
+}
+
+func (a *AlarmAdmin) UpdateNodeAlarmRule(ctx context.Context, uuID string, name, description *string, config *model.ConfigWrapper, enabled *bool) (*model.NodeAlarmRule, error) {
+	return updateNodeAlarmRuleInternal(ctx, uuID, name, description, config, enabled)
+}
+
 func (a *AlarmAdmin) CreateNodeAlarmRule(ctx context.Context, rule *model.NodeAlarmRule) (*model.NodeAlarmRule, error) {
-	logger.Infof("ENTER AlarmAdmin.CreateNodeAlarmRule: ruleType=%s, name=%s", rule.RuleType, rule.Name)
-	defer logger.Info("EXIT AlarmAdmin.CreateNodeAlarmRule")
+	logger.Ctx(ctx).Infof("ENTER AlarmAdmin.CreateNodeAlarmRule: ruleType=%s, name=%s", rule.RuleType, rule.Name)
+	defer logger.Ctx(ctx).Info("EXIT AlarmAdmin.CreateNodeAlarmRule")
 	return createNodeAlarmRuleInternal(ctx, rule)
 }
 
 func getNodeAlarmRulesInternal(ctx context.Context, uuid, ruleType string) ([]model.NodeAlarmRule, error) {
-	logger.Infof("ENTER getNodeAlarmRulesInternal: uuid=%s, ruleType=%s", uuid, ruleType)
-	defer logger.Info("EXIT getNodeAlarmRulesInternal")
+	logger.Ctx(ctx).Infof("ENTER getNodeAlarmRulesInternal: uuid=%s, ruleType=%s", uuid, ruleType)
+	defer logger.Ctx(ctx).Info("EXIT getNodeAlarmRulesInternal")
 	operator := &AlarmOperator{}
 	if uuid != "" {
 		return operator.GetNodeAlarmRules(ctx, uuid)
@@ -2495,18 +2764,18 @@ func getNodeAlarmRulesInternal(ctx context.Context, uuid, ruleType string) ([]mo
 }
 
 func (a *AlarmAdmin) GetNodeAlarmRules(ctx context.Context, uuid, ruleType string) ([]model.NodeAlarmRule, error) {
-	logger.Infof("ENTER AlarmAdmin.GetNodeAlarmRules: uuid=%s, ruleType=%s", uuid, ruleType)
-	defer logger.Info("EXIT AlarmAdmin.GetNodeAlarmRules")
+	logger.Ctx(ctx).Infof("ENTER AlarmAdmin.GetNodeAlarmRules: uuid=%s, ruleType=%s", uuid, ruleType)
+	defer logger.Ctx(ctx).Info("EXIT AlarmAdmin.GetNodeAlarmRules")
 	return getNodeAlarmRulesInternal(ctx, uuid, ruleType)
 }
 
 func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) (deletedFiles []string, err error) {
-	logger.Infof("ENTER deleteNodeAlarmRuleInternal: uuid=%s", uuid)
+	logger.Ctx(ctx).Infof("ENTER deleteNodeAlarmRuleInternal: uuid=%s", uuid)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT deleteNodeAlarmRuleInternal: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT deleteNodeAlarmRuleInternal: error=%v", err)
 		} else {
-			logger.Infof("EXIT deleteNodeAlarmRuleInternal: deleted %d files", len(deletedFiles))
+			logger.Ctx(ctx).Infof("EXIT deleteNodeAlarmRuleInternal: deleted %d files", len(deletedFiles))
 		}
 	}()
 	operator := &AlarmOperator{}
@@ -2524,51 +2793,17 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) (deletedFiles
 		return nil, fmt.Errorf("failed to delete rule from database: %v", err)
 	}
 
-	var templateFiles []string
-	switch rule.RuleType {
-	case RuleTypeAvailable:
-		templateFiles = []string{"node-availability.yml"}
-	case RuleTypeControl:
-		templateFiles = []string{"management-resources.yml"}
-	case RuleTypeCompute:
-		templateFiles = []string{"compute-core-resources.yml", "compute-network-resources.yml"}
-	case RuleTypeHypervisorVCPU:
-		templateFiles = []string{"compute-vcpu-resources.yml"}
-	case RuleTypePacketDrop:
-		templateFiles = []string{"packet-drop-monitor.yml"}
-	case RuleTypeIPBlock:
-		templateFiles = []string{"ip-block-monitor.yml"}
-	case "ipgroup_available_ip":
-		templateFiles = []string{"ipgroup-available-ip-monitor.yml"}
-	case "service_monitoring":
-		templateFiles = []string{"service_monitoring.yml"}
-	}
+	deletedFiles = removeNodeAlarmRuleFiles(ctx, rule.RuleType)
 
-	deletedFiles = []string{}
-	for _, templateFile := range templateFiles {
-		outputPath := filepath.Join(RulesGeneral, templateFile)
-		enabledPath := filepath.Join(RulesEnabled, templateFile)
-		if err := RemoveFile(enabledPath); err != nil {
-			logger.Errorf("Failed to remove symlink: path=%s, error=%v", enabledPath, err)
-		} else {
-			deletedFiles = append(deletedFiles, enabledPath)
-		}
-		if err := RemoveFile(outputPath); err != nil {
-			logger.Errorf("Failed to remove rule file: path=%s, error=%v", outputPath, err)
-		} else {
-			deletedFiles = append(deletedFiles, outputPath)
-		}
-	}
-
-	if err := ReloadPrometheusViaHTTP(); err != nil {
-		logger.Errorf("Failed to reload Prometheus configuration: error=%v", err)
+	if err := ReloadPrometheusViaHTTP(ctx); err != nil {
+		logger.Ctx(ctx).Errorf("Failed to reload Prometheus configuration: error=%v", err)
 	}
 	return deletedFiles, nil
 }
 
 func (a *AlarmAdmin) DeleteNodeAlarmRule(ctx context.Context, uuid string) ([]string, error) {
-	logger.Infof("ENTER AlarmAdmin.DeleteNodeAlarmRule: uuid=%s", uuid)
-	defer logger.Info("EXIT AlarmAdmin.DeleteNodeAlarmRule")
+	logger.Ctx(ctx).Infof("ENTER AlarmAdmin.DeleteNodeAlarmRule: uuid=%s", uuid)
+	defer logger.Ctx(ctx).Info("EXIT AlarmAdmin.DeleteNodeAlarmRule")
 	return deleteNodeAlarmRuleInternal(ctx, uuid)
 }
 
@@ -2583,17 +2818,20 @@ type NotifyParams struct {
 }
 
 func (a *AlarmOperator) SendNotification(ctx context.Context, notifyURL string, params NotifyParams) (err error) {
-	logger.Infof("ENTER AlarmOperator.SendNotification: notifyURL=%s, alertsCount=%d", notifyURL, len(params.Alerts))
+	logger.Ctx(ctx).Infof("ENTER AlarmOperator.SendNotification: notifyURL=%s, alertsCount=%d", notifyURL, len(params.Alerts))
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT AlarmOperator.SendNotification: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT AlarmOperator.SendNotification: error=%v", err)
 		} else {
-			logger.Info("EXIT AlarmOperator.SendNotification: success")
+			logger.Ctx(ctx).Info("EXIT AlarmOperator.SendNotification: success")
 		}
 	}()
 	if notifyURL == "" {
 		return nil
 	}
+	// 告警通知地址由规则配置，可能是外部服务：只建 span，不注入 trace 头
+	ctx, span := tracing.StartChild(ctx, "notify.alarm_webhook", trace.WithSpanKind(trace.SpanKindClient))
+	defer func() { tracing.EndSpan(span, err) }()
 	jsonData, err := json.Marshal(params)
 	if err != nil {
 		return fmt.Errorf("failed to marshal params: %w", err)
@@ -2611,44 +2849,46 @@ func (a *AlarmOperator) SendNotification(ctx context.Context, notifyURL string, 
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		logger.Errorf("Request failed with status %d, response: %s", resp.StatusCode, string(body))
+		logger.Ctx(ctx).Errorf("Request failed with status %d, response: %s", resp.StatusCode, string(body))
 		return fmt.Errorf("notification service returned status %d", resp.StatusCode)
 	}
-	logger.Infof("Successfully sent notification to %s", notifyURL)
+	logger.Ctx(ctx).Infof("Successfully sent notification to %s", notifyURL)
 	return nil
 }
 
 func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, operation, ruleType string, targetDevice ...string) (err error) {
-	logger.Infof("ENTER UpdateMatchedVMsJSON: vmUUIDsCount=%d, groupUUID=%s, operation=%s, ruleType=%s, targetDevice=%v",
+	logger.Ctx(ctx).Infof("ENTER UpdateMatchedVMsJSON: vmUUIDsCount=%d, groupUUID=%s, operation=%s, ruleType=%s, targetDevice=%v",
 		len(vmUUIDs), groupUUID, operation, ruleType, targetDevice)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT UpdateMatchedVMsJSON: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT UpdateMatchedVMsJSON: error=%v", err)
 		} else {
-			logger.Info("EXIT UpdateMatchedVMsJSON: success")
+			logger.Ctx(ctx).Info("EXIT UpdateMatchedVMsJSON: success")
 		}
 	}()
-	matchedVMsFile := "/etc/prometheus/lists/matched_vms.json"
+	// Same lock as the background reconcile (alarm_mapping.go), which rewrites the whole file
+	matchedVMsMu.Lock()
+	defer matchedVMsMu.Unlock()
 
 	var matchedVMs []map[string]interface{}
-	existingData, err := ReadFile(matchedVMsFile)
+	existingData, err := ReadFile(ctx, matchedVMsFile)
 	if err == nil && len(existingData) > 0 {
 		if err := json.Unmarshal(existingData, &matchedVMs); err != nil {
-			logger.Errorf("Failed to parse existing matched_vms.json: %v", err)
+			logger.Ctx(ctx).Errorf("Failed to parse existing matched_vms.json: %v", err)
 			matchedVMs = []map[string]interface{}{}
 		}
 	} else {
 		matchedVMs = []map[string]interface{}{}
-		logger.Infof("Creating new matched_vms.json file")
+		logger.Ctx(ctx).Infof("Creating new matched_vms.json file")
 	}
 
 	if operation == "add" {
-		logger.Infof("Adding/updating VM mappings for rule group %s, VM count: %d", groupUUID, len(vmUUIDs))
+		logger.Ctx(ctx).Infof("Adding/updating VM mappings for rule group %s, VM count: %d", groupUUID, len(vmUUIDs))
 		var notFoundVMs []string
 		for _, instanceid := range vmUUIDs {
 			domain, err := GetDomainByInstanceUUID(ctx, instanceid)
 			if err != nil {
-				logger.Errorf("Failed to get domain for instanceid=%s: %v", instanceid, err)
+				logger.Ctx(ctx).Errorf("Failed to get domain for instanceid=%s: %v", instanceid, err)
 				notFoundVMs = append(notFoundVMs, instanceid)
 				continue
 			}
@@ -2676,19 +2916,17 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 				if !ok {
 					continue
 				}
-				domainVal, hasDomain := labels["domain"].(string)
-				existingRuleID, hasRuleID := labels["rule_id"].(string)
-				if hasDomain && hasRuleID && domainVal == domain && existingRuleID == ruleID {
+				if isSameMapping(labels, domain, ruleID, targetDeviceValue) {
 					entryExists = true
 					matchedVMs[i] = newEntry
-					logger.Infof("Updating existing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceid)
+					logger.Ctx(ctx).Infof("Updating existing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceid)
 					break
 				}
 			}
 
 			if !entryExists {
 				matchedVMs = append(matchedVMs, newEntry)
-				logger.Infof("Adding new mapping: domain=%s, rule_id=%s-%s, instance_id=%s", domain, domain, groupUUID, instanceid)
+				logger.Ctx(ctx).Infof("Adding new mapping: domain=%s, rule_id=%s-%s, instance_id=%s", domain, domain, groupUUID, instanceid)
 			}
 		}
 
@@ -2724,7 +2962,7 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 					if len(vmUUIDs) == 0 {
 						domain, _ := labels["domain"].(string)
 						instanceID, _ := labels["instance_id"].(string)
-						logger.Infof("Removing mapping by group(all): domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
+						logger.Ctx(ctx).Infof("Removing mapping by group(all): domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
 						removedCount++
 						continue
 					}
@@ -2738,7 +2976,7 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 					}
 					if inVM {
 						domain, _ := labels["domain"].(string)
-						logger.Infof("Removing mapping by group: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
+						logger.Ctx(ctx).Infof("Removing mapping by group: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
 						removedCount++
 						continue
 					}
@@ -2768,7 +3006,7 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 			}
 			if inVM && inDev {
 				domain, _ := labels["domain"].(string)
-				logger.Infof("Removing mapping by triple: domain=%s, rule_id=%s, instance_id=%s, target_device=%s",
+				logger.Ctx(ctx).Infof("Removing mapping by triple: domain=%s, rule_id=%s, instance_id=%s, target_device=%s",
 					domain, ruleID, instanceID, labels["target_device"])
 				removedCount++
 				continue
@@ -2777,27 +3015,23 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 		}
 
 		matchedVMs = filteredVMs
-		logger.Infof("Removed %d mappings for rule group %s", removedCount, groupUUID)
+		logger.Ctx(ctx).Infof("Removed %d mappings for rule group %s", removedCount, groupUUID)
 	}
 
 	matchedVMsData, err := json.MarshalIndent(matchedVMs, "", "  ")
 	if err != nil {
-		logger.Errorf("Failed to marshal matched_vms.json: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to marshal matched_vms.json: %v", err)
 		return err
 	}
 
-	err = WriteFile(matchedVMsFile, matchedVMsData, 0644)
+	err = WriteFile(ctx, matchedVMsFile, matchedVMsData, 0644)
 	if err != nil {
-		logger.Errorf("Failed to write matched_vms.json: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to write matched_vms.json: %v", err)
 		return err
 	}
 
-	if err := ReloadPrometheusViaHTTP(); err != nil {
-		logger.Warningf("Warning: Failed to reload Prometheus after updating matched_vms.json: %v", err)
-	} else {
-		logger.Infof("Successfully reloaded Prometheus configuration after updating matched_vms.json")
-	}
-
+	// No Prometheus reload here: matched_vms.json is file_sd and re-read every 30s, and every
+	// handler that also changes rule files reloads on its own. The reload used to run under
+	// matchedVMsMu with a 2-minute timeout, serializing link / unlink / instance delete behind it.
 	return nil
 }
-

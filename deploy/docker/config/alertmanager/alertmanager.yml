@@ -6,7 +6,12 @@ route:
   group_interval: 10s
   repeat_interval: 1h
   receiver: "clapi-webhook"
+  routes:
+    # 链路追踪等平台运维告警不进入 clapi（否则会写入租户告警事件表）；需要推送时在 platform 接收器中配置 webhook/email
+    - matchers: ['source="tracing"']
+      receiver: "platform"
 receivers:
+- name: "platform"
 - name: "clapi-webhook"
   webhook_configs:
   - url: "https://clapi:8255/api/v1/alerts/process"

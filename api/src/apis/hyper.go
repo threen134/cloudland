@@ -8,6 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
@@ -24,7 +25,9 @@ var hyperAdmin = &services.HyperAdmin{}
 type HyperAPI struct{}
 
 type HyperResponse struct {
-	UUID          string  `json:"uuid"`
+	UUID string `json:"uuid"`
+	// 节点编号：迁移接口的 target_hyper、实例的 hyper 字段用的都是它
+	Hostid        int32   `json:"hostid"`
 	Hostname      string  `json:"hostname"`
 	Status        int32   `json:"status"`
 	StatusName    string  `json:"status_name"`
@@ -37,13 +40,18 @@ type HyperResponse struct {
 	DiskOverRate  float32 `json:"disk_over_rate"`
 	ZoneName      string  `json:"zone_name"`
 	Remark        string  `json:"remark"`
+	InstanceCount int64   `json:"instance_count"`
 	Cpu           int64   `json:"cpu"`
 	CpuTotal      int64   `json:"cpu_total"`
 	Memory        int64   `json:"memory"`
 	MemoryTotal   int64   `json:"memory_total"`
-	Disk          int64   `json:"disk"`
-	DiskTotal     int64   `json:"disk_total"`
-	DeployCommand string  `json:"deploy_command,omitempty"`
+	// Disks: sum of the storage pools of the host, raw capacity in GB, never multiplied by an over-commit ratio
+	DiskTotal         int64                       `json:"disk_total"`
+	DiskAllocated     int64                       `json:"disk_allocated"`
+	DiskUsed          int64                       `json:"disk_used"`
+	DiskMaxUsageRatio float64                     `json:"disk_max_usage_ratio"`
+	StoragePools      []*services.HostPoolFigures `json:"storage_pools"`
+	DeployCommand     string                      `json:"deploy_command,omitempty"`
 }
 
 type HyperListResponse struct {
@@ -57,25 +65,29 @@ type HyperPayload struct {
 }
 
 type HyperDeployPayload struct {
-	IP               string `json:"ip" binding:"required"`
-	Hostname         string `json:"hostname" binding:"required"`
-	NetworkDevice    string `json:"network_device"`
-	VlanDevice       string `json:"vlan_device"`
+	IP                string `json:"ip" binding:"required"`
+	Hostname          string `json:"hostname" binding:"required"`
+	NetworkDevice     string `json:"network_device"`
+	VlanDevice        string `json:"vlan_device"`
 	PrivateVlanDevice string `json:"private_vlan_device"`
-	DNSServer        string `json:"dns_server"`
-	Domain           string `json:"domain"`
-	ZoneName         string `json:"zone_name"`
-	VirtType         string `json:"virt_type"`
+	DNSServer         string `json:"dns_server"`
+	Domain            string `json:"domain"`
+	ZoneName          string `json:"zone_name"`
+	VirtType          string `json:"virt_type"`
 }
 
 type HyperMaintainPayload struct {
-	TargetHyper int32 `json:"target_hyper"`
-	Migrate     bool  `json:"migrate"`
+	// 用指针而非值类型：值类型时客户端漏传 target_hyper 会得到零值 0，而 0 不是合法 hostid，
+	// 会被当作"迁往 hostid 0"从而报 HypervisorNotFound。约定 nil / -1 表示由调度器自选
+	TargetHyper *int32 `json:"target_hyper" binding:"omitempty,gte=-1,lte=65535"`
+	Migrate     bool   `json:"migrate"`
 }
 
 type HyperPatchPayload struct {
-	Status       *int32   `json:"status" binding:"omitempty,min=0,max=1"`
-	ZoneID       *int64   `json:"zone_id" binding:"omitempty,min=1"`
+	Status *int32 `json:"status" binding:"omitempty,min=0,max=1"`
+	// 可用区的 UUID。接口对外暴露的 id 一律是 UUID，此前这里收的是数据库自增 ID，
+	// 而 GET /zones 只返回 UUID，界面上改可用区必定 400
+	ZoneID       *string  `json:"zone_id" binding:"omitempty,uuid"`
 	CpuOverRate  *float32 `json:"cpu_over_rate" binding:"omitempty,min=1"`
 	MemOverRate  *float32 `json:"mem_over_rate" binding:"omitempty,min=1"`
 	DiskOverRate *float32 `json:"disk_over_rate" binding:"omitempty,min=1"`
@@ -90,7 +102,7 @@ type HyperPatchPayload struct {
 // @Router /hypers/{uuid} [get]
 func (v *HyperAPI) Get(c *gin.Context) {
 	uuid := c.Param("uuid")
-	logger.Infof("API: Get hypervisor with uuid=%s", uuid)
+	logger.Ctx(c).Infof("API: Get hypervisor with uuid=%s", uuid)
 
 	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
 	if err != nil {
@@ -98,7 +110,7 @@ func (v *HyperAPI) Get(c *gin.Context) {
 		return
 	}
 
-	hyperResp := convertHyperToResponse(hyper)
+	hyperResp := withStorage(c.Request.Context(), convertHyperToResponse(hyper))
 	c.JSON(http.StatusOK, hyperResp)
 }
 
@@ -119,7 +131,7 @@ func (v *HyperAPI) List(c *gin.Context) {
 	limit := c.Query("limit")
 	order := c.Query("order")
 	query := c.Query("q")
-	logger.Infof("Listing hypervisors via API: offset=%s, limit=%s, order=%s, q=%s", offset, limit, order, query)
+	logger.Ctx(c).Infof("Listing hypervisors via API: offset=%s, limit=%s, order=%s, q=%s", offset, limit, order, query)
 
 	var offsetInt, limitInt int64
 	var err error
@@ -146,9 +158,23 @@ func (v *HyperAPI) List(c *gin.Context) {
 		return
 	}
 
+	// 每个节点上的虚拟机数量：一次分组统计，避免按节点逐个查询
+	instanceCounts, cErr := hyperAdmin.GetInstanceCounts(c.Request.Context())
+	if cErr != nil {
+		// 统计失败不影响节点列表本身，数量按 0 返回并记录
+		logger.Ctx(c).Errorf("Failed to count instances per hypervisor: %+v", cErr)
+		instanceCounts = map[int32]int64{}
+	}
+	// The disk figures of the whole page at once: the page is polled, one query per host and pool would add up
+	hostids := make([]int32, len(hypers))
+	for i, hyper := range hypers {
+		hostids[i] = hyper.Hostid
+	}
+	summaries := services.StorageSummaryOfHosts(c.Request.Context(), hostids)
 	hyperResponses := make([]*HyperResponse, len(hypers))
 	for i, hyper := range hypers {
-		hyperResponses[i] = convertHyperToResponse(hyper)
+		hyperResponses[i] = withSummary(convertHyperToResponse(hyper), summaries[hyper.Hostid])
+		hyperResponses[i].InstanceCount = instanceCounts[hyper.Hostid]
 	}
 
 	hyperListResp := &HyperListResponse{
@@ -171,11 +197,19 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 
 	var payload HyperPatchPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		logger.Errorf("Failed to bind JSON for Hyper PATCH: %+v", err)
+		logger.Ctx(c).Errorf("Failed to bind JSON for Hyper PATCH: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid payload", err)
 		return
 	}
-	logger.Infof("Patching hypervisor %s with payload: %+v", uuid, payload)
+	logger.Ctx(c).Infof("Patching hypervisor %s with payload: %+v", uuid, payload)
+	if payload.Status != nil {
+		// 启用（含退出维护）与禁用是需要单独呈现的节点状态变化，其余字段归为修改配置
+		if *payload.Status == 1 {
+			SetAuditAction(c, "hyper.enable")
+		} else {
+			SetAuditAction(c, "hyper.disable")
+		}
+	}
 
 	// Get existing hypervisor
 	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
@@ -189,7 +223,12 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 		hyper.Status = *payload.Status
 	}
 	if payload.ZoneID != nil {
-		hyper.ZoneID = *payload.ZoneID
+		zone, zoneErr := zoneAdmin.GetZoneByUUID(c.Request.Context(), *payload.ZoneID)
+		if zoneErr != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Invalid zone", zoneErr)
+			return
+		}
+		hyper.ZoneID = zone.ID
 	}
 	if payload.CpuOverRate != nil {
 		hyper.CpuOverRate = *payload.CpuOverRate
@@ -217,7 +256,7 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 		return
 	}
 
-	hyperResp := convertHyperToResponse(updatedHyper)
+	hyperResp := withStorage(c.Request.Context(), convertHyperToResponse(updatedHyper))
 	c.JSON(http.StatusOK, hyperResp)
 }
 
@@ -235,11 +274,11 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 func (v *HyperAPI) Deploy(c *gin.Context) {
 	var payload HyperDeployPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		logger.Errorf("Failed to bind JSON for Hyper Deploy: %+v", err)
+		logger.Ctx(c).Errorf("Failed to bind JSON for Hyper Deploy: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid payload", err)
 		return
 	}
-	logger.Infof("API: Deploy hypervisor with payload: %+v", payload)
+	logger.Ctx(c).Infof("API: Deploy hypervisor with payload: %+v", payload)
 	if payload.NetworkDevice == "" {
 		payload.NetworkDevice = "eth0"
 	}
@@ -281,7 +320,7 @@ func (v *HyperAPI) Deploy(c *gin.Context) {
 // @Produce json
 // @Param uuid path string true "Hypervisor UUID"
 // @Param body body HyperMaintainPayload false "Maintenance options"
-// @Success 200 {object} map[string]string
+// @Success 200 {object} HyperMaintainResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Failure 500 {object} common.APIError "Internal server error"
@@ -290,21 +329,54 @@ func (v *HyperAPI) Maintain(c *gin.Context) {
 	uuid := c.Param("uuid")
 	var payload HyperMaintainPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		logger.Warningf("Failed to bind JSON for Hyper Maintain, using default (migrate=true): %+v", err)
-		payload.TargetHyper = -1
+		logger.Ctx(c).Warningf("Failed to bind JSON for Hyper Maintain, using default (migrate=true): %+v", err)
+		payload.TargetHyper = nil
 		payload.Migrate = true
 	}
-	logger.Infof("Maintenance requested via API for hypervisor %s: migrate=%v, target=%d", uuid, payload.Migrate, payload.TargetHyper)
+	targetHyper := int32(-1) // -1：由调度器自选目标节点
+	if payload.TargetHyper != nil {
+		targetHyper = *payload.TargetHyper
+	}
+	logger.Ctx(c).Infof("Maintenance requested via API for hypervisor %s: migrate=%v, target=%d", uuid, payload.Migrate, targetHyper)
 	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
 	if err != nil {
 		ErrorResponse(c, http.StatusNotFound, "Hypervisor not found", err)
 		return
 	}
-	if err := hyperAdmin.Maintain(c.Request.Context(), hyper.Hostid, payload.Migrate, payload.TargetHyper); err != nil {
+	results, err := hyperAdmin.Maintain(c.Request.Context(), hyper.Hostid, payload.Migrate, targetHyper)
+	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to maintain hypervisor", err)
 		return
 	}
-	c.JSON(http.StatusOK, map[string]string{"result": "success"})
+	resp := &HyperMaintainResponse{Result: "success", Instances: []*MaintainInstanceResult{}}
+	for _, r := range results {
+		item := &MaintainInstanceResult{Instance: &ResourceReference{ID: r.Instance.UUID, Name: r.Instance.Hostname}, Status: "migrating"}
+		if r.Migration != nil {
+			item.Migration = r.Migration.UUID
+			if r.Migration.Status == "not_doing" {
+				item.Status = "not_doing"
+			}
+		}
+		if r.Error != nil {
+			item.Status = "not_doing"
+			item.Reason = r.Error.Error()
+		}
+		resp.Instances = append(resp.Instances, item)
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+// HyperMaintainResponse tells, for every instance of the host, whether it is being migrated away and why not
+type HyperMaintainResponse struct {
+	Result    string                    `json:"result"`
+	Instances []*MaintainInstanceResult `json:"instances"`
+}
+
+type MaintainInstanceResult struct {
+	Instance  *ResourceReference `json:"instance"`
+	Migration string             `json:"migration,omitempty"`
+	Status    string             `json:"status"`
+	Reason    string             `json:"reason,omitempty"`
 }
 
 // @Summary delete a hypervisor
@@ -313,6 +385,7 @@ func (v *HyperAPI) Maintain(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param uuid path string true "Hypervisor UUID"
+// @Param keep_pools query bool false "Keep the local storage pools of the host for adoption by the host registered again"
 // @Success 204 "No content"
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
@@ -321,14 +394,14 @@ func (v *HyperAPI) Maintain(c *gin.Context) {
 // @Router /hypers/{uuid} [delete]
 func (v *HyperAPI) Delete(c *gin.Context) {
 	uuid := c.Param("uuid")
-	logger.Infof("Deletion requested via API for hypervisor: uuid=%s", uuid)
+	logger.Ctx(c).Infof("Deletion requested via API for hypervisor: uuid=%s", uuid)
 	hyper, err := hyperAdmin.GetHyperByUUID(c.Request.Context(), uuid)
 	if err != nil {
 		ErrorResponse(c, http.StatusNotFound, "Hypervisor not found", err)
 		return
 	}
-	if err := hyperAdmin.Delete(c.Request.Context(), hyper.Hostid); err != nil {
-		ErrorResponse(c, http.StatusInternalServerError, "Failed to delete hypervisor", err)
+	if err := hyperAdmin.Delete(c.Request.Context(), hyper.Hostid, c.Query("keep_pools") == "true"); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to delete hypervisor", err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -338,6 +411,7 @@ func (v *HyperAPI) Delete(c *gin.Context) {
 func convertHyperToResponse(hyper *model.Hyper) *HyperResponse {
 	resp := &HyperResponse{
 		UUID:         hyper.UUID,
+		Hostid:       hyper.Hostid,
 		Hostname:     hyper.Hostname,
 		Status:       hyper.Status,
 		StatusName:   hyper.GetStatus(),
@@ -358,11 +432,29 @@ func convertHyperToResponse(hyper *model.Hyper) *HyperResponse {
 	if hyper.Resource != nil {
 		resp.Cpu = hyper.Resource.Cpu
 		resp.CpuTotal = hyper.Resource.CpuTotal
-		resp.Memory = hyper.Resource.Memory / 1024                       // Convert KB to MB
-		resp.MemoryTotal = hyper.Resource.MemoryTotal / 1024             // Convert KB to MB
-		resp.Disk = hyper.Resource.Disk / (1024 * 1024 * 1024)           // Convert B to GB
-		resp.DiskTotal = hyper.Resource.DiskTotal / (1024 * 1024 * 1024) // Convert B to GB
+		resp.Memory = hyper.Resource.Memory / 1024           // Convert KB to MB
+		resp.MemoryTotal = hyper.Resource.MemoryTotal / 1024 // Convert KB to MB
 	}
 
 	return resp
 }
+
+// withStorage fills the disk figures of a host from its storage pools
+func withStorage(ctx context.Context, resp *HyperResponse) *HyperResponse {
+	return withSummary(resp, services.StorageSummaryOfHost(ctx, resp.Hostid))
+}
+
+// withSummary fills the disk figures of a host from a summary built beforehand
+func withSummary(resp *HyperResponse, s *services.HostStorageSummary) *HyperResponse {
+	if s == nil {
+		return resp
+	}
+	resp.DiskTotal = s.TotalBytes / gib
+	resp.DiskAllocated = s.AllocatedBytes / gib
+	resp.DiskUsed = s.UsedBytes / gib
+	resp.DiskMaxUsageRatio = s.MaxUsageRatio
+	resp.StoragePools = s.Pools
+	return resp
+}
+
+const gib = int64(1024 * 1024 * 1024)

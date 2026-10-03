@@ -10,12 +10,16 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	. "api/src/common"
 	"api/src/dbs"
 	"api/src/model"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -25,18 +29,18 @@ var (
 type LoadBalancerAdmin struct{}
 
 func GetLBFloatingIpJson(ctx context.Context, loadBalancer *model.LoadBalancer) (jsonData []byte, err error) {
-	logger.Infof("ENTER GetLBFloatingIpJson: lbID=%d", loadBalancer.ID)
+	logger.Ctx(ctx).Infof("ENTER GetLBFloatingIpJson: lbID=%d", loadBalancer.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT GetLBFloatingIpJson: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT GetLBFloatingIpJson: error=%v", err)
 		} else {
-			logger.Info("EXIT GetLBFloatingIpJson: success")
+			logger.Ctx(ctx).Info("EXIT GetLBFloatingIpJson: success")
 		}
 	}()
 	intQuery := fmt.Sprintf("load_balancer_id = %d", loadBalancer.ID)
 	_, floatingIps, err := (&FloatingIpAdminService{}).List(ctx, 0, -1, "", "", intQuery)
 	if err != nil {
-		logger.Error("Failed to list floating ips", err)
+		logger.Ctx(ctx).Error("Failed to list floating ips", err)
 		err = NewCLError(ErrFIPListFailed, "Failed to list floating ips", err)
 		return
 	}
@@ -56,23 +60,23 @@ func GetLBFloatingIpJson(ctx context.Context, loadBalancer *model.LoadBalancer) 
 	}
 	jsonData, err = json.Marshal(lbFloatingIpCfg)
 	if err != nil {
-		logger.Errorf("Failed to marshal load balancer floating ip json data, %v", err)
+		logger.Ctx(ctx).Errorf("Failed to marshal load balancer floating ip json data, %v", err)
 		return
 	}
 	return
 }
 
 func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
-	logger.Infof("ENTER CreateVrrpConf: lbID=%d", loadBalancer.ID)
+	logger.Ctx(ctx).Infof("ENTER CreateVrrpConf: lbID=%d", loadBalancer.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT CreateVrrpConf: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT CreateVrrpConf: error=%v", err)
 		} else {
-			logger.Info("EXIT CreateVrrpConf: success")
+			logger.Ctx(ctx).Info("EXIT CreateVrrpConf: success")
 		}
 	}()
 	if loadBalancer == nil || (loadBalancer.Status != "available") {
-		logger.Error("Load balancer is not available")
+		logger.Ctx(ctx).Error("Load balancer is not available")
 		return
 	}
 	routerID := loadBalancer.RouterID
@@ -80,42 +84,66 @@ func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err 
 	vrrpVlan := loadBalancer.VrrpInstance.VrrpSubnet.Vlan
 	jsonData, err := GetLBFloatingIpJson(ctx, loadBalancer)
 	if err != nil {
-		logger.Errorf("Failed to get load balancer floating ip json data, %v", err)
+		logger.Ctx(ctx).Errorf("Failed to get load balancer floating ip json data, %v", err)
 		return
 	}
 	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, loadBalancer.VrrpInstance.ID)
 	if err != nil {
-		logger.Error("No valid hypervisor", err)
+		logger.Ctx(ctx).Error("No valid hypervisor", err)
 		return
 	}
 	if vrrpIface1.Hyper >= 0 {
 		control := fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'<<EOF\n%s\nEOF", routerID, vrrpID, vrrpVlan, vrrpIface1.Address.Address, vrrpIface1.MacAddr, vrrpIface2.Address.Address, vrrpIface2.MacAddr, jsonData)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER' '%d'<<'EOF'\n%s\nEOF", routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr), ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr), loadBalancer.VrrpInstance.Vrid, jsonData)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
-			logger.Error("Execute MASTER keepalived conf failed", err)
+			logger.Ctx(ctx).Error("Execute MASTER keepalived conf failed", err)
 			return
 		}
 	}
 	if vrrpIface2.Hyper >= 0 {
 		control := fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'<<EOF\n%s\nEOF", routerID, vrrpID, vrrpVlan, vrrpIface2.Address.Address, vrrpIface2.MacAddr, vrrpIface1.Address.Address, vrrpIface1.MacAddr, jsonData)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP' '%d'<<'EOF'\n%s\nEOF", routerID, vrrpID, vrrpVlan, ShellEscape(vrrpIface2.Address.Address), ShellEscape(vrrpIface2.MacAddr), ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface1.MacAddr), loadBalancer.VrrpInstance.Vrid, jsonData)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
-			logger.Error("Execute BACKUP create keepalived conf failed", err)
+			logger.Ctx(ctx).Error("Execute BACKUP create keepalived conf failed", err)
 			return
 		}
 	}
 	return
 }
 
+// allocateVrid picks the lowest free VRRP virtual router id (1-255) in a VRRP subnet. The id must be
+// unique per layer-2 domain, which for unicast VRRP inside one router netns is the VRRP subnet; the
+// instance primary key used to be written into keepalived.conf and overflows after 255 instances.
+func allocateVrid(ctx context.Context, subnetID int64) (vrid int, err error) {
+	ctx, db := GetContextDB(ctx)
+	used := []int{}
+	if err = db.Model(&model.VrrpInstance{}).Where("vrrp_subnet_id = ?", subnetID).Pluck("vrid", &used).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to query vrrp ids", err)
+		return
+	}
+	taken := map[int]bool{}
+	for _, v := range used {
+		if v > 0 {
+			taken[v] = true
+		}
+	}
+	for v := 1; v <= 255; v++ {
+		if !taken[v] {
+			return v, nil
+		}
+	}
+	return 0, NewCLError(ErrVrrpInstanceCreateFailed, "No free VRRP virtual router id in this VPC (255 max)", nil)
+}
+
 func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, zone *model.Zone) (vrrpInstance *model.VrrpInstance, err error) {
-	logger.Infof("ENTER CreateVrrpInstance: name=%s, routerID=%d", name, router.ID)
+	logger.Ctx(ctx).Infof("ENTER CreateVrrpInstance: name=%s, routerID=%d", name, router.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT CreateVrrpInstance: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT CreateVrrpInstance: error=%v", err)
 		} else {
-			logger.Infof("EXIT CreateVrrpInstance: success, vrrpInstanceID=%d", vrrpInstance.ID)
+			logger.Ctx(ctx).Infof("EXIT CreateVrrpInstance: success, vrrpInstanceID=%d", vrrpInstance.ID)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -124,75 +152,183 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 	if router.VrrpSubnetID > 0 {
 		vrrpSubnet, err = subnetAdmin.Get(ctx, router.VrrpSubnetID)
 		if err != nil {
-			logger.Error("Failed to create vrrp subnet")
+			logger.Ctx(ctx).Error("Failed to create vrrp subnet")
 			return
 		}
 	} else {
 		vrrpSubnet, err = subnetAdmin.Create(ctx, 0, name, "192.168.196.0/24", "", "", "", "vrrp", "", "", false, router, nil, 0)
 		if err != nil {
-			logger.Error("Failed to create vrrp subnet")
+			logger.Ctx(ctx).Error("Failed to create vrrp subnet")
 			return
 		}
 		router.VrrpSubnetID = vrrpSubnet.ID
 		err = db.Model(router).Updates(map[string]interface{}{"vrrp_subnet_id": vrrpSubnet.ID}).Error
 		if err != nil {
-			logger.Error("DB failed to update router vrrp subnet", err)
+			logger.Ctx(ctx).Error("DB failed to update router vrrp subnet", err)
 			return
 		}
 	}
 	memberShip := GetMemberShip(ctx)
-	zoneID := int64(0)
-	if zone != nil {
-		zoneID = zone.ID
+	// Serialize the VRID allocation per VPC: two concurrent creates would read the same used set and
+	// share a VRID on one L2 domain (the partial unique index on the table is the backstop)
+	if err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", router.ID).Take(&model.Router{}).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to lock the router for vrid allocation", err)
+		return
 	}
-	vrrpInstance = &model.VrrpInstance{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, VrrpSubnetID: vrrpSubnet.ID, ZoneID: zoneID, RouterID: router.ID}
+	vrid, err := allocateVrid(ctx, vrrpSubnet.ID)
+	if err != nil {
+		return
+	}
+	vrrpInstance = &model.VrrpInstance{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, VrrpSubnetID: vrrpSubnet.ID, ZoneID: zone.ID, RouterID: router.ID, Vrid: vrid}
 	err = db.Create(vrrpInstance).Error
 	if err != nil {
-		logger.Error("DB failed to create vrrp instance ", err)
+		logger.Ctx(ctx).Error("DB failed to create vrrp instance ", err)
 		return
 	}
 	vrrpIface1, err := CreateInterface(ctx, vrrpSubnet, vrrpInstance.ID, memberShip.OrgID, -1, 0, 0, "", "", "MASTER", "vrrp", nil, false)
 	if err != nil {
-		logger.Error("Failed to create vrrp interface 1", err)
+		logger.Ctx(ctx).Error("Failed to create vrrp interface 1", err)
 		return
 	}
 	vrrpIface2, err := CreateInterface(ctx, vrrpSubnet, vrrpInstance.ID, memberShip.OrgID, -1, 0, 0, "", "", "BACKUP", "vrrp", nil, false)
 	if err != nil {
-		logger.Error("Failed to create vrrp interface 1", err)
+		logger.Ctx(ctx).Error("Failed to create vrrp interface 1", err)
 		return
 	}
-	control := "inter="
-	hyperGroup := ""
-	if zone != nil {
-		hyperGroup, err = GetHyperGroup(ctx, zone.ID, -1)
-		if err != nil {
-			logger.Error("Failed to get hyper group", err)
-			return
-		}
-		control = "select=" + hyperGroup
+	hyperGroup, err := GetHyperGroup(ctx, zone.ID, -1)
+	if err != nil {
+		logger.Ctx(ctx).Error("Failed to get hyper group", err)
+		return
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER' 'true'", router.ID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface1.MacAddr, vrrpIface1.Address.Address, vrrpIface2.MacAddr, vrrpIface2.Address.Address)
+	control := "select=" + hyperGroup
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER' 'true'", router.ID, vrrpInstance.ID, vrrpSubnet.Vlan, ShellEscape(vrrpIface1.MacAddr), ShellEscape(vrrpIface1.Address.Address), ShellEscape(vrrpIface2.MacAddr), ShellEscape(vrrpIface2.Address.Address))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Error("Set vrrp ip command execution failed ", err)
+		logger.Ctx(ctx).Error("Set vrrp ip command execution failed ", err)
 		return
 	}
 	return
 }
 
+// PlaceVrrpBackup sends set_vrrp_ip.sh for the BACKUP interface of a VRRP instance to a node of its zone
+// other than the MASTER one; the node's callback records where it landed. The error of GetHyperGroup
+// (ErrNoQualifiedHypervisor when the zone has no other available node) is returned as is.
+func PlaceVrrpBackup(ctx context.Context, vrrpInstance *model.VrrpInstance, master, backup *model.Interface) (err error) {
+	hyperGroup, err := GetHyperGroup(ctx, vrrpInstance.ZoneID, master.Hyper)
+	if err != nil {
+		return
+	}
+	control := "select=" + hyperGroup
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP' 'true'", vrrpInstance.RouterID, vrrpInstance.ID, vrrpInstance.VrrpSubnet.Vlan, ShellEscape(backup.MacAddr), ShellEscape(backup.Address.Address), ShellEscape(master.MacAddr), ShellEscape(master.Address.Address))
+	return HyperExecute(ctx, control, command)
+}
+
+// Spacing of the attempts to give a single-node VRRP instance its BACKUP node, across all clapi replicas (it
+// is kept on the interface row): the set_vrrp_ip.sh callback of an attempt normally comes back within seconds
+const vrrpBackupRetry = 5 * time.Minute
+
+// PlaceMissingVrrpBackups gives a VRRP instance running on its MASTER node alone (its zone had no second
+// available node when it was built, or none was connected) its BACKUP node once the zone has one. It covers
+// the available load balancers and active_standby VPN gateways; set_vrrp_ip.sh goes to another node of the
+// zone, and its callback pushes the load balancer or the gateway to the pair (LoadBalancerBackupPlaced,
+// VpnGatewayVrrpReady). The node already running it only reloads the same configuration, keepalived there
+// stays master (nopreempt). Run by the VPN watchdog every 20 s; usually the first query finds nothing.
+func PlaceMissingVrrpBackups(ctx context.Context) {
+	ctx, db := GetContextDB(ctx)
+	missing := []int64{}
+	if err := db.Model(&model.Interface{}).Where("type = 'vrrp' AND name = 'BACKUP' AND hyper < 0").Pluck("device", &missing).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to query the VRRP interfaces without a node: %v", err)
+		return
+	}
+	if len(missing) == 0 {
+		return
+	}
+	// Only instances whose owner is up and running: a load balancer or gateway still being built has no
+	// BACKUP node for a moment too, and an active_active gateway does not run on one node
+	owned, gatewayOwned := []int64{}, []int64{}
+	if err := db.Model(&model.LoadBalancer{}).Where("vrrp_instance_id IN ? AND status = ?", missing, "available").Pluck("vrrp_instance_id", &owned).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to query the load balancers without a BACKUP node: %v", err)
+		return
+	}
+	if err := db.Model(&model.VpnGateway{}).Where("vrrp_instance_id IN ? AND status = ? AND (ha_mode = ? OR ha_mode = '' OR ha_mode IS NULL)",
+		missing, model.VpnGatewayStatusAvailable, model.VpnHaModeActiveStandby).Pluck("vrrp_instance_id", &gatewayOwned).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to query the VPN gateways without a BACKUP node: %v", err)
+		return
+	}
+	owned = append(owned, gatewayOwned...)
+	if len(owned) == 0 {
+		return
+	}
+	instances := []*model.VrrpInstance{}
+	if err := db.Preload("VrrpSubnet").Where("id IN ?", owned).Find(&instances).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to query the VRRP instances without a BACKUP node: %v", err)
+		return
+	}
+	for _, instance := range instances {
+		if instance.VrrpSubnet == nil {
+			continue
+		}
+		master, backup, err := GetVrrpInterfaces(ctx, instance.ID)
+		if err != nil || master.Hyper < 0 || backup.Hyper >= 0 || master.Address == nil || backup.Address == nil {
+			continue
+		}
+		// Nothing to do while the zone still has no other available node
+		if others, cerr := vpnZoneNodeCount(ctx, instance.ZoneID, master.Hyper); cerr != nil || others == 0 {
+			continue
+		}
+		// The attempt is claimed in the database, not in memory: every clapi replica runs the watchdog, and
+		// two placements of the same BACKUP interface could land on two different nodes, both building its
+		// address and MAC. The claim is the interface row's updated_at: one attempt per vrrpBackupRetry across
+		// all replicas, and the conditional update lets only one of two concurrent replicas through.
+		now := time.Now()
+		claim := db.Model(&model.Interface{}).Where("id = ? AND hyper < 0 AND updated_at < ?", backup.ID, now.Add(-vrrpBackupRetry)).
+			Update("updated_at", now)
+		if claim.Error != nil || claim.RowsAffected == 0 {
+			continue
+		}
+		logger.Ctx(ctx).Infof("VRRP instance %d runs on node %d alone, placing its BACKUP node in zone %d", instance.ID, master.Hyper, instance.ZoneID)
+		if err = PlaceVrrpBackup(ctx, instance, master, backup); err != nil {
+			logger.Ctx(ctx).Errorf("Failed to place the BACKUP node of VRRP instance %d: %v", instance.ID, err)
+		}
+	}
+}
+
+// LoadBalancerBackupPlaced pushes a load balancer to both of its nodes once its BACKUP node came late
+// (PlaceMissingVrrpBackups). Without floating IPs there is nothing to push: keepalived and haproxy only
+// start with the first floating IP, which pushes to every node then (CreateVrrpConf).
+func LoadBalancerBackupPlaced(ctx context.Context, vrrpInstanceID int64) (err error) {
+	ctx, db := GetContextDB(ctx)
+	loadBalancer := &model.LoadBalancer{}
+	if err = db.Preload("FloatingIps").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners", dbs.OrderByID).
+		Preload("Listeners.Backends", dbs.OrderByID).Where("vrrp_instance_id = ?", vrrpInstanceID).Take(loadBalancer).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return
+	}
+	if loadBalancer.Status != "available" || len(loadBalancer.FloatingIps) == 0 {
+		return nil
+	}
+	logger.Ctx(ctx).Infof("Load balancer %d has its BACKUP node now, pushing it to both nodes", loadBalancer.ID)
+	if err = CreateVrrpConf(ctx, loadBalancer); err != nil {
+		return
+	}
+	return backendAdmin.CreateHaproxyConf(ctx, nil, loadBalancer)
+}
+
 func (a *LoadBalancerAdmin) Create(ctx context.Context, name, description string, router *model.Router, zone *model.Zone) (loadBalancer *model.LoadBalancer, err error) {
-	logger.Infof("ENTER LoadBalancerAdmin.Create: name=%s, routerID=%d", name, router.ID)
+	logger.Ctx(ctx).Infof("ENTER LoadBalancerAdmin.Create: name=%s, routerID=%d", name, router.ID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT LoadBalancerAdmin.Create: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT LoadBalancerAdmin.Create: error=%v", err)
 		} else {
-			logger.Infof("EXIT LoadBalancerAdmin.Create: success, lbID=%d", loadBalancer.ID)
+			logger.Ctx(ctx).Infof("EXIT LoadBalancerAdmin.Create: success, lbID=%d", loadBalancer.ID)
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckOrgPermission(model.OrgWriter)
 	if !permit {
-		logger.Error("Not authorized to create routers")
+		logger.Ctx(ctx).Error("Not authorized to create routers")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to create routers", nil)
 		return
 	}
@@ -205,14 +341,14 @@ func (a *LoadBalancerAdmin) Create(ctx context.Context, name, description string
 	}()
 	vrrpInstance, err := CreateVrrpInstance(ctx, name, router, zone)
 	if err != nil {
-		logger.Error("Failed to create vrrp instance", err)
+		logger.Ctx(ctx).Error("Failed to create vrrp instance", err)
 		err = NewCLError(ErrVrrpInstanceCreateFailed, "Failed to create vrrp instance", err)
 		return
 	}
 	loadBalancer = &model.LoadBalancer{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, Description: description, RouterID: router.ID, VrrpInstanceID: vrrpInstance.ID, Status: "pending"}
 	err = db.Create(loadBalancer).Error
 	if err != nil {
-		logger.Error("DB failed to create load balancer ", err)
+		logger.Ctx(ctx).Error("DB failed to create load balancer ", err)
 		err = NewCLError(ErrLoadBalancerCreateFailed, "Failed to create load balancer", err)
 		return
 	}
@@ -220,31 +356,31 @@ func (a *LoadBalancerAdmin) Create(ctx context.Context, name, description string
 }
 
 func (a *LoadBalancerAdmin) Get(ctx context.Context, id int64) (loadBalancer *model.LoadBalancer, err error) {
-	logger.Infof("ENTER LoadBalancerAdmin.Get: id=%d", id)
+	logger.Ctx(ctx).Infof("ENTER LoadBalancerAdmin.Get: id=%d", id)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT LoadBalancerAdmin.Get: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT LoadBalancerAdmin.Get: error=%v", err)
 		} else {
-			logger.Info("EXIT LoadBalancerAdmin.Get: success")
+			logger.Ctx(ctx).Info("EXIT LoadBalancerAdmin.Get: success")
 		}
 	}()
 	if id <= 0 {
-		logger.Error("returning nil router")
+		logger.Ctx(ctx).Error("returning nil router")
 		return
 	}
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where, args := memberShip.GetOrgFilter()
 	loadBalancer = &model.LoadBalancer{Model: model.Model{ID: id}}
-	err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Where(where, args...).Take(loadBalancer).Error
+	err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners", dbs.OrderByID).Preload("Listeners.Backends", dbs.OrderByID).Where(where, args...).Take(loadBalancer).Error
 	if err != nil {
-		logger.Error("Failed to query load balancer", err)
+		logger.Ctx(ctx).Error("Failed to query load balancer", err)
 		err = NewCLError(ErrLoadBalancerNotFound, "Failed to find load balancer", err)
 		return
 	}
 	permit := memberShip.CheckResourceOrg(model.OrgReader, loadBalancer.Owner)
 	if !permit {
-		logger.Error("Not authorized to read the load balancer")
+		logger.Ctx(ctx).Error("Not authorized to read the load balancer")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the load balancer", nil)
 		return
 	}
@@ -252,27 +388,27 @@ func (a *LoadBalancerAdmin) Get(ctx context.Context, id int64) (loadBalancer *mo
 }
 
 func (a *LoadBalancerAdmin) GetLoadBalancerByUUID(ctx context.Context, uuID string) (loadBalancer *model.LoadBalancer, err error) {
-	logger.Infof("ENTER LoadBalancerAdmin.GetLoadBalancerByUUID: uuID=%s", uuID)
+	logger.Ctx(ctx).Infof("ENTER LoadBalancerAdmin.GetLoadBalancerByUUID: uuID=%s", uuID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT LoadBalancerAdmin.GetLoadBalancerByUUID: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT LoadBalancerAdmin.GetLoadBalancerByUUID: error=%v", err)
 		} else {
-			logger.Infof("EXIT LoadBalancerAdmin.GetLoadBalancerByUUID: success, lbID=%d", loadBalancer.ID)
+			logger.Ctx(ctx).Infof("EXIT LoadBalancerAdmin.GetLoadBalancerByUUID: success, lbID=%d", loadBalancer.ID)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where, args := memberShip.GetOrgFilter()
 	loadBalancer = &model.LoadBalancer{}
-	err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Where(where, args...).Where("uuid = ?", uuID).Take(loadBalancer).Error
+	err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners", dbs.OrderByID).Preload("Listeners.Backends", dbs.OrderByID).Where(where, args...).Where("uuid = ?", uuID).Take(loadBalancer).Error
 	if err != nil {
-		logger.Error("Failed to query load balancer, %v", err)
+		logger.Ctx(ctx).Error("Failed to query load balancer, %v", err)
 		err = NewCLError(ErrRouterNotFound, "Failed to find load balancer", err)
 		return
 	}
 	permit := memberShip.CheckResourceOrg(model.OrgReader, loadBalancer.Owner)
 	if !permit {
-		logger.Error("Not authorized to read the load balancer")
+		logger.Ctx(ctx).Error("Not authorized to read the load balancer")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the load balancer", nil)
 		return
 	}
@@ -280,12 +416,12 @@ func (a *LoadBalancerAdmin) GetLoadBalancerByUUID(ctx context.Context, uuID stri
 }
 
 func (a *LoadBalancerAdmin) GetLoadBalancerByName(ctx context.Context, name string) (loadBalancer *model.LoadBalancer, err error) {
-	logger.Infof("ENTER LoadBalancerAdmin.GetLoadBalancerByName: name=%s", name)
+	logger.Ctx(ctx).Infof("ENTER LoadBalancerAdmin.GetLoadBalancerByName: name=%s", name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT LoadBalancerAdmin.GetLoadBalancerByName: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT LoadBalancerAdmin.GetLoadBalancerByName: error=%v", err)
 		} else {
-			logger.Infof("EXIT LoadBalancerAdmin.GetLoadBalancerByName: success, lbID=%d", loadBalancer.ID)
+			logger.Ctx(ctx).Infof("EXIT LoadBalancerAdmin.GetLoadBalancerByName: success, lbID=%d", loadBalancer.ID)
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -294,13 +430,13 @@ func (a *LoadBalancerAdmin) GetLoadBalancerByName(ctx context.Context, name stri
 	loadBalancer = &model.LoadBalancer{}
 	err = db.Preload("Router").Where(where, args...).Where("name = ?", name).Take(loadBalancer).Error
 	if err != nil {
-		logger.Error("Failed to query load balancer, %v", err)
+		logger.Ctx(ctx).Error("Failed to query load balancer, %v", err)
 		err = NewCLError(ErrRouterNotFound, "Failed to find load balancer", err)
 		return
 	}
 	permit := memberShip.CheckResourceOrg(model.OrgReader, loadBalancer.Owner)
 	if !permit {
-		logger.Error("Not authorized to read the load balancer")
+		logger.Ctx(ctx).Error("Not authorized to read the load balancer")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to read the load balancer", nil)
 		return
 	}
@@ -308,12 +444,12 @@ func (a *LoadBalancerAdmin) GetLoadBalancerByName(ctx context.Context, name stri
 }
 
 func (a *LoadBalancerAdmin) GetLoadBalancer(ctx context.Context, reference *BaseReference) (loadBalancer *model.LoadBalancer, err error) {
-	logger.Infof("ENTER LoadBalancerAdmin.GetLoadBalancer: reference=%+v", reference)
+	logger.Ctx(ctx).Infof("ENTER LoadBalancerAdmin.GetLoadBalancer: reference=%+v", reference)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT LoadBalancerAdmin.GetLoadBalancer: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT LoadBalancerAdmin.GetLoadBalancer: error=%v", err)
 		} else {
-			logger.Info("EXIT LoadBalancerAdmin.GetLoadBalancer: success")
+			logger.Ctx(ctx).Info("EXIT LoadBalancerAdmin.GetLoadBalancer: success")
 		}
 	}()
 	if reference == nil || (reference.ID == "" && reference.Name == "") {
@@ -332,12 +468,12 @@ func (a *LoadBalancerAdmin) GetLoadBalancer(ctx context.Context, reference *Base
 }
 
 func (a *LoadBalancerAdmin) Update(ctx context.Context, loadBalancer *model.LoadBalancer, name, description string) (lb *model.LoadBalancer, err error) {
-	logger.Infof("ENTER LoadBalancerAdmin.Update: lbID=%d, name=%s", loadBalancer.ID, name)
+	logger.Ctx(ctx).Infof("ENTER LoadBalancerAdmin.Update: lbID=%d, name=%s", loadBalancer.ID, name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT LoadBalancerAdmin.Update: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT LoadBalancerAdmin.Update: error=%v", err)
 		} else {
-			logger.Info("EXIT LoadBalancerAdmin.Update: success")
+			logger.Ctx(ctx).Info("EXIT LoadBalancerAdmin.Update: success")
 		}
 	}()
 	ctx, db := GetContextDB(ctx)
@@ -352,7 +488,7 @@ func (a *LoadBalancerAdmin) Update(ctx context.Context, loadBalancer *model.Load
 	}
 	if len(updates) > 0 {
 		if err = db.Model(loadBalancer).Updates(updates).Error; err != nil {
-			logger.Error("Failed to save load balancer", err)
+			logger.Ctx(ctx).Error("Failed to save load balancer", err)
 			err = NewCLError(ErrRouterUpdateFailed, "Failed to update load balancer", err)
 			return
 		}
@@ -362,12 +498,12 @@ func (a *LoadBalancerAdmin) Update(ctx context.Context, loadBalancer *model.Load
 }
 
 func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
-	logger.Infof("ENTER LoadBalancerAdmin.Delete: lbID=%d, name=%s", loadBalancer.ID, loadBalancer.Name)
+	logger.Ctx(ctx).Infof("ENTER LoadBalancerAdmin.Delete: lbID=%d, name=%s", loadBalancer.ID, loadBalancer.Name)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT LoadBalancerAdmin.Delete: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT LoadBalancerAdmin.Delete: error=%v", err)
 		} else {
-			logger.Info("EXIT LoadBalancerAdmin.Delete: success")
+			logger.Ctx(ctx).Info("EXIT LoadBalancerAdmin.Delete: success")
 		}
 	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -379,21 +515,21 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, loadBalancer.Owner)
 	if !permit {
-		logger.Error("Not authorized to delete the load balancer")
+		logger.Ctx(ctx).Error("Not authorized to delete the load balancer")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the router", nil)
 		return
 	}
 	intQuery := fmt.Sprintf("load_balancer_id = %d", loadBalancer.ID)
 	_, floatingIps, err := (&FloatingIpAdminService{}).List(ctx, 0, -1, "", "", intQuery)
 	if err != nil {
-		logger.Error("Failed to list floating ips", err)
+		logger.Ctx(ctx).Error("Failed to list floating ips", err)
 		err = NewCLError(ErrFIPListFailed, "Failed to list floating ips", err)
 		return
 	}
 	for _, floatingIp := range floatingIps {
 		err = (&FloatingIpAdminService{}).Delete(ctx, floatingIp)
 		if err != nil {
-			logger.Error("Failed to delete floating ip", err)
+			logger.Ctx(ctx).Error("Failed to delete floating ip", err)
 			err = NewCLError(ErrFIPListFailed, "Failed to delete floating ip", err)
 			return
 		}
@@ -401,106 +537,49 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 	loadBalancer.FloatingIps = nil
 	_, listeners, err := listenerAdmin.List(ctx, 0, -1, "", loadBalancer)
 	if err != nil {
-		logger.Error("Failed to list listeners", err)
+		logger.Ctx(ctx).Error("Failed to list listeners", err)
 		err = NewCLError(ErrListenerListFailed, "Failed to list listeners", err)
 		return
 	}
 	for _, listener := range listeners {
 		err = listenerAdmin.Delete(ctx, listener, loadBalancer)
 		if err != nil {
-			logger.Error("Failed to delete listener", err)
+			logger.Ctx(ctx).Error("Failed to delete listener", err)
 			err = NewCLError(ErrListenerDeleteFailed, "Failed to delete listener", err)
 			return
 		}
 	}
 	loadBalancer.Listeners = nil
-	vrrpInstance := loadBalancer.VrrpInstance
-	vrrpSubnet := vrrpInstance.VrrpSubnet
-	routerID := loadBalancer.RouterID
-	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, vrrpInstance.ID)
-	if err != nil {
-		logger.Error("Failed to get vrrp interfaces", err)
-		err = NewCLError(ErrInterfaceDeleteFailed, "Failed to delete vrrp interface 2", err)
-		return
-	}
-	if vrrpIface1.Hyper >= 0 {
-		control := fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", routerID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface1.Address.Address, vrrpIface1.MacAddr, vrrpIface2.Address.Address, vrrpIface2.MacAddr)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Set vrrp ip command execution failed ", err)
-			return
-		}
-	}
-	if vrrpIface2.Hyper >= 0 {
-		control := fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", routerID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface2.Address.Address, vrrpIface2.MacAddr, vrrpIface1.Address.Address, vrrpIface1.MacAddr)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Set vrrp ip command execution failed ", err)
-			return
-		}
-	}
-	err = DeleteInterface(ctx, vrrpIface1)
-	if err != nil {
-		logger.Error("DB failed to delete vrrp interface 1", err)
-		err = NewCLError(ErrInterfaceDeleteFailed, "Failed to delete vrrp interface 1", err)
-		return
-	}
-	err = DeleteInterface(ctx, vrrpIface2)
-	if err != nil {
-		logger.Error("DB failed to delete vrrp interface 2", err)
-		err = NewCLError(ErrInterfaceDeleteFailed, "Failed to delete vrrp interface 2", err)
-		return
-	}
-	if err = db.Delete(loadBalancer.VrrpInstance).Error; err != nil {
-		logger.Error("DB failed to delete vrrp instance", err)
-		err = NewCLError(ErrLoadBalancerDeleteFailed, "Failed to delete vrrp instance", err)
-		return
-	}
 	if err = db.Delete(loadBalancer).Error; err != nil {
-		logger.Error("DB failed to delete load balancer", err)
+		logger.Ctx(ctx).Error("DB failed to delete load balancer", err)
 		err = NewCLError(ErrLoadBalancerDeleteFailed, "Failed to delete load balancer", err)
 		return
 	}
 	loadBalancer.Name = fmt.Sprintf("%s-%d", loadBalancer.Name, loadBalancer.CreatedAt.Unix())
 	err = db.Model(&model.LoadBalancer{}).Unscoped().Where("id = ?", loadBalancer.ID).Update("name", loadBalancer.Name).Error
 	if err != nil {
-		logger.Error("DB failed to update loadBalancer name", err)
+		logger.Ctx(ctx).Error("DB failed to update loadBalancer name", err)
 		err = NewCLError(ErrLoadBalancerUpdateFailed, "Failed to update loadBalancer name", err)
 		return
 	}
-	count := 0
-	err = db.Model(&model.LoadBalancer{}).Where("router_id = ?", loadBalancer.RouterID).Count(&count).Error
-	if err != nil {
-		logger.Error("Failed to count load balancer")
-		err = NewCLError(ErrDatabaseError, "Failed to count load balancer in the router", err)
-		return
-	}
-	if count == 0 {
-		err = subnetAdmin.Delete(ctx, loadBalancer.VrrpInstance.VrrpSubnet)
-		if err != nil {
-			logger.Error("Failed to delete vrrp subnet", err)
-			err = NewCLError(ErrSubnetDeleteFailed, "Failed to delete vrrp subnet", err)
-			return
-		}
-	}
+	// Shared with VPN gateways: the VRRP subnet is released only when the router has no VRRP instance left
+	err = deleteVrrpInstance(ctx, loadBalancer.RouterID, loadBalancer.VrrpInstance)
 	return
 }
 
-func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, loadBalancers []*model.LoadBalancer, err error) {
-	logger.Infof("ENTER LoadBalancerAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
+func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order, name string, routerID int64) (total int64, loadBalancers []*model.LoadBalancer, err error) {
+	logger.Ctx(ctx).Infof("ENTER LoadBalancerAdmin.List: offset=%d, limit=%d, order=%s, name=%s, routerID=%d", offset, limit, order, name, routerID)
 	defer func() {
 		if err != nil {
-			logger.Errorf("EXIT LoadBalancerAdmin.List: error=%v", err)
+			logger.Ctx(ctx).Errorf("EXIT LoadBalancerAdmin.List: error=%v", err)
 		} else {
-			logger.Infof("EXIT LoadBalancerAdmin.List: total=%d, count=%d", total, len(loadBalancers))
+			logger.Ctx(ctx).Infof("EXIT LoadBalancerAdmin.List: total=%d, count=%d", total, len(loadBalancers))
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckOrgPermission(model.OrgReader)
 	if !permit {
-		logger.Error("Not authorized for this operation")
+		logger.Ctx(ctx).Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
@@ -513,29 +592,37 @@ func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order
 		order = "created_at"
 	}
 
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
-	}
 	queryBuilder, args := memberShip.GetOrgFilter()
+	// Filters are bound as parameters: the name comes straight from the request
+	filter := func(tx *gorm.DB) *gorm.DB {
+		tx = tx.Where(queryBuilder, args...)
+		if name != "" {
+			tx = tx.Where("name like ?", "%"+name+"%")
+		}
+		if routerID > 0 {
+			tx = tx.Where("router_id = ?", routerID)
+		}
+		return tx
+	}
 	loadBalancers = []*model.LoadBalancer{}
-	if err = db.Model(&model.LoadBalancer{}).Where(queryBuilder, args...).Where(query).Count(&total).Error; err != nil {
-		logger.Error("DB failed to count load balancer, %v", err)
+	if err = db.Model(&model.LoadBalancer{}).Scopes(filter).Count(&total).Error; err != nil {
+		logger.Ctx(ctx).Error("DB failed to count load balancer, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count load balancer", err)
 		return
 	}
-	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("FloatingIps").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Preload("Router").Where(queryBuilder, args...).Where(query).Find(&loadBalancers).Error; err != nil {
-		logger.Error("DB failed to query load balancers, %v", err)
+	db = dbs.Sortby(db.Offset(int(offset)).Limit(int(limit)), order)
+	if err = db.Preload("FloatingIps").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners", dbs.OrderByID).Preload("Listeners.Backends", dbs.OrderByID).Preload("Router").Scopes(filter).Find(&loadBalancers).Error; err != nil {
+		logger.Ctx(ctx).Error("DB failed to query load balancers, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query load balancers", err)
 		return
 	}
 	permit = memberShip.IsSystemAdmin()
 	if permit {
-		db = db.Offset(0).Limit(-1)
+		_, db = GetContextDB(ctx) // 链式调用复用 Statement，取新会话查询 OwnerInfo
 		for _, loadBalancer := range loadBalancers {
 			loadBalancer.OwnerInfo = &model.Organization{Model: model.Model{ID: loadBalancer.Owner}}
 			if err = db.Take(loadBalancer.OwnerInfo).Error; err != nil {
-				logger.Error("Failed to query owner info", err)
+				logger.Ctx(ctx).Error("Failed to query owner info", err)
 				err = NewCLError(ErrOwnerNotFound, "Failed to query owner info", err)
 				return
 			}

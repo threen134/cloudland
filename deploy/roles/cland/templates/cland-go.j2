@@ -1,0 +1,9 @@
+# cland-go 环境变量（参考 deploy/docker/docker-compose.yml 中 cloudland 服务）
+# 计算节点经管理 VIP 连入，VIP 可能漂移，故监听全部地址；依赖令牌鉴权 + 内网隔离
+GRPC_LISTEN=0.0.0.0:5006
+GRPC_AUTH_TOKEN={{ grpc_auth_token }}
+CLAPI_ENDPOINT={{ clapi_internal_endpoint }}
+CLOUDLAND_SSH_KEY_DIR=/opt/cloudland/deploy/.ssh
+MANAGEMENT_VIP={{ vrrp_virtual_ip }}
+# 链路追踪：Ansible 部署不含 OTel Collector，未设置时不导出（仍生成 trace_id 用于日志关联）
+#OTEL_EXPORTER_OTLP_ENDPOINT=http://<collector>:4317

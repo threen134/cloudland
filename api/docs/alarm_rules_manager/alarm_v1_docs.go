@@ -15,6 +15,85 @@ const docTemplatealarm_v1 = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/activities": {
+            "get": {
+                "description": "当前组织在本区域的操作动态，按时间倒序、游标分页，组织内所有成员可见",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Activity"
+                ],
+                "summary": "list activities of current organization",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "default 20, max 100",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "next_cursor from previous page",
+                        "name": "cursor",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339, inclusive; default 7 days before end",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339, exclusive; default now; range must not exceed 90 days",
+                        "name": "end",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource type, such as instance",
+                        "name": "resource_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource uuid",
+                        "name": "resource_uuid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true: only succeeded, false: only failed",
+                        "name": "success",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ActivityListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/addresses/remark": {
             "patch": {
                 "description": "batch patch addresses with unified remark",
@@ -145,6 +224,45 @@ const docTemplatealarm_v1 = `{
                         "description": "Not authorized",
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/adjust/regenerate-bandwidth-metrics": {
+            "post": {
+                "description": "Regenerate bandwidth configuration metrics for all active VMs or a specific hyper node",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auto Scaling"
+                ],
+                "summary": "Regenerate bandwidth config metrics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Specific hyper node ID",
+                        "name": "hyper_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Regeneration result",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -292,7 +410,14 @@ const docTemplatealarm_v1 = `{
                         }
                     },
                     "403": {
-                        "description": "Channel not owned",
+                        "description": "Channel or rule group not owned",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Rule group not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -340,6 +465,20 @@ const docTemplatealarm_v1 = `{
                 "responses": {
                     "200": {
                         "description": "Rule channel bindings",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Rule group not owned",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Rule group not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -424,37 +563,6 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/api/v1/metrics/alarm/sync-mappings": {
-            "post": {
-                "description": "Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Alarm"
-                ],
-                "summary": "Synchronize all VM rule mappings",
-                "responses": {
-                    "200": {
-                        "description": "Synchronization successful",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/api/v1/rules": {
             "post": {
                 "description": "Register API routes for managing Prometheus rule files",
@@ -520,9 +628,9 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/backups": {
+        "/audit_logs": {
             "get": {
-                "description": "list volume backups/snapshots by volume UUID and backup type",
+                "description": "按时间倒序返回改动型操作的审计记录，仅系统管理员可见",
                 "consumes": [
                     "application/json"
                 ],
@@ -530,485 +638,62 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Backup"
+                    "Administration"
                 ],
-                "summary": "list volumes backups/snapshots",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Volume UUID",
-                        "name": "id",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Backup type: empty or snapshot or backup",
-                        "name": "backup_type",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.VolBackupListResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "create a volume backup/snapshot",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Backup"
-                ],
-                "summary": "create a volume backup/snapshot",
-                "parameters": [
-                    {
-                        "description": "Volume backup/snapshot create payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.VolBackupPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.VolBackupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/backups/{id}": {
-            "get": {
-                "description": "get a volume backup/snapshot by UUID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Backup"
-                ],
-                "summary": "get a volume backup/snapshot",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Volume backup/snapshot UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.VolBackupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "delete a volume backup/snapshot by UUID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Backup"
-                ],
-                "summary": "delete a volume backup/snapshot",
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/backups/{id}/restore": {
-            "post": {
-                "description": "restore volume from a backup/snapshot",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Backup"
-                ],
-                "summary": "restore volume from a backup/snapshot",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Volume backup/snapshot UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.VolBackupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups": {
-            "get": {
-                "description": "List consistency groups with pagination",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "List consistency groups",
+                "summary": "list audit logs",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Offset",
+                        "description": "offset",
                         "name": "offset",
                         "in": "query"
                     },
                     {
                         "type": "integer",
-                        "description": "Limit",
+                        "description": "limit, default 50",
                         "name": "limit",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Order",
-                        "name": "order",
+                        "description": "username",
+                        "name": "actor",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Name filter",
-                        "name": "name",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupListResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "Create a new consistency group with volumes",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Create a consistency group",
-                "parameters": [
-                    {
-                        "description": "Consistency Group Payload",
-                        "name": "payload",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups/{id}": {
-            "get": {
-                "description": "Get a consistency group by UUID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Get a consistency group",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "Delete a consistency group",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Delete a consistency group",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "patch": {
-                "description": "Update a consistency group's name and description",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Update a consistency group",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Update Payload",
-                        "name": "payload",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupPatchPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups/{id}/snapshots": {
-            "get": {
-                "description": "List snapshots for a consistency group with pagination",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "List consistency group snapshots",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Offset",
-                        "name": "offset",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Limit",
-                        "name": "limit",
+                        "description": "user uuid",
+                        "name": "actor_uuid",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Order",
-                        "name": "order",
+                        "description": "request path contains",
+                        "name": "path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource type, such as instance",
+                        "name": "resource_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "resource uuid",
+                        "name": "resource_uuid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339, inclusive",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "RFC3339, exclusive; range must not exceed 90 days",
+                        "name": "end",
                         "in": "query"
                     }
                 ],
@@ -1016,310 +701,7 @@ const docTemplatealarm_v1 = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotListResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "Create a snapshot for a consistency group",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Create a consistency group snapshot",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Snapshot Payload",
-                        "name": "payload",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups/{id}/snapshots/{snap_id}": {
-            "get": {
-                "description": "Get a consistency group snapshot by UUID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Get a consistency group snapshot",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Snapshot UUID",
-                        "name": "snap_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "Delete a snapshot from a consistency group",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Delete a consistency group snapshot",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Snapshot UUID",
-                        "name": "snap_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups/{id}/snapshots/{snap_id}/restore": {
-            "post": {
-                "description": "Restore all volumes in a consistency group from a snapshot",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Restore a consistency group from snapshot",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Snapshot UUID",
-                        "name": "snap_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupRestoreResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups/{id}/volumes": {
-            "post": {
-                "description": "Add volumes to an existing consistency group",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Add volumes to a consistency group",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Volumes Payload",
-                        "name": "payload",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupVolumesPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/consistency_groups/{id}/volumes/{volume_id}": {
-            "delete": {
-                "description": "Remove a volume from an existing consistency group",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Consistency Group"
-                ],
-                "summary": "Remove a volume from a consistency group",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Consistency Group UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Volume UUID",
-                        "name": "volume_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
+                            "$ref": "#/definitions/apis.AuditLogListResponse"
                         }
                     },
                     "400": {
@@ -1913,7 +1295,7 @@ const docTemplatealarm_v1 = `{
                 }
             },
             "patch": {
-                "description": "patch a floating ip",
+                "description": "patch a floating ip. \"instance\": {\"id\"} attaches it to that instance and \"instance\": null detaches it; without an instance or load_balancer key the attachment is kept, so a body with only inbound / outbound changes the bandwidth of the attached floating ip in place",
                 "consumes": [
                     "application/json"
                 ],
@@ -2100,6 +1482,12 @@ const docTemplatealarm_v1 = `{
                         "name": "uuid",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Keep the local storage pools of the host for adoption by the host registered again",
+                        "name": "keep_pools",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -2148,6 +1536,161 @@ const docTemplatealarm_v1 = `{
                 "responses": {}
             }
         },
+        "/hypers/{uuid}/console": {
+            "post": {
+                "description": "create a single-use token for a root shell on a hypervisor (system admins only, when enabled in system settings). Through the gateway the body must also carry \"password\", the caller's login password, which the gateway checks and removes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration",
+                    "Hypervisor"
+                ],
+                "summary": "create a host console",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Terminal size",
+                        "name": "message",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostConsolePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostConsoleResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized or host console disabled",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/disks": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "list the disks of a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/apis.HostDiskResponse"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/disks/scan": {
+            "post": {
+                "description": "the host scans its disks in the background; read the result with GET /hypers/{uuid}/disks",
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "scan the disks of a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/disks/{id}": {
+            "patch": {
+                "description": "an empty media goes back to the detected one",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "set the media of a disk",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Disk record id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Media",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.DiskMediaPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostDiskResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/hypers/{uuid}/maintain": {
             "post": {
                 "description": "start maintenance for a hypervisor, optionally migrating all instances",
@@ -2183,10 +1726,7 @@ const docTemplatealarm_v1 = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "$ref": "#/definitions/apis.HyperMaintainResponse"
                         }
                     },
                     "400": {
@@ -2210,6 +1750,407 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/hypers/{uuid}/storage_pools": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "list the storage pools of a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostPoolListResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "formats the selected disks. Type the host name in confirm",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "set a storage pool up on a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pool, layout and disks",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostPoolPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/adopt": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "adopt a storage pool found on the disks of a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pool and host name to confirm",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.AdoptPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}": {
+            "delete": {
+                "description": "force deletes leftover files of an empty pool; a lost pool is only unmounted and its data kept",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "remove a storage pool from a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Delete leftover files",
+                        "name": "force",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Host name to confirm",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}/extend": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "add disks to a storage pool of a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Disks",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostPoolExtendPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}/lost": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "declare a storage pool of a host lost",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Host name to confirm; node_offline_ack when the host is offline",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConfirmPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}/maintenance": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "put a storage pool of a host in or out of maintenance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Enable or disable",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.MaintenancePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}/replace_disk": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "replace a failed disk of a RAID1 pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Failed and new disk",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostPoolReplacePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}/restore": {
+            "post": {
+                "description": "only when the host reports the pool healthy again; volumes whose file is found become usable",
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "restore a storage pool declared lost",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/storage_pools/{pool_id}/usage": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "read the last usage report of a storage pool on a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            },
+            "post": {
+                "description": "POST asks the host for a fresh report, GET returns the last one inside the pool listing",
+                "tags": [
+                    "HostStorage"
+                ],
+                "summary": "list the largest files of a storage pool on a host",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    }
+                }
+            }
+        },
         "/images": {
             "get": {
                 "description": "list images",
@@ -2223,6 +2164,20 @@ const docTemplatealarm_v1 = `{
                     "Image"
                 ],
                 "summary": "list images",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "true: only images owned by the current org, regardless of system role",
+                        "name": "owned",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "public or private",
+                        "name": "visibility",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2381,35 +2336,6 @@ const docTemplatealarm_v1 = `{
                         "description": "Bad request",
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/images/{id}/storages": {
-            "get": {
-                "description": "list image storages",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Image"
-                ],
-                "summary": "list image storages",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.ImageStorageResponse"
                         }
                     },
                     "401": {
@@ -2601,13 +2527,19 @@ const docTemplatealarm_v1 = `{
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
                         }
+                    },
+                    "403": {
+                        "description": "Hypervisor specified by a non system admin",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
                     }
                 }
             }
         },
         "/instances/:id/console": {
             "post": {
-                "description": "create a console",
+                "description": "create a console access token; type vnc (graphical, default) or serial (text)",
                 "consumes": [
                     "application/json"
                 ],
@@ -2625,6 +2557,14 @@ const docTemplatealarm_v1 = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "Console type",
+                        "name": "message",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsolePayload"
+                        }
                     }
                 ],
                 "responses": {
@@ -2935,6 +2875,39 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/instances/{id}/migration_targets": {
+            "get": {
+                "description": "for every host of the zone, whether each local disk can stay in its pool, the pool of its fallback group that would replace it, and all usable pools with their free space. A host that breaks the rule of a strict placement group of the instance is not usable (reason says why); one that breaks a best-effort group carries placement_warning",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration",
+                    "Migration"
+                ],
+                "summary": "list the hosts an instance can migrate to",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/services.MigrationTarget"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/instances/{id}/reinstall": {
             "post": {
                 "description": "reinstall a instance",
@@ -3137,7 +3110,7 @@ const docTemplatealarm_v1 = `{
         },
         "/internal/alarm/events": {
             "get": {
-                "description": "Internal endpoint for CPGateway to query alarm events without owner filtering",
+                "description": "Internal endpoint for CPGateway to query alarm events, filtered by org_uuid when provided",
                 "consumes": [
                     "application/json"
                 ],
@@ -3153,6 +3126,12 @@ const docTemplatealarm_v1 = `{
                         "type": "string",
                         "description": "If 'true', only return firing event count",
                         "name": "count_only",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by organization UUID",
+                        "name": "org_uuid",
                         "in": "query"
                     },
                     {
@@ -3207,6 +3186,44 @@ const docTemplatealarm_v1 = `{
                     "Notification"
                 ],
                 "summary": "Sync notification channels",
+                "responses": {
+                    "200": {
+                        "description": "Sync successful",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/internal/system-settings/sync": {
+            "post": {
+                "description": "Internal endpoint for CPGateway to push system settings (full sync with version check)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SystemSettings"
+                ],
+                "summary": "Sync system settings",
                 "responses": {
                     "200": {
                         "description": "Sync successful",
@@ -3945,67 +3962,6 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/load_balancers/{id}/listeners/:listener_id/backends": {
-            "get": {
-                "description": "list backends",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Load Balancer"
-                ],
-                "summary": "list backends",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.BackendListResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/load_balancers/{id}/listeners/:listener_id/backends/{backend_id}": {
-            "delete": {
-                "description": "delete a backend",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Load Balancer"
-                ],
-                "summary": "delete a backend",
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
         "/load_balancers/{id}/listeners/{listener_id}": {
             "get": {
                 "description": "get a listener",
@@ -4116,6 +4072,33 @@ const docTemplatealarm_v1 = `{
             }
         },
         "/load_balancers/{id}/listeners/{listener_id}/backends": {
+            "get": {
+                "description": "list backends",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Load Balancer"
+                ],
+                "summary": "list backends",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.BackendListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
             "post": {
                 "description": "create a backend",
                 "consumes": [
@@ -4180,6 +4163,36 @@ const docTemplatealarm_v1 = `{
                         "schema": {
                             "$ref": "#/definitions/apis.BackendResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a backend",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Load Balancer"
+                ],
+                "summary": "delete a backend",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
                     },
                     "400": {
                         "description": "Bad request",
@@ -5168,9 +5181,9 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/metrics/api/v1/adjust/regenerate-bandwidth-metrics": {
+        "/metrics/alarm/sync-mappings": {
             "post": {
-                "description": "Regenerate bandwidth configuration metrics for all active VMs or a specific hyper node",
+                "description": "Rebuild matched_vms.json (which VM belongs to which VM alarm / auto-adjust rule group) from the database. clapi also reconciles it automatically in the background; nothing is written if any query fails.",
                 "consumes": [
                     "application/json"
                 ],
@@ -5178,20 +5191,12 @@ const docTemplatealarm_v1 = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Auto Scaling"
+                    "Alarm"
                 ],
-                "summary": "Regenerate bandwidth config metrics",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Specific hyper node ID",
-                        "name": "hyper_id",
-                        "in": "query"
-                    }
-                ],
+                "summary": "Rebuild all VM rule mappings now",
                 "responses": {
                     "200": {
-                        "description": "Regeneration result",
+                        "description": "Synchronization successful",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5207,7 +5212,7 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/metrics/api/v1/current-alarms": {
+        "/metrics/current-alarms": {
             "get": {
                 "description": "Query currently firing alarms from Prometheus",
                 "consumes": [
@@ -5238,7 +5243,7 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/metrics/api/v1/history-alarms": {
+        "/metrics/history-alarms": {
             "get": {
                 "description": "Query historical alarm data from Prometheus within a time range",
                 "consumes": [
@@ -5291,53 +5296,6 @@ const docTemplatealarm_v1 = `{
                     },
                     "500": {
                         "description": "Internal server error",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/metrics/api/v1/rules/links": {
-            "get": {
-                "description": "Get VM link information for alarm or adjustment rules by rule_id or UUID",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Auto Scaling"
-                ],
-                "summary": "Get rule VM links",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Rule ID or UUID",
-                        "name": "rule_id",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Rule links",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "404": {
-                        "description": "Rule not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5551,55 +5509,6 @@ const docTemplatealarm_v1 = `{
                     },
                     "400": {
                         "description": "Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/metrics/instances/volume/his_data": {
-            "post": {
-                "description": "Query volume read/write historical data from WDS storage monitoring",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Monitoring"
-                ],
-                "summary": "Get volume metrics",
-                "parameters": [
-                    {
-                        "description": "Metrics query request",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.MetricsRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Volume metrics data",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "500": {
-                        "description": "Internal server error",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -5904,6 +5813,58 @@ const docTemplatealarm_v1 = `{
                         }
                     }
                 }
+            },
+            "patch": {
+                "description": "Update a node-level alarm rule in place (name, description, config, enabled)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Alarm"
+                ],
+                "summary": "Update node alarm rule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rule UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Rule updated successfully",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Rule not found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
             }
         },
         "/openmeter/metrics": {
@@ -6044,6 +6005,249 @@ const docTemplatealarm_v1 = `{
                 "responses": {
                     "200": {
                         "description": "Available subjects",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/placement_groups": {
+            "get": {
+                "description": "list the placement groups of the organization, each with its member count, the number of hosts they are on and whether the group keeps its rule",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "list placement groups",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Zone name",
+                        "name": "zone",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a placement group in a zone. spread keeps the members on different hosts, pack on one host; a strict group refuses what breaks its rule, a best-effort one relaxes it. An organization has at most 50 groups",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "create a placement group",
+                "parameters": [
+                    {
+                        "description": "Placement group create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Name taken (111702) or too many groups (111707)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/placement_groups/{id}": {
+            "get": {
+                "description": "get a placement group with its members; host_slot numbers the hosts inside the group, the host names are for system admins only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "get a placement group",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete an empty placement group (409 while it has members, being deleted ones included)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "delete a placement group",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "The group has members (111703)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "change the name or the description of a placement group; its policy, strictness and zone can not change (400)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement Group"
+                ],
+                "summary": "patch a placement group",
+                "parameters": [
+                    {
+                        "description": "Placement group patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.PlacementGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/rules/links": {
+            "get": {
+                "description": "Get VM link information for alarm or adjustment rules by rule_id or UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Auto Scaling"
+                ],
+                "summary": "Get rule VM links",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Rule ID or UUID",
+                        "name": "rule_id",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Rule links",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Rule not found",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -6416,6 +6620,207 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/storage_pools": {
+            "get": {
+                "description": "list storage pools. Members see the active pools with their media and how many hosts can use them; system admins see everything",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "list storage pools",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolListResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a local storage pool. Its directory on every host is /opt/cloudland/pools/\u003cuuid\u003e; nothing is written on any host until the pool is set up there",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "create a storage pool",
+                "parameters": [
+                    {
+                        "description": "Storage pool",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_pools/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "get a storage pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "delete a storage pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            },
+            "patch": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "update a storage pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to change",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_pools/{id}/hypers": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "list the hosts of a storage pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HostPoolListResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_pools/{id}/orphans/abandon": {
+            "post": {
+                "description": "the volumes of the pool left by a deleted host become lost and can then be deleted",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "abandon the volumes of a pool that wait for adoption",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Old host id and the pool name to confirm",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.AbandonPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
         "/subnets": {
             "get": {
                 "description": "list subnets",
@@ -6700,6 +7105,796 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/transit_gateways": {
+            "get": {
+                "description": "list the transit gateways of the organization with the number of attached VPCs",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "list transit gateways",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a transit gateway with a default route table; VPCs attached to it reach each other",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "create a transit gateway",
+                "parameters": [
+                    {
+                        "description": "Transit gateway create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Name taken (133002)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}": {
+            "get": {
+                "description": "get a transit gateway with the state of its nodes; host names are for system admins only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "get a transit gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a transit gateway without attachments (409 while VPCs are attached or being detached)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "delete a transit gateway",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "VPCs are attached (133003)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "change the name or the description of a transit gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "patch a transit gateway",
+                "parameters": [
+                    {
+                        "description": "Transit gateway patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/attachments": {
+            "get": {
+                "description": "list the VPCs attached to a transit gateway, the ones being detached included",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "list the attachments of a transit gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwAttachmentListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "attach a VPC of the same organization. Its internal subnets may not overlap those of the other members, 192.168.196.0/24 (VRRP subnet) or 169.254.254.0/24 (gateway links), nor the networks of the members' VPN gateways (400, 133014). The attachment is available once every node applied it",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "attach a VPC to a transit gateway",
+                "parameters": [
+                    {
+                        "description": "Attachment payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwAttachmentPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwAttachmentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request, overlapping networks (133014)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "VPC attached already (133012) or too many attachments (133013)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/attachments/{att_id}": {
+            "get": {
+                "description": "get one VPC attachment of a transit gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "get an attachment of a transit gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwAttachmentResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "detach a VPC; its propagations and the static routes towards it are removed. The attachment stays as detaching until every node applied the change; detaching again retries",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "detach a VPC from a transit gateway",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "associate the attachment with another route table of the gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "change the route table of an attachment",
+                "parameters": [
+                    {
+                        "description": "Attachment patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwAttachmentPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwAttachmentResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/resync": {
+            "post": {
+                "description": "send the current state of the transit gateway to all of its nodes again",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "resync a transit gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TransitGatewayResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables": {
+            "get": {
+                "description": "list the route tables with their associations, propagations and static routes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "list the route tables of a transit gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTableListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create an empty route table; attachments associated with it reach what its propagations and routes give",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "create a route table",
+                "parameters": [
+                    {
+                        "description": "Route table payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTablePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTableResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Name taken or too many tables (133022)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables/{rt_id}": {
+            "get": {
+                "description": "get a route table with its associations, propagations and static routes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "get a route table of a transit gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTableResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a route table no attachment is associated with; the default table can not be deleted (409, 133023)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "delete a route table",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "In use (133023)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "rename a route table",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "rename a route table",
+                "parameters": [
+                    {
+                        "description": "Route table payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTablePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTableResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Name taken (133022)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables/{rt_id}/effective_routes": {
+            "get": {
+                "description": "the routes of a route table as the nodes install them: propagated subnets (filtered by the allow lists), static routes and blackholes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "effective routes of a route table",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwEffectiveRouteListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables/{rt_id}/propagations": {
+            "post": {
+                "description": "make the internal subnets of an attachment's VPC appear in a route table; with prefixes only the parts of the subnets inside them. Each prefix must overlap a subnet of that VPC",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "add a propagation",
+                "parameters": [
+                    {
+                        "description": "Propagation payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwPropagationPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTableResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Exists already (133042)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables/{rt_id}/propagations/{prop_id}": {
+            "delete": {
+                "description": "stop propagating the subnets of an attachment into a route table",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "remove a propagation",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables/{rt_id}/routes": {
+            "post": {
+                "description": "add a static route to a route table: a destination towards an attachment, or dropped with blackhole. It replaces a propagated route with the same destination. A default route is refused, and so is a destination overlapping the networks of a member's VPN gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "add a static route",
+                "parameters": [
+                    {
+                        "description": "Route payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRoutePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TgwRouteTableResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request (133014)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Exists already (133032)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/transit_gateways/{id}/route_tables/{rt_id}/routes/{route_id}": {
+            "delete": {
+                "description": "delete a static route of a route table",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Transit Gateway"
+                ],
+                "summary": "delete a static route",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/version": {
             "get": {
                 "description": "get version",
@@ -6852,7 +8047,7 @@ const docTemplatealarm_v1 = `{
                 }
             },
             "delete": {
-                "description": "delete a volume",
+                "description": "delete a volume. A volume written on a host is deleted by the host first: the request returns 202 and the volume stays \"deleting\" until the host confirms.",
                 "consumes": [
                     "application/json"
                 ],
@@ -6864,6 +8059,9 @@ const docTemplatealarm_v1 = `{
                 ],
                 "summary": "delete a volume",
                 "responses": {
+                    "202": {
+                        "description": "Accepted"
+                    },
                     "204": {
                         "description": "No Content"
                     },
@@ -6926,9 +8124,9 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/volumes/{id}/qos": {
-            "put": {
-                "description": "update iops and bps limit of a volume",
+        "/volumes/{id}/force_detach": {
+            "post": {
+                "description": "remove a volume whose storage pool was declared lost from its instance, without touching the file",
                 "consumes": [
                     "application/json"
                 ],
@@ -6938,18 +8136,7 @@ const docTemplatealarm_v1 = `{
                 "tags": [
                     "Volume"
                 ],
-                "summary": "update qos of a volume",
-                "parameters": [
-                    {
-                        "description": "Volume qos payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.VolumeQosPayload"
-                        }
-                    }
-                ],
+                "summary": "detach a volume of a lost pool by force",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -7197,6 +8384,803 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/vpn_gateways": {
+            "get": {
+                "description": "list VPN gateways",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "list VPN gateways",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a VPN gateway in a VPC with a public address. Its two nodes come from the zone: an active_active gateway needs two available compute nodes there; an active_standby gateway runs on a single node, without high availability, when the zone has only one, and gets its second node once the zone has another (error code 132009 when the zone has too few nodes)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "create a VPN gateway",
+                "parameters": [
+                    {
+                        "description": "VPN gateway create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request, or too few available compute nodes in the zone (132009)",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}": {
+            "get": {
+                "description": "get a VPN gateway with its connections, clients and routed prefixes; the connection keys (psk, bgp_password) are included for members with write permission",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a VPN gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a VPN gateway with its connections and clients",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "delete a VPN gateway",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "patch a VPN gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "patch a VPN gateway",
+                "parameters": [
+                    {
+                        "description": "VPN gateway patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/clients": {
+            "get": {
+                "description": "list the WireGuard clients of a VPN gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "list VPN clients",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a WireGuard client; the response carries the generated private key and full config exactly once",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "create a VPN client",
+                "parameters": [
+                    {
+                        "description": "VPN client create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/clients/{client_id}": {
+            "get": {
+                "description": "get a WireGuard client (never includes a private key)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a VPN client",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a WireGuard client and release its address",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "delete a VPN client",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "rename, describe or enable/disable a WireGuard client",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "patch a VPN client",
+                "parameters": [
+                    {
+                        "description": "VPN client patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/clients/{client_id}/config": {
+            "get": {
+                "description": "WireGuard configuration of a client without the private key; the preshared key is filled in for members with write permission",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a VPN client configuration template",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnClientConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/connections": {
+            "get": {
+                "description": "list the site-to-site connections of a VPN gateway; psk and bgp_password are included for members with write permission",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "list VPN connections",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a site-to-site IPsec connection (static or BGP routed)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "create a VPN connection",
+                "parameters": [
+                    {
+                        "description": "VPN connection create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/connections/{conn_id}": {
+            "get": {
+                "description": "get a site-to-site connection; psk and bgp_password are included for members with write permission",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a VPN connection",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a site-to-site connection",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "delete a VPN connection",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "patch a site-to-site connection; changed fields are pushed to the gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "patch a VPN connection",
+                "parameters": [
+                    {
+                        "description": "VPN connection patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/connections/{conn_id}/restart": {
+            "post": {
+                "description": "terminate and re-initiate the IKE SAs of a connection: every tunnel, or only the one in the given slot",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "restart a VPN connection",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Slot of the tunnel to restart (1 to 4); all tunnels when omitted",
+                        "name": "tunnel",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnConnectionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/public_ips": {
+            "post": {
+                "description": "give an active-standby gateway its second floating IP (vip2), or an active-active gateway the floating IP of its client VPN (vip1); see addable_endpoint of the gateway",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "add a public address to a VPN gateway",
+                "parameters": [
+                    {
+                        "description": "public subnet and / or address, both optional",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnPublicIpPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnGatewayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/public_ips/{endpoint}": {
+            "get": {
+                "description": "get one public address of a VPN gateway by endpoint (vip1, vip2, node1, node2)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "get a public address of a VPN gateway",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnPublicIpResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "release the second floating IP of an active-standby gateway (no tunnel may use it) or the client VPN floating IP of an active-active gateway (client VPN disabled)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "remove a public address from a VPN gateway",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/vpn_gateways/{id}/traffic": {
+            "get": {
+                "description": "Rate of every site connection and WireGuard client of the gateway in bits per second, from the tunnel counters the gateway master exports to Prometheus. Deleted connections and clients are left out.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "VPN Gateway"
+                ],
+                "summary": "VPN gateway traffic history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "VPN gateway UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start, unix seconds",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "End, unix seconds",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Resolution as a duration, e.g. 60s or 5m",
+                        "name": "step",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "connection (default): one series per connection; tunnel: one per tunnel",
+                        "name": "by",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VpnTrafficResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/zones": {
             "get": {
                 "description": "list zones",
@@ -7384,6 +9368,67 @@ const docTemplatealarm_v1 = `{
         }
     },
     "definitions": {
+        "apis.AbandonPayload": {
+            "type": "object",
+            "required": [
+                "confirm",
+                "old_hostid"
+            ],
+            "properties": {
+                "confirm": {
+                    "type": "string"
+                },
+                "old_hostid": {
+                    "description": "Host id the volumes waiting for adoption still name; 0 is a valid host id",
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
+        "apis.ActivityListResponse": {
+            "type": "object",
+            "properties": {
+                "activities": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.ActivityResponse"
+                    }
+                },
+                "next_cursor": {
+                    "description": "NextCursor 非空表示还有更早的记录，作为下一页的 cursor 参数传回",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ActivityResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "actor": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_name": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
         "apis.AddressInfo": {
             "type": "object",
             "properties": {
@@ -7458,6 +9503,10 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "remark": {
                     "type": "string"
                 },
@@ -7493,6 +9542,88 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "apis.AdoptPayload": {
+            "type": "object",
+            "required": [
+                "confirm",
+                "storage_pool"
+            ],
+            "properties": {
+                "confirm": {
+                    "type": "string"
+                },
+                "storage_pool": {
+                    "$ref": "#/definitions/common.BaseReference"
+                }
+            }
+        },
+        "apis.AuditLogListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "logs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.AuditLogResponse"
+                    }
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.AuditLogResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "actor": {
+                    "type": "string"
+                },
+                "actor_uuid": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "detail": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "latency_ms": {
+                    "type": "integer"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_name": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "trace_id": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.BackendListResponse": {
             "type": "object",
             "properties": {
@@ -7519,13 +9650,6 @@ const docTemplatealarm_v1 = `{
                 "name"
             ],
             "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "enable",
-                        "disable"
-                    ]
-                },
                 "endpoint": {
                     "type": "string",
                     "maxLength": 128,
@@ -7535,6 +9659,9 @@ const docTemplatealarm_v1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "ssl": {
+                    "type": "boolean"
                 }
             }
         },
@@ -7554,6 +9681,9 @@ const docTemplatealarm_v1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "ssl": {
+                    "type": "boolean"
                 }
             }
         },
@@ -7566,6 +9696,10 @@ const docTemplatealarm_v1 = `{
                 "endpoint": {
                     "type": "string"
                 },
+                "health": {
+                    "description": "Health check result from the master haproxy: up, down, or unknown when not reported yet",
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -7574,6 +9708,13 @@ const docTemplatealarm_v1 = `{
                 },
                 "owner": {
                     "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "ssl": {
+                    "type": "boolean"
                 },
                 "status": {
                     "type": "string"
@@ -7644,6 +9785,10 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "resources": {
                     "type": "string"
                 },
@@ -7661,191 +9806,30 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "apis.ConsistencyGroupListResponse": {
-            "type": "object",
-            "properties": {
-                "consistency_groups": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/apis.ConsistencyGroupResponse"
-                    }
-                },
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "apis.ConsistencyGroupPatchPayload": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.ConsistencyGroupPayload": {
+        "apis.ConfirmPayload": {
             "type": "object",
             "required": [
-                "name",
-                "volumes"
+                "confirm"
             ],
             "properties": {
-                "description": {
+                "confirm": {
                     "type": "string"
                 },
-                "name": {
-                    "type": "string"
-                },
-                "volumes": {
-                    "description": "Volume UUIDs",
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "string"
-                    }
+                "node_offline_ack": {
+                    "type": "boolean"
                 }
             }
         },
-        "apis.ConsistencyGroupResponse": {
+        "apis.ConsolePayload": {
             "type": "object",
             "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owner": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "volumes": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/common.BaseReference"
-                    }
-                },
-                "wds_cg_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.ConsistencyGroupRestoreResponse": {
-            "type": "object",
-            "properties": {
-                "status": {
-                    "type": "string"
-                },
-                "task_id": {
-                    "type": "string"
-                },
-                "task_uuid": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.ConsistencyGroupSnapshotListResponse": {
-            "type": "object",
-            "properties": {
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "snapshots": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/apis.ConsistencyGroupSnapshotResponse"
-                    }
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "apis.ConsistencyGroupSnapshotPayload": {
-            "type": "object",
-            "required": [
-                "name"
-            ],
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.ConsistencyGroupSnapshotResponse": {
-            "type": "object",
-            "properties": {
-                "cg_id": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owner": {
-                    "type": "string"
-                },
-                "size": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "wds_snap_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.ConsistencyGroupVolumesPayload": {
-            "type": "object",
-            "required": [
-                "volumes"
-            ],
-            "properties": {
-                "volumes": {
-                    "description": "Volume UUIDs",
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "string"
-                    }
+                "type": {
+                    "description": "vnc (graphical, default) or serial (text console on the first serial port)",
+                    "type": "string",
+                    "enum": [
+                        "vnc",
+                        "serial"
+                    ]
                 }
             }
         },
@@ -7954,6 +9938,10 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "shortname": {
                     "type": "string"
                 },
@@ -7990,6 +9978,48 @@ const docTemplatealarm_v1 = `{
                 },
                 "value": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.DiskMediaPayload": {
+            "type": "object",
+            "properties": {
+                "media": {
+                    "type": "string",
+                    "enum": [
+                        "ssd",
+                        "hdd",
+                        "nvme"
+                    ]
+                }
+            }
+        },
+        "apis.DiskPlanResponse": {
+            "type": "object",
+            "properties": {
+                "auto": {
+                    "type": "boolean"
+                },
+                "booting": {
+                    "type": "boolean"
+                },
+                "device": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "size_gb": {
+                    "type": "integer"
+                },
+                "source_pool": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "target_pool": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "volume": {
+                    "$ref": "#/definitions/common.ResourceReference"
                 }
             }
         },
@@ -8055,6 +10085,9 @@ const docTemplatealarm_v1 = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
                 }
             }
         },
@@ -8080,6 +10113,10 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "type": {
@@ -8120,9 +10157,10 @@ const docTemplatealarm_v1 = `{
                     "$ref": "#/definitions/common.BaseID"
                 },
                 "inbound": {
+                    "description": "0 removes the limit (set_floating_bandwidth.sh), so a limit set once can be lifted again",
                     "type": "integer",
                     "maximum": 20000,
-                    "minimum": 1
+                    "minimum": 0
                 },
                 "instance": {
                     "$ref": "#/definitions/common.BaseID"
@@ -8133,7 +10171,7 @@ const docTemplatealarm_v1 = `{
                 "outbound": {
                     "type": "integer",
                     "maximum": 20000,
-                    "minimum": 1
+                    "minimum": 0
                 }
             }
         },
@@ -8216,6 +10254,10 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "public_ip": {
                     "type": "string"
                 },
@@ -8275,6 +10317,299 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "vlan": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.HostConsolePayload": {
+            "type": "object",
+            "properties": {
+                "cols": {
+                    "type": "integer",
+                    "maximum": 1000,
+                    "minimum": 1
+                },
+                "rows": {
+                    "description": "Terminal size the shell starts with",
+                    "type": "integer",
+                    "maximum": 500,
+                    "minimum": 1
+                }
+            }
+        },
+        "apis.HostConsoleResponse": {
+            "type": "object",
+            "properties": {
+                "console_url": {
+                    "type": "string"
+                },
+                "hyper": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "idle_timeout": {
+                    "description": "Seconds without traffic after which the node closes the session",
+                    "type": "integer"
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.HostDiskResponse": {
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "type": "string"
+                },
+                "detected_media": {
+                    "type": "string"
+                },
+                "disk_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "media": {
+                    "type": "string"
+                },
+                "media_source": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "orphan_count": {
+                    "type": "integer"
+                },
+                "owner_hostid": {
+                    "type": "integer"
+                },
+                "pool_name": {
+                    "type": "string"
+                },
+                "pool_uuid": {
+                    "type": "string"
+                },
+                "scanned_at": {
+                    "type": "string"
+                },
+                "serial": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "transport": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.HostPoolExtendPayload": {
+            "type": "object",
+            "required": [
+                "confirm",
+                "disks"
+            ],
+            "properties": {
+                "allow_media_mismatch": {
+                    "type": "boolean"
+                },
+                "confirm": {
+                    "type": "string"
+                },
+                "disks": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "wipe": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "apis.HostPoolListResponse": {
+            "type": "object",
+            "properties": {
+                "pending_instances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                },
+                "storage_pools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.HostPoolResponse"
+                    }
+                }
+            }
+        },
+        "apis.HostPoolPayload": {
+            "type": "object",
+            "required": [
+                "confirm",
+                "disks",
+                "layout",
+                "storage_pool"
+            ],
+            "properties": {
+                "allow_media_mismatch": {
+                    "type": "boolean"
+                },
+                "confirm": {
+                    "type": "string"
+                },
+                "destroy_pools": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "disks": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "layout": {
+                    "type": "string",
+                    "enum": [
+                        "single",
+                        "linear",
+                        "raid1"
+                    ]
+                },
+                "storage_pool": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
+                "wipe": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "apis.HostPoolReplacePayload": {
+            "type": "object",
+            "required": [
+                "confirm",
+                "failed_disk",
+                "new_disk"
+            ],
+            "properties": {
+                "allow_media_mismatch": {
+                    "type": "boolean"
+                },
+                "confirm": {
+                    "type": "string"
+                },
+                "failed_disk": {
+                    "type": "string"
+                },
+                "new_disk": {
+                    "type": "string"
+                },
+                "wipe": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "apis.HostPoolResponse": {
+            "type": "object",
+            "properties": {
+                "allocated_bytes": {
+                    "type": "integer"
+                },
+                "avail_bytes": {
+                    "type": "integer"
+                },
+                "builtin": {
+                    "type": "boolean"
+                },
+                "capacity_at": {
+                    "type": "string"
+                },
+                "capacity_bytes": {
+                    "type": "integer"
+                },
+                "checked_at": {
+                    "type": "string"
+                },
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.PoolDevice"
+                    }
+                },
+                "hypervisor": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "last_op": {
+                    "type": "string"
+                },
+                "layout": {
+                    "type": "string"
+                },
+                "maintenance": {
+                    "type": "boolean"
+                },
+                "media": {
+                    "type": "string"
+                },
+                "own_bytes": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "reported_reason": {
+                    "type": "string"
+                },
+                "reported_status": {
+                    "type": "string"
+                },
+                "reserved_bytes": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "storage_full_paused": {
+                    "type": "integer"
+                },
+                "storage_pool": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "sync_percent": {
+                    "type": "integer"
+                },
+                "usage": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.UsageEntry"
+                    }
+                },
+                "usage_at": {
+                    "type": "string"
+                },
+                "usage_ratio": {
+                    "type": "number"
+                },
+                "used_bytes": {
+                    "type": "integer"
+                },
+                "volume_count": {
                     "type": "integer"
                 }
             }
@@ -8342,7 +10677,24 @@ const docTemplatealarm_v1 = `{
                     "type": "boolean"
                 },
                 "target_hyper": {
-                    "type": "integer"
+                    "description": "用指针而非值类型：值类型时客户端漏传 target_hyper 会得到零值 0，而 0 不是合法 hostid，\n会被当作\"迁往 hostid 0\"从而报 HypervisorNotFound。约定 nil / -1 表示由调度器自选",
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": -1
+                }
+            }
+        },
+        "apis.HyperMaintainResponse": {
+            "type": "object",
+            "properties": {
+                "instances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.MaintainInstanceResult"
+                    }
+                },
+                "result": {
+                    "type": "string"
                 }
             }
         },
@@ -8364,25 +10716,33 @@ const docTemplatealarm_v1 = `{
                 "deploy_command": {
                     "type": "string"
                 },
-                "disk": {
+                "disk_allocated": {
                     "type": "integer"
+                },
+                "disk_max_usage_ratio": {
+                    "type": "number"
                 },
                 "disk_over_rate": {
                     "type": "number"
                 },
                 "disk_total": {
+                    "description": "Disks: sum of the storage pools of the host, raw capacity in GB, never multiplied by an over-commit ratio",
+                    "type": "integer"
+                },
+                "disk_used": {
                     "type": "integer"
                 },
                 "host_ip": {
                     "type": "string"
                 },
                 "hostid": {
+                    "description": "节点编号：迁移接口的 target_hyper、实例的 hyper 字段用的都是它",
                     "type": "integer"
                 },
                 "hostname": {
                     "type": "string"
                 },
-                "id": {
+                "instance_count": {
                     "type": "integer"
                 },
                 "mem_over_rate": {
@@ -8392,9 +10752,6 @@ const docTemplatealarm_v1 = `{
                     "type": "integer"
                 },
                 "memory_total": {
-                    "type": "integer"
-                },
-                "parentid": {
                     "type": "integer"
                 },
                 "remark": {
@@ -8409,14 +10766,17 @@ const docTemplatealarm_v1 = `{
                 "status_name": {
                     "type": "string"
                 },
+                "storage_pools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.HostPoolFigures"
+                    }
+                },
                 "uuid": {
                     "type": "string"
                 },
                 "virt_type": {
                     "type": "string"
-                },
-                "zone_id": {
-                    "type": "integer"
                 },
                 "zone_name": {
                     "type": "string"
@@ -8467,12 +10827,6 @@ const docTemplatealarm_v1 = `{
                     "maxLength": 32,
                     "minLength": 2
                 },
-                "pools": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
                 "public": {
                     "type": "boolean"
                 },
@@ -8511,7 +10865,7 @@ const docTemplatealarm_v1 = `{
                 "instance_uuid": {
                     "type": "string"
                 },
-                "is_resque": {
+                "is_rescue": {
                     "type": "boolean"
                 },
                 "name": {
@@ -8581,6 +10935,10 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "public": {
                     "type": "boolean"
                 },
@@ -8594,35 +10952,6 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "user": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.ImageStorageResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owner": {
-                    "type": "string"
-                },
-                "pool_id": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "volume_id": {
                     "type": "string"
                 }
             }
@@ -8643,6 +10972,10 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "updated_at": {
@@ -8674,7 +11007,10 @@ const docTemplatealarm_v1 = `{
             "type": "object",
             "properties": {
                 "hostname": {
-                    "type": "string"
+                    "description": "same rule as InstancePayload",
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
                 },
                 "power_action": {
                     "enum": [
@@ -8716,29 +11052,19 @@ const docTemplatealarm_v1 = `{
                     "type": "integer",
                     "minimum": 1
                 },
-                "disk_bps_limit": {
-                    "description": "in MB/s",
-                    "type": "integer",
-                    "maximum": 102400,
-                    "minimum": 0
-                },
-                "disk_iops_limit": {
-                    "type": "integer",
-                    "maximum": 10000000,
-                    "minimum": 0
-                },
                 "flavor": {
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 1
                 },
                 "hostname": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
                 },
                 "hypervisor": {
-                    "type": "integer",
-                    "maximum": 65535,
-                    "minimum": 0
+                    "description": "system admins only",
+                    "type": "string"
                 },
                 "image": {
                     "$ref": "#/definitions/common.BaseReference"
@@ -8763,8 +11089,13 @@ const docTemplatealarm_v1 = `{
                 "nested_enable": {
                     "type": "boolean"
                 },
-                "pool_id": {
-                    "type": "string"
+                "placement_group": {
+                    "description": "group of the organization in the same zone",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseReference"
+                        }
+                    ]
                 },
                 "primary_interface": {
                     "$ref": "#/definitions/apis.InterfacePayload"
@@ -8781,6 +11112,14 @@ const docTemplatealarm_v1 = `{
                     "items": {
                         "$ref": "#/definitions/apis.InterfacePayload"
                     }
+                },
+                "storage_pool": {
+                    "description": "pool of the boot disk; the default pool when left out",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseReference"
+                        }
+                    ]
                 },
                 "userdata": {
                     "type": "string"
@@ -8827,15 +11166,22 @@ const docTemplatealarm_v1 = `{
                     "minimum": 1
                 },
                 "password": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 8
                 }
             }
         },
         "apis.InstanceRescuePayload": {
             "type": "object",
+            "required": [
+                "password"
+            ],
             "properties": {
                 "password": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 8
                 },
                 "rescue_image": {
                     "$ref": "#/definitions/common.BaseReference"
@@ -8858,6 +11204,13 @@ const docTemplatealarm_v1 = `{
         "apis.InstanceResponse": {
             "type": "object",
             "properties": {
+                "available_storage_pools": {
+                    "description": "Pools usable on the host of the instance: a volume not created yet can only be attached when its pool is one of them",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "cpu": {
                     "type": "integer"
                 },
@@ -8906,8 +11259,20 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "passwd_login": {
                     "type": "boolean"
+                },
+                "placement_group": {
+                    "description": "Left out when the instance is not in a placement group",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/apis.PlacementGroupRef"
+                        }
+                    ]
                 },
                 "reason": {
                     "type": "string"
@@ -9219,6 +11584,10 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "subnet_names": {
                     "type": "string"
                 },
@@ -9296,6 +11665,10 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "public_key": {
                     "type": "string"
                 },
@@ -9330,13 +11703,6 @@ const docTemplatealarm_v1 = `{
                 "name"
             ],
             "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "enable",
-                        "disable"
-                    ]
-                },
                 "name": {
                     "type": "string",
                     "maxLength": 32,
@@ -9401,6 +11767,10 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "port": {
                     "type": "integer"
                 },
@@ -9438,13 +11808,6 @@ const docTemplatealarm_v1 = `{
                 "name"
             ],
             "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "enable",
-                        "disable"
-                    ]
-                },
                 "description": {
                     "type": "string",
                     "maxLength": 255
@@ -9512,6 +11875,14 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "single_node": {
+                    "description": "Available on its MASTER node alone, without high availability: its zone had no second available node.\nThe BACKUP node is added once the zone has one",
+                    "type": "boolean"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -9520,6 +11891,31 @@ const docTemplatealarm_v1 = `{
                 },
                 "vpc": {
                     "$ref": "#/definitions/common.ResourceReference"
+                }
+            }
+        },
+        "apis.MaintainInstanceResult": {
+            "type": "object",
+            "properties": {
+                "instance": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "migration": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.MaintenancePayload": {
+            "type": "object",
+            "properties": {
+                "enable": {
+                    "type": "boolean"
                 }
             }
         },
@@ -9539,6 +11935,12 @@ const docTemplatealarm_v1 = `{
                 },
                 "end": {
                     "type": "string"
+                },
+                "hostname": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "id": {
                     "type": "array",
@@ -9563,6 +11965,21 @@ const docTemplatealarm_v1 = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "apis.MigrationDiskPayload": {
+            "type": "object",
+            "required": [
+                "storage_pool",
+                "volume"
+            ],
+            "properties": {
+                "storage_pool": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
+                "volume": {
+                    "$ref": "#/definitions/common.BaseReference"
                 }
             }
         },
@@ -9593,7 +12010,27 @@ const docTemplatealarm_v1 = `{
                 "name"
             ],
             "properties": {
+                "allow_pool_fallback": {
+                    "description": "Replace a pool the target lacks by one of the same fallback group (default true)",
+                    "type": "boolean"
+                },
+                "disks": {
+                    "description": "Target pool per disk; needs target_hyper and a single instance",
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                        "$ref": "#/definitions/apis.MigrationDiskPayload"
+                    }
+                },
                 "force": {
+                    "type": "boolean"
+                },
+                "ignore_capacity": {
+                    "description": "Skip the capacity checks of the target, to evacuate a host when every other one is nearly full",
+                    "type": "boolean"
+                },
+                "ignore_placement": {
+                    "description": "Skip the rules of the placement groups of the instances; a strict group may end up broken",
                     "type": "boolean"
                 },
                 "instances": {
@@ -9618,14 +12055,37 @@ const docTemplatealarm_v1 = `{
         "apis.MigrationResponse": {
             "type": "object",
             "properties": {
+                "allow_pool_fallback": {
+                    "type": "boolean"
+                },
                 "created_at": {
                     "type": "string"
+                },
+                "creater_name": {
+                    "description": "发起迁移的用户名，创建时快照下来",
+                    "type": "string"
+                },
+                "creater_uuid": {
+                    "type": "string"
+                },
+                "disk_plan": {
+                    "description": "Where every disk goes on the target, fixed once the target is known",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.DiskPlanResponse"
+                    }
                 },
                 "force": {
                     "type": "boolean"
                 },
                 "id": {
                     "type": "string"
+                },
+                "ignore_capacity": {
+                    "type": "boolean"
+                },
+                "ignore_placement": {
+                    "type": "boolean"
                 },
                 "instance": {
                     "$ref": "#/definitions/apis.InstanceInfo"
@@ -9636,14 +12096,30 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "phases": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/apis.TaskResponse"
                     }
                 },
+                "placement_warning": {
+                    "description": "The rule of a best-effort placement group the given target breaks; only in the create response",
+                    "type": "string"
+                },
+                "progress": {
+                    "description": "迁移进度：百分比与已传输 / 总字节数（内存 + 本地磁盘合计），由源节点上报",
+                    "type": "integer"
+                },
                 "source_hyper": {
                     "type": "integer"
+                },
+                "source_hyper_name": {
+                    "description": "节点名称，便于界面直接展示；目标节点由调度器自选（-1）时为空",
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -9651,10 +12127,202 @@ const docTemplatealarm_v1 = `{
                 "target_hyper": {
                     "type": "integer"
                 },
+                "target_hyper_name": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "transferred": {
+                    "type": "integer"
+                },
                 "type": {
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.PlacementGroupListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "placement_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.PlacementGroupResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.PlacementGroupMemberResponse": {
+            "type": "object",
+            "properties": {
+                "host_slot": {
+                    "description": "Number of the host inside the group: members on the same host have the same number, 0 when it has no host yet.\nEveryone sees it; the host name is for system admins only",
+                    "type": "integer"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "hypervisor": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ignored_placement": {
+                    "type": "boolean"
+                },
+                "last_migration_failed": {
+                    "description": "Its latest migration failed, or was done ignoring the rules: why a strict group may be split",
+                    "type": "boolean"
+                },
+                "migration_id": {
+                    "type": "string"
+                },
+                "stale_migration": {
+                    "description": "A migration of it has not moved for an hour: it keeps holding its target until an admin repairs it",
+                    "type": "boolean"
+                },
+                "stale_provisioning": {
+                    "description": "Still being created after an hour: it keeps holding its host, deleting it frees the host",
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target_slot": {
+                    "description": "Host of an in-flight migration, 0 when none",
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.PlacementGroupPatchPayload": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.PlacementGroupPayload": {
+            "type": "object",
+            "required": [
+                "name",
+                "policy"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "policy": {
+                    "type": "string",
+                    "enum": [
+                        "spread",
+                        "pack"
+                    ]
+                },
+                "strict": {
+                    "description": "Defaults to true for spread and false for pack",
+                    "type": "boolean"
+                },
+                "zone": {
+                    "description": "zone name, the default zone when left out",
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 1
+                }
+            }
+        },
+        "apis.PlacementGroupRef": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "policy": {
+                    "type": "string"
+                },
+                "strict": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "apis.PlacementGroupResponse": {
+            "type": "object",
+            "properties": {
+                "compliant": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "host_count": {
+                    "description": "Number of distinct hosts the members are on (or are being created on)",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "member_count": {
+                    "type": "integer"
+                },
+                "members": {
+                    "description": "Detail only",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.PlacementGroupMemberResponse"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "policy": {
+                    "description": "spread | pack",
+                    "type": "string"
+                },
+                "strict": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "zone": {
                     "type": "string"
                 }
             }
@@ -9697,19 +12365,22 @@ const docTemplatealarm_v1 = `{
                 "port_max": {
                     "type": "integer",
                     "maximum": 65535,
-                    "minimum": 1
+                    "minimum": -1
                 },
                 "port_min": {
+                    "description": "含义同 SecurityRulePayload；不传表示保持原值（协议变更时重置为新协议的默认值）",
                     "type": "integer",
                     "maximum": 65535,
-                    "minimum": 1
+                    "minimum": -1
                 },
                 "protocol": {
                     "type": "string",
                     "enum": [
                         "tcp",
                         "udp",
-                        "icmp"
+                        "icmp",
+                        "gre",
+                        "ipv6"
                     ]
                 },
                 "remote_cidr": {
@@ -9736,6 +12407,10 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "port_max": {
@@ -9780,9 +12455,6 @@ const docTemplatealarm_v1 = `{
         },
         "apis.SecurityGroupPatchPayload": {
             "type": "object",
-            "required": [
-                "name"
-            ],
             "properties": {
                 "description": {
                     "type": "string",
@@ -9842,6 +12514,10 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "security_rules": {
                     "type": "array",
                     "items": {
@@ -9882,21 +12558,25 @@ const docTemplatealarm_v1 = `{
                     "minLength": 2
                 },
                 "port_max": {
+                    "description": "结束端口 / ICMP code。tcp/udp：1-65535，只传一个端口时表示单端口；\nicmp：ICMP code 0-255，不传或 -1 表示任意，指定 code 时必须指定 type；gre/ipv6：忽略",
                     "type": "integer",
                     "maximum": 65535,
-                    "minimum": 1
+                    "minimum": -1
                 },
                 "port_min": {
+                    "description": "起始端口 / ICMP type。tcp/udp：1-65535，port_min、port_max 都不传表示全部端口；\nicmp：ICMP type 0-254，不传或 -1 表示任意；gre/ipv6：忽略。用指针区分“未传”与 0（ICMP type 可以为 0）",
                     "type": "integer",
                     "maximum": 65535,
-                    "minimum": 1
+                    "minimum": -1
                 },
                 "protocol": {
                     "type": "string",
                     "enum": [
                         "tcp",
                         "udp",
-                        "icmp"
+                        "icmp",
+                        "gre",
+                        "ipv6"
                     ]
                 },
                 "remote_cidr": {
@@ -9969,6 +12649,10 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "start": {
                     "type": "string"
                 },
@@ -9976,6 +12660,168 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "vlan": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.StoragePoolListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "storage_pools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StoragePoolResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.StoragePoolPatchPayload": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 256
+                },
+                "fallback_group": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "is_default": {
+                    "type": "boolean"
+                },
+                "media": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 2
+                },
+                "over_ratio": {
+                    "type": "number",
+                    "maximum": 20,
+                    "minimum": 0
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "disabled"
+                    ]
+                }
+            }
+        },
+        "apis.StoragePoolPayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 256
+                },
+                "fallback_group": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "is_default": {
+                    "type": "boolean"
+                },
+                "media": {
+                    "type": "string",
+                    "enum": [
+                        "ssd",
+                        "hdd",
+                        "nvme"
+                    ]
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 2
+                },
+                "over_ratio": {
+                    "type": "number",
+                    "maximum": 20,
+                    "minimum": 0
+                }
+            }
+        },
+        "apis.StoragePoolResponse": {
+            "type": "object",
+            "properties": {
+                "allocated_bytes": {
+                    "type": "integer"
+                },
+                "available_hosts": {
+                    "type": "integer"
+                },
+                "builtin": {
+                    "type": "boolean"
+                },
+                "capacity_bytes": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "driver": {
+                    "type": "string"
+                },
+                "fallback_group": {
+                    "type": "string"
+                },
+                "hosts": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_default": {
+                    "type": "boolean"
+                },
+                "media": {
+                    "type": "string"
+                },
+                "mount_path": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "over_ratio": {
+                    "type": "number"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "shared": {
+                    "type": "boolean"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "used_bytes": {
                     "type": "integer"
                 }
             }
@@ -10015,6 +12861,7 @@ const docTemplatealarm_v1 = `{
                     "minLength": 2
                 },
                 "priority": {
+                    "description": "Omitted keeps the current priority (0 is a valid value, so it cannot be the \"not set\" marker)",
                     "type": "integer",
                     "maximum": 100000,
                     "minimum": 0
@@ -10133,6 +12980,10 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "priority": {
                     "type": "integer"
                 },
@@ -10214,6 +13065,10 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string"
                 }
@@ -10222,6 +13077,9 @@ const docTemplatealarm_v1 = `{
         "apis.TaskResponse": {
             "type": "object",
             "properties": {
+                "message": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -10232,6 +13090,411 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "summary": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TgwAsymmetryResponse": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "$ref": "#/definitions/apis.TgwAttachmentRef"
+                },
+                "to": {
+                    "$ref": "#/definitions/apis.TgwAttachmentRef"
+                }
+            }
+        },
+        "apis.TgwAttachmentListResponse": {
+            "type": "object",
+            "properties": {
+                "attachments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwAttachmentResponse"
+                    }
+                }
+            }
+        },
+        "apis.TgwAttachmentPatchPayload": {
+            "type": "object",
+            "required": [
+                "route_table"
+            ],
+            "properties": {
+                "route_table": {
+                    "$ref": "#/definitions/common.BaseID"
+                }
+            }
+        },
+        "apis.TgwAttachmentPayload": {
+            "type": "object",
+            "required": [
+                "vpc"
+            ],
+            "properties": {
+                "propagate": {
+                    "description": "Add the subnets of the VPC to the default route table (true when left out)",
+                    "type": "boolean"
+                },
+                "route_table": {
+                    "description": "The route table the traffic of the VPC is routed by, the default table when left out",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseID"
+                        }
+                    ]
+                },
+                "vpc": {
+                    "$ref": "#/definitions/common.BaseReference"
+                }
+            }
+        },
+        "apis.TgwAttachmentRef": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "vpc": {
+                    "$ref": "#/definitions/apis.TgwNamedRef"
+                }
+            }
+        },
+        "apis.TgwAttachmentResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "gateway_address": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "route_table": {
+                    "$ref": "#/definitions/apis.TgwNamedRef"
+                },
+                "router_address": {
+                    "description": "The /31 of the attachment: the address in the VPC router (tr-) and in the gateway (ta-)",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "attaching | available | detaching | error",
+                    "type": "string"
+                },
+                "status_reason": {
+                    "type": "string"
+                },
+                "subnets": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "vpc": {
+                    "$ref": "#/definitions/apis.TgwNamedRef"
+                }
+            }
+        },
+        "apis.TgwEffectiveRouteListResponse": {
+            "type": "object",
+            "properties": {
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwEffectiveRouteResponse"
+                    }
+                }
+            }
+        },
+        "apis.TgwEffectiveRouteResponse": {
+            "type": "object",
+            "properties": {
+                "attachment": {
+                    "$ref": "#/definitions/apis.TgwAttachmentRef"
+                },
+                "destination": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "propagated | static | blackhole",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TgwNamedRef": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TgwNodeResponse": {
+            "type": "object",
+            "properties": {
+                "generation": {
+                    "type": "integer"
+                },
+                "hypervisor": {
+                    "description": "system admins only",
+                    "type": "string"
+                },
+                "index": {
+                    "description": "Number of the node in this list (1, 2, …); the reasons of the attachments name the nodes by it for members\nwho are not system admins",
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "ok | error | pending | leaving (left the gateway, removal not confirmed yet)",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TgwPropagationPayload": {
+            "type": "object",
+            "required": [
+                "attachment"
+            ],
+            "properties": {
+                "attachment": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
+                "prefixes": {
+                    "description": "Allow list: only the parts of the subnets inside these networks are propagated; empty propagates them all",
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "apis.TgwPropagationResponse": {
+            "type": "object",
+            "properties": {
+                "attachment": {
+                    "$ref": "#/definitions/apis.TgwAttachmentRef"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "prefixes": {
+                    "description": "empty: every subnet of the VPC",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "apis.TgwRoutePayload": {
+            "type": "object",
+            "required": [
+                "destination"
+            ],
+            "properties": {
+                "attachment": {
+                    "description": "Where the destination goes; leave out with blackhole true to drop it",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseID"
+                        }
+                    ]
+                },
+                "blackhole": {
+                    "type": "boolean"
+                },
+                "destination": {
+                    "type": "string",
+                    "maxLength": 64
+                }
+            }
+        },
+        "apis.TgwRouteResponse": {
+            "type": "object",
+            "properties": {
+                "attachment": {
+                    "$ref": "#/definitions/apis.TgwAttachmentRef"
+                },
+                "destination": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "static | blackhole",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TgwRouteTableListResponse": {
+            "type": "object",
+            "properties": {
+                "route_tables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwRouteTableResponse"
+                    }
+                }
+            }
+        },
+        "apis.TgwRouteTablePayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.TgwRouteTableResponse": {
+            "type": "object",
+            "properties": {
+                "associations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwAttachmentRef"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_default": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "propagations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwPropagationResponse"
+                    }
+                },
+                "routes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwRouteResponse"
+                    }
+                }
+            }
+        },
+        "apis.TransitGatewayListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "transit_gateways": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TransitGatewayResponse"
+                    }
+                }
+            }
+        },
+        "apis.TransitGatewayPatchPayload": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.TransitGatewayPayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.TransitGatewayResponse": {
+            "type": "object",
+            "properties": {
+                "asymmetric_routes": {
+                    "description": "Detail only: members that reach another member which has no route back (replies are dropped)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwAsymmetryResponse"
+                    }
+                },
+                "attachment_count": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TgwNodeResponse"
+                    }
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "sync_status": {
+                    "description": "Detail only. synced: every node of the gateway applied the latest change; syncing: some did not yet; error:\na node failed (see nodes)",
+                    "type": "string"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }
@@ -10308,13 +13571,42 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "subnets": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/apis.SubnetResponse"
                     }
                 },
+                "transit_gateway": {
+                    "description": "The transit gateway the VPC is attached to, if any",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/apis.VPCTransitGatewayRef"
+                        }
+                    ]
+                },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VPCTransitGatewayRef": {
+            "type": "object",
+            "properties": {
+                "attachment_id": {
+                    "type": "string"
+                },
+                "attachment_status": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
                     "type": "string"
                 }
             }
@@ -10324,87 +13616,6 @@ const docTemplatealarm_v1 = `{
             "properties": {
                 "version": {
                     "type": "string"
-                }
-            }
-        },
-        "apis.VolBackupListResponse": {
-            "type": "object",
-            "properties": {
-                "backups": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/apis.VolBackupResponse"
-                    }
-                },
-                "limit": {
-                    "type": "integer"
-                },
-                "offset": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "apis.VolBackupPayload": {
-            "type": "object",
-            "required": [
-                "name",
-                "type",
-                "volume_id"
-            ],
-            "properties": {
-                "name": {
-                    "type": "string"
-                },
-                "pool_id": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string",
-                    "enum": [
-                        "snapshot",
-                        "backup"
-                    ]
-                },
-                "volume_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "apis.VolBackupResponse": {
-            "type": "object",
-            "properties": {
-                "created_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "owner": {
-                    "type": "string"
-                },
-                "path": {
-                    "type": "string"
-                },
-                "size": {
-                    "type": "integer"
-                },
-                "status": {
-                    "$ref": "#/definitions/model.BackupStatus"
-                },
-                "task": {
-                    "$ref": "#/definitions/common.BaseReference"
-                },
-                "updated_at": {
-                    "type": "string"
-                },
-                "volume": {
-                    "$ref": "#/definitions/common.BaseReference"
                 }
             }
         },
@@ -10425,6 +13636,14 @@ const docTemplatealarm_v1 = `{
                 },
                 "owner": {
                     "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "size": {
+                    "description": "Size in GB; the instance detail page shows it next to each attached volume",
+                    "type": "integer"
                 },
                 "target": {
                     "type": "string"
@@ -10458,13 +13677,15 @@ const docTemplatealarm_v1 = `{
             "type": "object",
             "properties": {
                 "instance": {
-                    "$ref": "#/definitions/common.BaseID"
+                    "description": "Attach to this instance; null detaches, and leaving the field out keeps the attachment as it is",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseID"
+                        }
+                    ]
                 },
                 "name": {
                     "type": "string"
-                },
-                "size": {
-                    "type": "integer"
                 }
             }
         },
@@ -10475,54 +13696,24 @@ const docTemplatealarm_v1 = `{
                 "size"
             ],
             "properties": {
-                "bps_burst": {
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "bps_limit": {
-                    "description": "in MB/s",
-                    "type": "integer",
-                    "maximum": 102400,
-                    "minimum": 0
-                },
                 "count": {
                     "type": "integer",
                     "maximum": 16,
                     "minimum": 1
                 },
-                "iops_burst": {
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "iops_limit": {
-                    "type": "integer",
-                    "maximum": 10000000,
-                    "minimum": 0
-                },
                 "name": {
-                    "type": "string"
-                },
-                "pool_id": {
                     "type": "string"
                 },
                 "size": {
                     "type": "integer"
-                }
-            }
-        },
-        "apis.VolumeQosPayload": {
-            "type": "object",
-            "properties": {
-                "bps_limit": {
-                    "description": "in MB/s",
-                    "type": "integer",
-                    "maximum": 102400,
-                    "minimum": 0
                 },
-                "iops_limit": {
-                    "type": "integer",
-                    "maximum": 10000000,
-                    "minimum": 0
+                "storage_pool": {
+                    "description": "Storage pool of the volume; the default pool when left out",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.BaseReference"
+                        }
+                    ]
                 }
             }
         },
@@ -10544,12 +13735,6 @@ const docTemplatealarm_v1 = `{
                 "booting": {
                     "type": "boolean"
                 },
-                "bps_burst": {
-                    "type": "integer"
-                },
-                "bps_limit": {
-                    "type": "integer"
-                },
                 "created_at": {
                     "type": "string"
                 },
@@ -10559,17 +13744,19 @@ const docTemplatealarm_v1 = `{
                 "href": {
                     "type": "string"
                 },
+                "hypervisor": {
+                    "description": "Host holding the file of the volume, for system admins; empty until the volume is attached the first time",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.ResourceReference"
+                        }
+                    ]
+                },
                 "id": {
                     "type": "string"
                 },
                 "instance": {
                     "$ref": "#/definitions/common.BaseReference"
-                },
-                "iops_burst": {
-                    "type": "integer"
-                },
-                "iops_limit": {
-                    "type": "integer"
                 },
                 "name": {
                     "type": "string"
@@ -10577,7 +13764,14 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "path": {
+                    "type": "string"
+                },
+                "reason": {
                     "type": "string"
                 },
                 "size": {
@@ -10586,10 +13780,1186 @@ const docTemplatealarm_v1 = `{
                 "status": {
                     "type": "string"
                 },
+                "storage_pool": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
                 "target": {
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnClientConfigResponse": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnClientCreateResponse": {
+            "type": "object",
+            "properties": {
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "config": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "last_handshake_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "preshared_key_set": {
+                    "type": "boolean"
+                },
+                "private_key": {
+                    "type": "string"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "public_key": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnClientListResponse": {
+            "type": "object",
+            "properties": {
+                "clients": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnClientResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.VpnClientPatchPayload": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.VpnClientPayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "preshared_key": {
+                    "type": "boolean"
+                },
+                "public_key": {
+                    "type": "string",
+                    "maxLength": 64
+                }
+            }
+        },
+        "apis.VpnClientResponse": {
+            "type": "object",
+            "properties": {
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "last_handshake_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "preshared_key_set": {
+                    "type": "boolean"
+                },
+                "protocol": {
+                    "type": "string"
+                },
+                "public_key": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnConnectionListResponse": {
+            "type": "object",
+            "properties": {
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnConnectionResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.VpnConnectionPatchPayload": {
+            "type": "object",
+            "properties": {
+                "as_path_prepend": {
+                    "type": "integer",
+                    "maximum": 10,
+                    "minimum": 0
+                },
+                "bfd_enabled": {
+                    "type": "boolean"
+                },
+                "bfd_interval": {
+                    "type": "integer",
+                    "maximum": 60000,
+                    "minimum": 300
+                },
+                "bfd_multiplier": {
+                    "type": "integer",
+                    "maximum": 50,
+                    "minimum": 2
+                },
+                "bgp_hold": {
+                    "type": "integer",
+                    "maximum": 10800,
+                    "minimum": 3
+                },
+                "bgp_keepalive": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 1
+                },
+                "bgp_password": {
+                    "type": "string",
+                    "maxLength": 80
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "dpd_action": {
+                    "type": "string",
+                    "enum": [
+                        "restart",
+                        "clear",
+                        "none"
+                    ]
+                },
+                "dpd_delay": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 5
+                },
+                "esp_lifetime": {
+                    "type": "integer",
+                    "maximum": 86400,
+                    "minimum": 300
+                },
+                "esp_proposal": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "ike_lifetime": {
+                    "type": "integer",
+                    "maximum": 604800,
+                    "minimum": 300
+                },
+                "ike_proposal": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "initiator": {
+                    "type": "boolean"
+                },
+                "local_asn": {
+                    "type": "integer",
+                    "maximum": 4294967295,
+                    "minimum": 1
+                },
+                "local_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "local_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "max_prefixes": {
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "peer_asn": {
+                    "type": "integer",
+                    "maximum": 4294967295,
+                    "minimum": 1
+                },
+                "psk": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "remote_gateway": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "remote_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_summary_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "route_mode": {
+                    "type": "string",
+                    "enum": [
+                        "static",
+                        "bgp"
+                    ]
+                },
+                "traffic_policy": {
+                    "type": "string",
+                    "enum": [
+                        "preferred",
+                        "ecmp"
+                    ]
+                },
+                "tunnel_local_ip": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "tunnel_peer_ip": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "tunnels": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTunnelPayload"
+                    }
+                }
+            }
+        },
+        "apis.VpnConnectionPayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "as_path_prepend": {
+                    "type": "integer",
+                    "maximum": 10,
+                    "minimum": 0
+                },
+                "bfd_enabled": {
+                    "type": "boolean"
+                },
+                "bfd_interval": {
+                    "type": "integer",
+                    "maximum": 60000,
+                    "minimum": 300
+                },
+                "bfd_multiplier": {
+                    "type": "integer",
+                    "maximum": 50,
+                    "minimum": 2
+                },
+                "bgp_hold": {
+                    "type": "integer",
+                    "maximum": 10800,
+                    "minimum": 3
+                },
+                "bgp_keepalive": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 1
+                },
+                "bgp_password": {
+                    "type": "string",
+                    "maxLength": 80
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "dpd_action": {
+                    "type": "string",
+                    "enum": [
+                        "restart",
+                        "clear",
+                        "none"
+                    ]
+                },
+                "dpd_delay": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 5
+                },
+                "esp_lifetime": {
+                    "type": "integer",
+                    "maximum": 86400,
+                    "minimum": 300
+                },
+                "esp_proposal": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "ike_lifetime": {
+                    "type": "integer",
+                    "maximum": 604800,
+                    "minimum": 300
+                },
+                "ike_proposal": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "initiator": {
+                    "type": "boolean"
+                },
+                "local_asn": {
+                    "type": "integer",
+                    "maximum": 4294967295,
+                    "minimum": 1
+                },
+                "local_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "local_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "max_prefixes": {
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "peer_asn": {
+                    "type": "integer",
+                    "maximum": 4294967295,
+                    "minimum": 1
+                },
+                "psk": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "remote_gateway": {
+                    "type": "string"
+                },
+                "remote_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_summary_cidrs": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "route_mode": {
+                    "type": "string",
+                    "enum": [
+                        "static",
+                        "bgp"
+                    ]
+                },
+                "traffic_policy": {
+                    "description": "preferred (default): the primary tunnel carries the traffic; ecmp: every tunnel that is up shares it",
+                    "type": "string",
+                    "enum": [
+                        "preferred",
+                        "ecmp"
+                    ]
+                },
+                "tunnel_local_ip": {
+                    "type": "string"
+                },
+                "tunnel_peer_ip": {
+                    "type": "string"
+                },
+                "tunnels": {
+                    "type": "array",
+                    "maxItems": 4,
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTunnelPayload"
+                    }
+                }
+            }
+        },
+        "apis.VpnConnectionResponse": {
+            "type": "object",
+            "properties": {
+                "as_path_prepend": {
+                    "type": "integer"
+                },
+                "auth_method": {
+                    "type": "string"
+                },
+                "bfd_enabled": {
+                    "type": "boolean"
+                },
+                "bfd_interval": {
+                    "type": "integer"
+                },
+                "bfd_multiplier": {
+                    "type": "integer"
+                },
+                "bgp_hold": {
+                    "type": "integer"
+                },
+                "bgp_keepalive": {
+                    "type": "integer"
+                },
+                "bgp_password": {
+                    "type": "string"
+                },
+                "bgp_password_set": {
+                    "type": "boolean"
+                },
+                "bytes_in": {
+                    "description": "sum over the tunnels",
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "description": "sum over the tunnels",
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "dpd_action": {
+                    "type": "string"
+                },
+                "dpd_delay": {
+                    "type": "integer"
+                },
+                "effective_local_cidrs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "esp_lifetime": {
+                    "type": "integer"
+                },
+                "esp_proposal": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ike_lifetime": {
+                    "type": "integer"
+                },
+                "ike_proposal": {
+                    "type": "string"
+                },
+                "ike_version": {
+                    "type": "integer"
+                },
+                "initiator": {
+                    "type": "boolean"
+                },
+                "local_asn": {
+                    "type": "integer"
+                },
+                "local_cidrs": {
+                    "type": "string"
+                },
+                "local_id": {
+                    "type": "string"
+                },
+                "max_prefixes": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "peer_asn": {
+                    "type": "integer"
+                },
+                "psk": {
+                    "description": "The keys themselves, only for members with write permission on the gateway (vpnSecretsVisible)",
+                    "type": "string"
+                },
+                "psk_set": {
+                    "type": "boolean"
+                },
+                "remote_cidrs": {
+                    "type": "string"
+                },
+                "remote_summary_cidrs": {
+                    "type": "string"
+                },
+                "route_mode": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "pending, up, degraded (only a standby tunnel is up), down, disabled",
+                    "type": "string"
+                },
+                "traffic_policy": {
+                    "description": "preferred or ecmp",
+                    "type": "string"
+                },
+                "tunnels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTunnelResponse"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnGatewayListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "vpn_gateways": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnGatewayResponse"
+                    }
+                }
+            }
+        },
+        "apis.VpnGatewayPatchPayload": {
+            "type": "object",
+            "properties": {
+                "client_cidr": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "client_dns": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "client_enabled": {
+                    "type": "boolean"
+                },
+                "client_port": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
+                },
+                "client_routes": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "enabled": {
+                    "description": "false pauses the whole gateway (tunnels, BGP, WireGuard) while keeping its public IP and configuration",
+                    "type": "boolean"
+                },
+                "ipsec_enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.VpnGatewayPayload": {
+            "type": "object",
+            "required": [
+                "name",
+                "vpc"
+            ],
+            "properties": {
+                "client_cidr": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "client_dns": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "client_enabled": {
+                    "type": "boolean"
+                },
+                "client_port": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
+                },
+                "client_routes": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "ha_mode": {
+                    "description": "active_standby (default): the VRRP master runs every tunnel from one or two floating IPs.\nactive_active: each of the two nodes runs its own tunnels from a fixed address, both carry traffic",
+                    "type": "string",
+                    "enum": [
+                        "active_standby",
+                        "active_active"
+                    ]
+                },
+                "inbound": {
+                    "type": "integer",
+                    "maximum": 20000,
+                    "minimum": 1
+                },
+                "ipsec_enabled": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "outbound": {
+                    "type": "integer",
+                    "maximum": 20000,
+                    "minimum": 1
+                },
+                "public_ip": {
+                    "type": "string"
+                },
+                "public_ips": {
+                    "description": "active_standby: one or two entries (vip1, vip2). active_active: node1, node2 and, with client VPN, the\nclient floating IP; missing entries come from the subnet of the first one. public_subnet / public_ip\nabove are the short form of a single entry and are ignored when this is given",
+                    "type": "array",
+                    "maxItems": 3,
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnPublicIpPayload"
+                    }
+                },
+                "public_subnet": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
+                "vpc": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
+                "zone": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 1
+                }
+            }
+        },
+        "apis.VpnGatewayResponse": {
+            "type": "object",
+            "properties": {
+                "addable_endpoint": {
+                    "description": "The public address POST /vpn_gateways/{id}/public_ips would add (vip2, or vip1 for the client VPN of an\nactive_active gateway), empty when the gateway has it already",
+                    "type": "string"
+                },
+                "client_cidr": {
+                    "type": "string"
+                },
+                "client_count": {
+                    "type": "integer"
+                },
+                "client_dns": {
+                    "type": "string"
+                },
+                "client_enabled": {
+                    "type": "boolean"
+                },
+                "client_port": {
+                    "type": "integer"
+                },
+                "client_protocol": {
+                    "type": "string"
+                },
+                "client_public_key": {
+                    "type": "string"
+                },
+                "client_routes": {
+                    "type": "string"
+                },
+                "clients": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnClientResponse"
+                    }
+                },
+                "connection_count": {
+                    "type": "integer"
+                },
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnConnectionResponse"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "effective_client_routes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "floating_ips": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.FloatingIpInfo"
+                    }
+                },
+                "ha_mode": {
+                    "description": "active_standby or active_active",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ipsec_enabled": {
+                    "type": "boolean"
+                },
+                "master_hostname": {
+                    "type": "string"
+                },
+                "master_hyper": {
+                    "type": "integer"
+                },
+                "master_reported_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nodes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnNodeInfo"
+                    }
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "public_ip": {
+                    "description": "vip1, or node1 on an active_active gateway without client VPN",
+                    "type": "string"
+                },
+                "public_ips": {
+                    "description": "every address with its endpoint name",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnPublicIpInfo"
+                    }
+                },
+                "remote_prefixes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnPrefixResponse"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "status_reason": {
+                    "description": "why the gateway is in error; empty otherwise",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "vpc": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "zone": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnNodeInfo": {
+            "type": "object",
+            "properties": {
+                "hostid": {
+                    "type": "integer"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "master": {
+                    "type": "boolean"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnPrefixResponse": {
+            "type": "object",
+            "properties": {
+                "cidr": {
+                    "type": "string"
+                },
+                "ref_id": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnPublicIpInfo": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "endpoint": {
+                    "description": "vip1 / vip2 (floating), node1 / node2 (fixed on one node of an active_active gateway)",
+                    "type": "string"
+                },
+                "hostid": {
+                    "description": "the node of a fixed address, -1 for a floating one",
+                    "type": "integer"
+                },
+                "hostname": {
+                    "description": "the node of a fixed address",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnPublicIpPayload": {
+            "type": "object",
+            "properties": {
+                "public_ip": {
+                    "type": "string"
+                },
+                "public_subnet": {
+                    "$ref": "#/definitions/common.BaseReference"
+                }
+            }
+        },
+        "apis.VpnPublicIpResponse": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "endpoint": {
+                    "description": "vip1 / vip2 (floating), node1 / node2 (fixed on one node of an active_active gateway)",
+                    "type": "string"
+                },
+                "hostid": {
+                    "description": "the node of a fixed address, -1 for a floating one",
+                    "type": "integer"
+                },
+                "hostname": {
+                    "description": "the node of a fixed address",
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnTrafficResponse": {
+            "type": "object",
+            "properties": {
+                "clients": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTrafficSeries"
+                    }
+                },
+                "connections": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VpnTrafficSeries"
+                    }
+                },
+                "end": {
+                    "type": "integer"
+                },
+                "start": {
+                    "type": "integer"
+                },
+                "step": {
+                    "type": "string"
+                },
+                "timestamps": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "apis.VpnTrafficSeries": {
+            "type": "object",
+            "properties": {
+                "connection_id": {
+                    "description": "by=tunnel: the series is one tunnel (ID is the tunnel) of this connection, in this slot",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "in": {
+                    "description": "from the site / from the client",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "out": {
+                    "description": "to the site / to the client",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "slot": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.VpnTunnelPayload": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string",
+                    "enum": [
+                        "vip1",
+                        "vip2",
+                        "node1",
+                        "node2"
+                    ]
+                },
+                "priority": {
+                    "type": "string",
+                    "enum": [
+                        "primary",
+                        "standby"
+                    ]
+                },
+                "psk": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "remote_gateway": {
+                    "type": "string"
+                },
+                "remote_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "tunnel_local_ip": {
+                    "type": "string"
+                },
+                "tunnel_peer_ip": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VpnTunnelResponse": {
+            "type": "object",
+            "properties": {
+                "bfd_state": {
+                    "type": "string"
+                },
+                "bgp": {
+                    "$ref": "#/definitions/services.VpnBgpReport"
+                },
+                "bgp_reported_at": {
+                    "type": "string"
+                },
+                "bytes_in": {
+                    "type": "integer"
+                },
+                "bytes_out": {
+                    "type": "integer"
+                },
+                "endpoint": {
+                    "description": "vip1 / vip2, or node1 / node2 on an active_active gateway",
+                    "type": "string"
+                },
+                "established_at": {
+                    "type": "string"
+                },
+                "hostid": {
+                    "description": "the node running it on an active_active gateway, -1 otherwise (the master)",
+                    "type": "integer"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "if_id": {
+                    "type": "integer"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "priority": {
+                    "description": "primary or standby (every tunnel is primary with traffic_policy ecmp)",
+                    "type": "string"
+                },
+                "psk": {
+                    "description": "The tunnel-specific key, only for members with write permission on the gateway",
+                    "type": "string"
+                },
+                "psk_set": {
+                    "description": "a tunnel-specific key; otherwise the connection's",
+                    "type": "boolean"
+                },
+                "public_ip": {
+                    "description": "our address of this tunnel",
+                    "type": "string"
+                },
+                "remote_gateway": {
+                    "type": "string"
+                },
+                "remote_id": {
+                    "type": "string"
+                },
+                "slot": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tunnel_local_ip": {
+                    "type": "string"
+                },
+                "tunnel_peer_ip": {
                     "type": "string"
                 }
             }
@@ -10662,6 +15032,10 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
                     "type": "string"
                 },
                 "remark": {
@@ -10746,6 +15120,10 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string"
                 }
@@ -10794,20 +15172,220 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "model.BackupStatus": {
-            "type": "string",
-            "enum": [
-                "pending",
-                "available",
-                "error",
-                "restoring"
-            ],
-            "x-enum-varnames": [
-                "BackupStatusPending",
-                "BackupStatusReady",
-                "BackupStatusError",
-                "BackupStatusRestoring"
-            ]
+        "services.DiskTarget": {
+            "type": "object",
+            "properties": {
+                "booting": {
+                    "type": "boolean"
+                },
+                "can_stay": {
+                    "type": "boolean"
+                },
+                "choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.PoolChoice"
+                    }
+                },
+                "fallback": {
+                    "$ref": "#/definitions/services.PoolChoice"
+                },
+                "size_gb": {
+                    "type": "integer"
+                },
+                "source_pool": {
+                    "type": "string"
+                },
+                "volume_name": {
+                    "type": "string"
+                },
+                "volume_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "services.HostPoolFigures": {
+            "type": "object",
+            "properties": {
+                "allocated_bytes": {
+                    "type": "integer"
+                },
+                "builtin": {
+                    "type": "boolean"
+                },
+                "capacity_bytes": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "usage_ratio": {
+                    "type": "number"
+                },
+                "used_bytes": {
+                    "type": "integer"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "services.MigrationTarget": {
+            "type": "object",
+            "properties": {
+                "disks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.DiskTarget"
+                    }
+                },
+                "hostid": {
+                    "type": "integer"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "placement_blocked": {
+                    "description": "Not usable only because of the rule of a strict placement group: usable with ignore_placement",
+                    "type": "boolean"
+                },
+                "placement_warning": {
+                    "description": "A rule of a best-effort placement group this target breaks, or a note on the members of a strict pack group\nthat must move in the same request",
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "usable": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "services.PoolChoice": {
+            "type": "object",
+            "properties": {
+                "avail_bytes": {
+                    "type": "integer"
+                },
+                "fits": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "services.PoolDevice": {
+            "type": "object",
+            "properties": {
+                "array": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "media": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pair": {
+                    "type": "integer"
+                },
+                "serial": {
+                    "type": "string"
+                },
+                "size_bytes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "services.UsageEntry": {
+            "type": "object",
+            "properties": {
+                "bytes": {
+                    "type": "integer"
+                },
+                "instance": {
+                    "type": "string"
+                },
+                "instance_uuid": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "volume_name": {
+                    "type": "string"
+                },
+                "volume_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "services.VpnBgpReport": {
+            "type": "object",
+            "properties": {
+                "accepted": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "advertised": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "bfd": {
+                    "description": "BFD session state (up, down, init) when BFD is on",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "prefixes_received": {
+                    "type": "integer"
+                },
+                "prefixes_sent": {
+                    "type": "integer"
+                },
+                "rejected": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "state": {
+                    "type": "string"
+                },
+                "truncated": {
+                    "type": "boolean"
+                },
+                "uptime": {
+                    "type": "string"
+                }
+            }
         }
     }
 }`

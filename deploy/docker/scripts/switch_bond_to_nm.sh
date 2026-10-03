@@ -29,6 +29,7 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 
 BACKUP_DIR="/root/.bond_to_nm_backup"
+NM_GLOBAL_CONF_BACKUP="$BACKUP_DIR/10-globally-managed-devices.conf.bak"
 
 usage() {
     echo "用法: $0 [--rollback] <bond_name>"
@@ -36,6 +37,31 @@ usage() {
     echo "  $0 bond0            将 bond0 从 networkd 切换到 NetworkManager"
     echo "  $0 --rollback bond0 回滚 bond0 到 networkd 管理"
     exit 1
+}
+
+###############################################################################
+# NM 连接查询（nmcli 允许同名连接，统一按 UUID 操作）
+###############################################################################
+# 输出本脚本为 bond 创建的连接（<bond>-nm 及 <bond>-nm-slave-*）："NAME:UUID"，每行一条
+list_bond_connections() {
+    local con_name="$1-nm"
+    nmcli -t -f NAME,UUID connection show 2>/dev/null \
+        | awk -F: -v n="$con_name" '$1 == n || index($1, n "-slave-") == 1' || true
+}
+
+# <bond>-nm 是否有处于激活状态的连接
+bond_connection_active() {
+    nmcli -t -f NAME connection show --active 2>/dev/null | grep -qxF "$1-nm"
+}
+
+# 删除 <bond>-nm 及其 slave 的全部连接；仅在 <bond>-nm 未激活时调用（此时这些连接都是上次失败留下的残留）
+delete_bond_connections() {
+    local bond="$1" name uuid
+    while IFS=: read -r name uuid; do
+        [[ -n "$uuid" ]] || continue
+        nmcli connection delete uuid "$uuid" >/dev/null
+        log_warn "  已删除连接: $name ($uuid)"
+    done < <(list_bond_connections "$bond")
 }
 
 ###############################################################################
@@ -61,14 +87,31 @@ preflight_check() {
         exit 1
     fi
 
-    # 检查是否已经被 NM 管理
-    if command -v nmcli &>/dev/null; then
-        local nm_state
-        nm_state=$(nmcli -t -f DEVICE,STATE device status 2>/dev/null | grep "^${bond}:" | cut -d: -f2 || true)
-        if [[ "$nm_state" == "connected" ]]; then
-            log_warn "$bond 已经由 NetworkManager 管理，无需切换"
-            exit 0
-        fi
+    command -v nmcli &>/dev/null || return 0
+
+    # 已切换过：<bond>-nm 处于激活状态则不再切换（重复执行时不能新建同名连接，也不能重新激活 bond，
+    # 否则其上的 v-<vlan> 会断开重连，NM 重建网桥时手工挂上的 ext-*/tap 端口不会自动挂回）
+    if bond_connection_active "$bond"; then
+        local count
+        count=$(list_bond_connections "$bond" | awk -F: -v n="${bond}-nm" '$1 == n' | wc -l)
+        [[ "$count" -gt 1 ]] && log_warn "存在 $count 个名为 ${bond}-nm 的连接，请手动删除未激活的重复连接（nmcli -f NAME,UUID,DEVICE connection show）"
+        log_warn "${bond}-nm 已激活，$bond 已由 NetworkManager 管理，无需切换"
+        exit 0
+    fi
+
+    # <bond>-nm 未激活但连接存在：上次切换中途失败的残留，删除后重新切换
+    if [[ -n "$(list_bond_connections "$bond")" ]]; then
+        log_warn "检测到 ${bond}-nm 的未激活残留连接，删除后重新切换 ..."
+        delete_bond_connections "$bond"
+    fi
+
+    # 由其他 NM 连接管理（如 netplan 渲染器为 NetworkManager 时生成的 netplan-<bond>）：不再切换；
+    # "connected (externally)" 表示 NM 只是观察到 networkd 配置的设备，仍需切换
+    local nm_state
+    nm_state=$(nmcli -t -f DEVICE,STATE device status 2>/dev/null | grep "^${bond}:" | cut -d: -f2 || true)
+    if [[ "$nm_state" == "connected" ]]; then
+        log_warn "$bond 已经由 NetworkManager 管理，无需切换"
+        exit 0
     fi
 }
 
@@ -180,6 +223,12 @@ collect_bond_info() {
 backup_config() {
     local bond="$1"
 
+    # 只保留首次切换前的配置：重复执行时 netplan 中的 bond 定义、networkd 运行时文件已被清理，覆盖后无法回滚
+    if [[ -n "$(ls -A "$BACKUP_DIR/$bond" 2>/dev/null)" ]]; then
+        log_info "备份 $BACKUP_DIR/$bond/ 已存在，保留首次切换前的配置"
+        return
+    fi
+
     log_info "正在备份配置到 $BACKUP_DIR/$bond/ ..."
     mkdir -p "$BACKUP_DIR/$bond"
 
@@ -194,10 +243,6 @@ backup_config() {
         cp -a "/run/systemd/network/10-netplan-${slave}."* "$BACKUP_DIR/$bond/systemd-network/" 2>/dev/null || true
     done
 
-    # 备份 NM 全局配置
-    cp -a /usr/lib/NetworkManager/conf.d/10-globally-managed-devices.conf \
-          "$BACKUP_DIR/$bond/10-globally-managed-devices.conf.bak" 2>/dev/null || true
-
     # 记录当前运行时状态
     ip addr show "$bond" > "$BACKUP_DIR/$bond/ip_addr.txt" 2>/dev/null || true
     ip route show dev "$bond" > "$BACKUP_DIR/$bond/ip_route.txt" 2>/dev/null || true
@@ -210,15 +255,19 @@ backup_config() {
 # 安装 NetworkManager（如果未安装）
 ###############################################################################
 install_nm() {
-    if command -v nmcli &>/dev/null; then
-        log_info "NetworkManager 已安装"
+    # 清理 netplan 配置依赖 python3-yaml，精简安装的 Ubuntu 24.04/26.04 可能没有
+    local pkgs=()
+    command -v nmcli &>/dev/null || pkgs+=(network-manager)
+    python3 -c "import yaml" &>/dev/null || pkgs+=(python3-yaml)
+    if [[ ${#pkgs[@]} -eq 0 ]]; then
+        log_info "NetworkManager 与 python3-yaml 已安装"
         return
     fi
 
-    log_info "正在安装 NetworkManager ..."
+    log_info "正在安装 ${pkgs[*]} ..."
     apt-get update -qq
-    apt-get install -y -qq network-manager
-    log_info "NetworkManager 安装完成"
+    apt-get install -y -qq "${pkgs[@]}"
+    log_info "安装完成"
 }
 
 ###############################################################################
@@ -248,6 +297,8 @@ do_switch() {
     # 2) 修改 NM 全局配置，允许管理 bond/ethernet/bridge/vlan 设备（持久化）
     local nm_global_conf="/usr/lib/NetworkManager/conf.d/10-globally-managed-devices.conf"
     if [[ -f "$nm_global_conf" ]]; then
+        # 全局配置为所有 bond 共用：只在首次修改前备份一次（NM 可能在本次 install_nm 才装上，不能放在 backup_config 里）
+        [[ -f "$NM_GLOBAL_CONF_BACKUP" ]] || cp -a "$nm_global_conf" "$NM_GLOBAL_CONF_BACKUP"
         local current_conf
         current_conf=$(cat "$nm_global_conf")
         if echo "$current_conf" | grep -q "unmanaged-devices=\*"; then
@@ -384,6 +435,9 @@ do_switch() {
 
     for yaml_file in /etc/netplan/*.yaml; do
         [[ -f "$yaml_file" ]] || continue
+        # NetworkManager 使用 netplan 后端时（Ubuntu 24.04+），连接配置就存放在 90-NM-<uuid>.yaml，
+        # 其中也包含刚创建的 bond 定义；删除它会让 bond 连接只剩内存态，重启后网络丢失
+        [[ "$(basename "$yaml_file")" == 90-NM-* ]] && continue
         python3 -c "
 import yaml, sys, os
 
@@ -510,22 +564,19 @@ do_rollback() {
         exit 1
     fi
 
-    # 1) 删除 NM 连接
-    local con_name="${bond}-nm"
-    nmcli connection delete "$con_name" 2>/dev/null || true
-    for slave_file in "$BACKUP_DIR/$bond/systemd-network/"*; do
-        local slave_name
-        slave_name=$(basename "$slave_file" | sed 's/10-netplan-//' | sed 's/\..*//')
-        nmcli connection delete "${con_name}-slave-${slave_name}" 2>/dev/null || true
-    done
+    # 1) 删除 NM 连接（含重复执行留下的同名连接）
+    delete_bond_connections "$bond" || true
 
     # 2) 恢复 networkd 运行时配置
     cp -a "$BACKUP_DIR/$bond/systemd-network/"* /run/systemd/network/ 2>/dev/null || true
 
-    # 3) 恢复 NM 全局配置
-    if [[ -f "$BACKUP_DIR/$bond/10-globally-managed-devices.conf.bak" ]]; then
-        cp -a "$BACKUP_DIR/$bond/10-globally-managed-devices.conf.bak" \
-              /usr/lib/NetworkManager/conf.d/10-globally-managed-devices.conf
+    # 3) 恢复 NM 全局配置：仍有其他 bond 由本脚本切换到 NM 时不能恢复，否则那些 bond 会变为 unmanaged
+    local other_nm_bonds
+    other_nm_bonds=$(nmcli -t -f NAME,TYPE connection show 2>/dev/null | awk -F: '$2 == "bond" && $1 ~ /-nm$/ {print $1}' | paste -sd, || true)
+    if [[ -n "$other_nm_bonds" ]]; then
+        log_warn "仍有 bond 由 NetworkManager 管理（$other_nm_bonds），保留 NM 全局配置"
+    elif [[ -f "$NM_GLOBAL_CONF_BACKUP" ]]; then
+        cp -a "$NM_GLOBAL_CONF_BACKUP" /usr/lib/NetworkManager/conf.d/10-globally-managed-devices.conf
     fi
 
     # 4) 让 NM 释放设备

@@ -12,6 +12,16 @@ export interface VPC {
     created_at?: string
     updated_at?: string
     owner?: string
+    // The transit gateway the VPC is attached to (detail and list); left out when it has none
+    transit_gateway?: VPCTransitGatewayRef
+}
+
+export interface VPCTransitGatewayRef {
+    id: string
+    name: string
+    attachment_id: string
+    // attaching | available | detaching | error
+    attachment_status: string
 }
 
 export interface VPCPayload {
@@ -27,7 +37,12 @@ export interface VPCListResponse {
 }
 
 export const vpcsApi = {
-    list: async (params?: { offset?: number; limit?: number }): Promise<VPCListResponse> => {
+    list: async (params?: {
+        offset?: number
+        limit?: number
+        order?: string
+        query?: string
+    }): Promise<VPCListResponse> => {
         const response = await client.get('/vpcs', { params })
         return response.data
     },
@@ -45,7 +60,7 @@ export const vpcsApi = {
     patch: async (id: string, payload: VPCPayload): Promise<VPC> => {
         const response = await client.patch(`/vpcs/${id}`, payload)
         return response.data
-    }
+    },
 }
 
 // ============================================
@@ -98,6 +113,27 @@ export interface SubnetPayload {
     priority?: number
 }
 
+// An item of GET /addresses/:subnet. Allocated or reserved addresses cannot be handed out again; the
+// address dropdowns all filter through assignableAddresses
+export interface SubnetAddress {
+    address: string
+    allocated?: boolean
+    reserved?: boolean
+}
+
+export interface SubnetAddressListResponse {
+    total: number
+    addresses: SubnetAddress[]
+}
+
+// The addresses of a subnet that can be picked by name: not allocated, not reserved, and not the subnet
+// gateway. The gateway has an address row that is never marked allocated on a public subnet (it is the
+// upstream router); clapi refuses it, and the dropdowns do not offer it.
+export const assignableAddresses = (addresses: SubnetAddress[] | undefined, gateway?: string): SubnetAddress[] => {
+    const gatewayIp = gateway?.split('/')[0]
+    return (addresses || []).filter((a) => !a.allocated && !a.reserved && a.address.split('/')[0] !== gatewayIp)
+}
+
 export interface SubnetListResponse {
     subnets: Subnet[]
     total: number
@@ -106,7 +142,13 @@ export interface SubnetListResponse {
 }
 
 export const subnetsApi = {
-    list: async (params?: { offset?: number; limit?: number; vpc?: string }): Promise<SubnetListResponse> => {
+    list: async (params?: {
+        offset?: number
+        limit?: number
+        order?: string
+        query?: string
+        vpc?: string
+    }): Promise<SubnetListResponse> => {
         const response = await client.get('/subnets', { params })
         return response.data
     },
@@ -125,10 +167,10 @@ export const subnetsApi = {
     delete: async (id: string): Promise<void> => {
         await client.delete(`/subnets/${id}`)
     },
-    listAddresses: async (subnetId: string): Promise<{ total: number; addresses: any[] }> => {
+    listAddresses: async (subnetId: string): Promise<SubnetAddressListResponse> => {
         const response = await client.get(`/addresses/${subnetId}`)
         return response.data
-    }
+    },
 }
 
 // ============================================
@@ -144,11 +186,11 @@ export interface FloatingIP {
     instance?: { id: string; name: string }
     interface?: { id: string }
     target_interface?: {
-        id: string;
-        ip_address?: string;
+        id: string
+        ip_address?: string
         from_instance?: {
-            id: string;
-            hostname?: string;
+            id: string
+            hostname?: string
         }
     }
     vpc?: { id: string; name: string }
@@ -185,7 +227,12 @@ export interface FloatingIPListResponse {
 }
 
 export const floatingIpsApi = {
-    list: async (params?: { offset?: number; limit?: number }): Promise<FloatingIPListResponse> => {
+    list: async (params?: {
+        offset?: number
+        limit?: number
+        order?: string
+        query?: string
+    }): Promise<FloatingIPListResponse> => {
         const response = await client.get('/floating_ips', { params })
         return response.data
     },
@@ -197,7 +244,16 @@ export const floatingIpsApi = {
         const response = await client.post('/floating_ips', payload)
         return response.data
     },
-    patch: async (id: string, payload: { instance?: { id: string } | null; load_balancer?: { id: string } | null; inbound?: number; outbound?: number; group?: { id: string } | null }): Promise<FloatingIP> => {
+    patch: async (
+        id: string,
+        payload: {
+            instance?: { id: string } | null
+            load_balancer?: { id: string } | null
+            inbound?: number
+            outbound?: number
+            group?: { id: string } | null
+        }
+    ): Promise<FloatingIP> => {
         const response = await client.patch(`/floating_ips/${id}`, payload)
         return response.data
     },
@@ -206,16 +262,16 @@ export const floatingIpsApi = {
     },
     attach: async (id: string, instanceId: string): Promise<FloatingIP> => {
         const response = await client.patch(`/floating_ips/${id}`, {
-            instance: { id: instanceId }
+            instance: { id: instanceId },
         })
         return response.data
     },
     detach: async (id: string): Promise<FloatingIP> => {
         const response = await client.patch(`/floating_ips/${id}`, {
-            instance: null
+            instance: null,
         })
         return response.data
-    }
+    },
 }
 
 // ============================================
@@ -280,7 +336,13 @@ export interface SecurityGroupListResponse {
 }
 
 export const securityGroupsApi = {
-    list: async (params?: { offset?: number; limit?: number; vpc_id?: string }): Promise<SecurityGroupListResponse> => {
+    list: async (params?: {
+        offset?: number
+        limit?: number
+        order?: string
+        query?: string
+        vpc_id?: string
+    }): Promise<SecurityGroupListResponse> => {
         const response = await client.get('/security_groups', { params })
         return response.data
     },
@@ -292,7 +354,10 @@ export const securityGroupsApi = {
         const response = await client.post('/security_groups', payload)
         return response.data
     },
-    patch: async (id: string, payload: { name?: string; description?: string; is_default?: boolean }): Promise<SecurityGroup> => {
+    patch: async (
+        id: string,
+        payload: { name?: string; description?: string; is_default?: boolean }
+    ): Promise<SecurityGroup> => {
         const response = await client.patch(`/security_groups/${id}`, payload)
         return response.data
     },
@@ -310,7 +375,7 @@ export const securityGroupsApi = {
     patchRule: async (groupId: string, ruleId: string, rule: Partial<SecurityRulePayload>): Promise<SecurityRule> => {
         const response = await client.patch(`/security_groups/${groupId}/rules/${ruleId}`, rule)
         return response.data
-    }
+    },
 }
 
 // ============================================
@@ -321,6 +386,9 @@ export interface Backend {
     name?: string
     endpoint: string
     status?: string
+    ssl?: boolean
+    // Health check result reported by the master haproxy
+    health?: 'up' | 'down' | 'unknown'
     created_at?: string
     owner?: string
 }
@@ -347,6 +415,8 @@ export interface LoadBalancer {
     created_at?: string
     updated_at?: string
     owner?: string
+    // Available on one node without high availability: its zone had no second node (the backup comes later)
+    single_node?: boolean
 }
 
 export interface LoadBalancerPayload {
@@ -367,6 +437,13 @@ export interface ListenerPayload {
 export interface BackendPayload {
     name: string
     endpoint: string
+    ssl?: boolean
+}
+
+export interface BackendPatchPayload {
+    name: string
+    endpoint?: string
+    ssl?: boolean
 }
 
 export interface LoadBalancerListResponse {
@@ -377,7 +454,13 @@ export interface LoadBalancerListResponse {
 }
 
 export const loadBalancersApi = {
-    list: async (params?: { offset?: number; limit?: number }): Promise<LoadBalancerListResponse> => {
+    list: async (params?: {
+        offset?: number
+        limit?: number
+        order?: string
+        query?: string
+        vpc_id?: string
+    }): Promise<LoadBalancerListResponse> => {
         const response = await client.get('/load_balancers', { params })
         return response.data
     },
@@ -389,7 +472,7 @@ export const loadBalancersApi = {
         const response = await client.post('/load_balancers', payload)
         return response.data
     },
-    patch: async (id: string, payload: { name?: string; description?: string; action?: 'enable' | 'disable' }): Promise<LoadBalancer> => {
+    patch: async (id: string, payload: { name: string; description?: string }): Promise<LoadBalancer> => {
         const response = await client.patch(`/load_balancers/${id}`, payload)
         return response.data
     },
@@ -404,6 +487,10 @@ export const loadBalancersApi = {
     deleteListener: async (lbId: string, listenerId: string): Promise<void> => {
         await client.delete(`/load_balancers/${lbId}/listeners/${listenerId}`)
     },
+    patchListener: async (lbId: string, listenerId: string, payload: { name: string }): Promise<Listener> => {
+        const response = await client.patch(`/load_balancers/${lbId}/listeners/${listenerId}`, payload)
+        return response.data
+    },
     // Backends
     addBackend: async (lbId: string, listenerId: string, backend: BackendPayload): Promise<Backend> => {
         const response = await client.post(`/load_balancers/${lbId}/listeners/${listenerId}/backends`, backend)
@@ -412,13 +499,28 @@ export const loadBalancersApi = {
     deleteBackend: async (lbId: string, listenerId: string, backendId: string): Promise<void> => {
         await client.delete(`/load_balancers/${lbId}/listeners/${listenerId}/backends/${backendId}`)
     },
-    addFloatingIp: async (lbId: string, payload: { name: string; public_subnet?: { id: string }; inbound?: number; outbound?: number }): Promise<FloatingIP> => {
+    patchBackend: async (
+        lbId: string,
+        listenerId: string,
+        backendId: string,
+        payload: BackendPatchPayload
+    ): Promise<Backend> => {
+        const response = await client.patch(
+            `/load_balancers/${lbId}/listeners/${listenerId}/backends/${backendId}`,
+            payload
+        )
+        return response.data
+    },
+    addFloatingIp: async (
+        lbId: string,
+        payload: { name: string; public_subnet?: { id: string }; inbound?: number; outbound?: number }
+    ): Promise<FloatingIP[]> => {
         const response = await client.post(`/load_balancers/${lbId}/floating_ips`, payload)
         return response.data
     },
     deleteFloatingIp: async (lbId: string, fipId: string): Promise<void> => {
         await client.delete(`/load_balancers/${lbId}/floating_ips/${fipId}`)
-    }
+    },
 }
 
 export default {
@@ -426,5 +528,5 @@ export default {
     subnets: subnetsApi,
     floatingIps: floatingIpsApi,
     securityGroups: securityGroupsApi,
-    loadBalancers: loadBalancersApi
+    loadBalancers: loadBalancersApi,
 }

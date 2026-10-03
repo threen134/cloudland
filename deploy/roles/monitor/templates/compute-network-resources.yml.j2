@@ -10,6 +10,8 @@ groups:
         severity: warning
         node_type: compute
         alert_type: "node-network"
+        owner: "{{ owner }}"
+        rule_group: "{{ rule_group }}"
         network_type: {{ net_type }}
       annotations:
         summary: "Compute node ({{ net_type }}) {{ $labels.instance }} device {{ $labels.device }} high network traffic"

@@ -9,7 +9,6 @@ package apis
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -82,11 +81,12 @@ type SubnetPayload struct {
 }
 
 type SubnetPatchPayload struct {
-	Name     string         `json:"name" binding:"omitempty,min=2,max=64"`
-	Group    *BaseReference `json:"group" binding:"omitempty"`
-	Type     SubnetType     `json:"type" binding:"omitempty,oneof=public internal private site"`
-	Priority int32          `json:"priority" binding:"omitempty,gte=0,lte=100000"`
-	Dhcp     *bool          `json:"dhcp" binding:"omitempty"`
+	Name  string         `json:"name" binding:"omitempty,min=2,max=64"`
+	Group *BaseReference `json:"group" binding:"omitempty"`
+	Type  SubnetType     `json:"type" binding:"omitempty,oneof=public internal private site"`
+	// Omitted keeps the current priority (0 is a valid value, so it cannot be the "not set" marker)
+	Priority *int32 `json:"priority" binding:"omitempty,gte=0,lte=100000"`
+	Dhcp     *bool  `json:"dhcp" binding:"omitempty"`
 }
 
 // @Summary get a subnet
@@ -130,52 +130,57 @@ func (v *SubnetAPI) Patch(c *gin.Context) {
 	payload := &SubnetPatchPayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind json: %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind json: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Patching subnet %s with %+v", uuID, payload)
+	logger.Ctx(ctx).Debugf("Patching subnet %s with %+v", uuID, payload)
 
 	subnet, err := subnetAdmin.GetSubnetByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get subnet, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to get subnet, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid subnet query", err)
 		return
 	}
+	// Collect the new values first: Update checks permissions against the subnet as it is now
+	name, subnetType, group, priority, dhcp := subnet.Name, subnet.Type, subnet.Group, subnet.Priority, subnet.Dhcp
 	if payload.Name != "" {
-		subnet.Name = payload.Name
+		name = payload.Name
 	}
 	if payload.Type != "" {
-		subnet.Type = string(payload.Type)
+		subnetType = string(payload.Type)
 	}
 	if payload.Group != nil {
 		if payload.Group.ID != "" {
-			subnet.Group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
+			group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
 			if err != nil {
-				logger.Errorf("Failed to get ipGroup by UUID %s, %+v", payload.Group.ID, err)
+				logger.Ctx(ctx).Errorf("Failed to get ipGroup by UUID %s, %+v", payload.Group.ID, err)
 				ErrorResponse(c, http.StatusBadRequest, "Invalid group ID", err)
 				return
 			}
 		} else {
-			subnet.Group = nil
+			group = nil
 		}
 	}
 	if payload.Dhcp != nil {
-		subnet.Dhcp = *payload.Dhcp
+		dhcp = *payload.Dhcp
 	}
-	subnet.Priority = payload.Priority
-	err = subnetAdmin.Update(ctx, subnet.ID, subnet.Name, subnet.Type, subnet.Group, payload.Priority, subnet.Dhcp)
+	if payload.Priority != nil {
+		priority = *payload.Priority
+	}
+	err = subnetAdmin.Update(ctx, subnet, name, subnetType, group, priority, dhcp)
 	if err != nil {
-		logger.Errorf("Failed to update subnet %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to update subnet %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update subnet", err)
 		return
 	}
+	subnet.Name, subnet.Type, subnet.Group, subnet.Priority, subnet.Dhcp = name, subnetType, group, priority, dhcp
 	subnetResp, err := v.getSubnetResponse(ctx, subnet)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to update subnet response", err)
 		return
 	}
-	logger.Debugf("Patch subnet successfully, %s, %+v", uuID, subnetResp)
+	logger.Ctx(ctx).Debugf("Patch subnet successfully, %s, %+v", uuID, subnetResp)
 	c.JSON(http.StatusOK, subnetResp)
 }
 
@@ -237,21 +242,21 @@ func (v *SubnetAPI) Create(c *gin.Context) {
 	var ipGroup *model.IpGroup
 	if payload.Group != nil {
 		if payload.Group.ID == "" && payload.Group.Name == "" {
-			logger.Errorf("Group ID or Name is required")
+			logger.Ctx(ctx).Errorf("Group ID or Name is required")
 			ErrorResponse(c, http.StatusBadRequest, "Group ID or Name is required", err)
 			return
 		}
 		if payload.Group.ID != "" {
 			ipGroup, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
 			if err != nil {
-				logger.Errorf("Failed to get ipGroup, uuid=%s, err=%v", payload.Group.ID, err)
+				logger.Ctx(ctx).Errorf("Failed to get ipGroup, uuid=%s, err=%v", payload.Group.ID, err)
 				ErrorResponse(c, http.StatusBadRequest, "Failed to get ipGroup", err)
 				return
 			}
 		} else {
 			ipGroup, err = ipGroupAdmin.GetIpGroupByName(ctx, payload.Group.Name)
 			if err != nil {
-				logger.Errorf("Failed to get ipGroup, name=%s, err=%v", payload.Group.Name, err)
+				logger.Ctx(ctx).Errorf("Failed to get ipGroup, name=%s, err=%v", payload.Group.Name, err)
 				ErrorResponse(c, http.StatusBadRequest, "Failed to get ipGroup", err)
 				return
 			}
@@ -259,17 +264,17 @@ func (v *SubnetAPI) Create(c *gin.Context) {
 	}
 	subnet, err := subnetAdmin.Create(ctx, payload.Vlan, payload.Name, payload.NetworkCIDR, payload.Gateway, payload.StartIP, payload.EndIP, string(payload.Type), payload.NameServer, payload.BaseDomain, payload.Dhcp, router, ipGroup, payload.Priority)
 	if err != nil {
-		logger.Errorf("Failed to create subnet, err=%v", err)
+		logger.Ctx(ctx).Errorf("Failed to create subnet, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create subnet", err)
 		return
 	}
 	subnetResp, err := v.getSubnetResponse(ctx, subnet)
 	if err != nil {
-		logger.Errorf("Failed to get subnet response, err=%v", err)
+		logger.Ctx(ctx).Errorf("Failed to get subnet response, err=%v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Subnet created successfully, subnet=%+v", subnetResp)
+	logger.Ctx(ctx).Debugf("Subnet created successfully, subnet=%+v", subnetResp)
 	c.JSON(http.StatusOK, subnetResp)
 }
 
@@ -311,7 +316,7 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 	var idleCount int64
 	idleCount, err = subnetAdmin.CountIdleAddressesForSubnet(ctx, subnet)
 	if err != nil {
-		logger.Errorf("Failed to count idle addresses for subnet, err=%v", err)
+		logger.Ctx(ctx).Errorf("Failed to count idle addresses for subnet, err=%v", err)
 		return
 	}
 	subnetResp.IdleCount = idleCount
@@ -320,7 +325,7 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 	var total, allocated, reserved, available int64
 	total, allocated, reserved, available, err = subnetAdmin.CountAddressStatistics(ctx, subnet)
 	if err != nil {
-		logger.Errorf("Failed to count address statistics for subnet, err=%v", err)
+		logger.Ctx(ctx).Errorf("Failed to count address statistics for subnet, err=%v", err)
 		return
 	}
 	subnetResp.TotalCount = total
@@ -343,8 +348,9 @@ func (v *SubnetAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
+	orderStr := c.DefaultQuery("order", "-created_at")
 	queryStr := c.DefaultQuery("query", "")
-	groupID := strings.TrimSpace(c.DefaultQuery("group_id", "")) // Retrieve group_id from query params
+	groupID := strings.TrimSpace(c.DefaultQuery("group_id", ""))         // Retrieve group_id from query params
 	ipGroupType := strings.TrimSpace(c.DefaultQuery("ipgroup_type", "")) // Filter by ipgroup type
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
@@ -361,39 +367,32 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		return
 	}
 
-	if queryStr != "" {
-		queryStr = fmt.Sprintf("name like '%%%s%%'", queryStr)
-	}
+	var groupDBID int64
 	if groupID != "" {
-		logger.Debugf("Filtering subnets by group_id: %s", groupID)
+		logger.Ctx(ctx).Debugf("Filtering subnets by group_id: %s", groupID)
 		var ipGroup *model.IpGroup
 		ipGroup, err := ipGroupAdmin.GetIpGroupByUUID(ctx, groupID)
 		if err != nil {
-			logger.Errorf("Invalid query group_id: %s, %+v", groupID, err)
+			logger.Ctx(ctx).Errorf("Invalid query group_id: %s, %+v", groupID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid query subnets by group_id UUID: "+groupID, err)
 			return
 		}
 
-		logger.Debugf("The ipGroup with group_id: %+v\n", ipGroup)
-		logger.Debugf("The group_id in ipGroup is: %d", ipGroup.ID)
-		queryStr = fmt.Sprintf("group_id = %d", ipGroup.ID)
+		logger.Ctx(ctx).Debugf("The ipGroup with group_id: %+v\n", ipGroup)
+		logger.Ctx(ctx).Debugf("The group_id in ipGroup is: %d", ipGroup.ID)
+		groupDBID = ipGroup.ID
 	}
 	// Filter by ipgroup type (system or resource)
 	if ipGroupType != "" {
 		if ipGroupType == "system" || ipGroupType == "resource" {
-			if queryStr != "" {
-				queryStr = fmt.Sprintf("%s AND group_id IN (SELECT id FROM ip_groups WHERE type = '%s')", queryStr, ipGroupType)
-			} else {
-				queryStr = fmt.Sprintf("group_id IN (SELECT id FROM ip_groups WHERE type = '%s')", ipGroupType)
-			}
-			logger.Debugf("Filtering subnets by ipgroup_type: %s", ipGroupType)
+			logger.Ctx(ctx).Debugf("Filtering subnets by ipgroup_type: %s", ipGroupType)
 		} else {
-			logger.Errorf("Invalid ipgroup_type: %s", ipGroupType)
+			logger.Ctx(ctx).Errorf("Invalid ipgroup_type: %s", ipGroupType)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid ipgroup_type filter, must be 'system' or 'resource'", nil)
 			return
 		}
 	}
-	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, "")
+	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr, groupDBID, ipGroupType)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list subnets", err)
 		return

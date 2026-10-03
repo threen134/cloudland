@@ -11,19 +11,20 @@ import (
 
 	"api/src/dbs"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type Zone struct {
 	ID        int64  `gorm:"primary_key"`
 	UUID      string `gorm:"type:varchar(64);index" json:"uuid"`
-	Name      string `gorm:"unique_index"`
+	Name      string `gorm:"uniqueIndex"`
 	Remark    string `gorm:"type:varchar(512);default:''"`
 	Default   bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
-func (z *Zone) BeforeCreate() (err error) {
+func (z *Zone) BeforeCreate(tx *gorm.DB) (err error) {
 	if z.UUID == "" {
 		z.UUID = uuid.New().String()
 	}

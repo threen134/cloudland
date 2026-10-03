@@ -3,6 +3,7 @@ apiVersion: 1
 datasources:
   - name: Loki
     type: loki
+    uid: loki
     access: proxy
     orgId: 1
     url: http://loki:3100
@@ -10,3 +11,11 @@ datasources:
     isDefault: false
     version: 1
     editable: true
+    jsonData:
+      # 日志行中的 trace_id 链接到 Tempo 链路：匹配 JSON（"trace_id":"..."）、logfmt（trace_id=...）与标准库日志前缀（[trace=...]）
+      # provisioning 中 $ 需转义为 $$
+      derivedFields:
+        - name: TraceID
+          matcherRegex: 'trace(?:_id)?"?[:=]"?(\w+)'
+          datasourceUid: tempo
+          url: '$${__value.raw}'

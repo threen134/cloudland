@@ -1,17 +1,42 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
-import { alarmsApi, RULE_TYPES, type NodeAlarmRule, type CreateNodeAlarmRulePayload } from '../../api/alarms'
-import { Search as SearchIcon, AlertTriangle, Plus, Trash2, RefreshCw, X, Loader2, RefreshCcw } from 'lucide-vue-next'
+import {
+    alarmsApi,
+    RULE_TYPES,
+    type NodeAlarmRule,
+    type NodeAlarmRuleListResponse,
+    type CreateNodeAlarmRulePayload,
+} from '../../api/alarms'
+import {
+    Search as SearchIcon,
+    AlertTriangle,
+    Plus,
+    Trash2,
+    Pencil,
+    Power,
+    RefreshCw,
+    Loader2,
+    Check,
+    Copy,
+} from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
+import { errorMessage } from '../../utils/error'
 import { useRegionStore } from '../../stores/region'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import NodeAlarmRuleEditModal from '../../components/alarm/NodeAlarmRuleEditModal.vue'
 
 const { t } = useI18n()
 const toast = useToast()
 const region = useRegionStore()
 const alarmList = ref<NodeAlarmRule[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const { copiedId, copyId } = useCopyId()
 const searchQuery = ref('')
 const filterRuleType = ref('')
@@ -24,7 +49,7 @@ const createForm = ref<CreateNodeAlarmRulePayload>({
     name: '',
     config: {},
     description: '',
-    enabled: true
+    enabled: true,
 })
 const configJsonStr = ref('{}')
 const configError = ref('')
@@ -36,57 +61,103 @@ const deleting = ref(false)
 
 const fetchAlarms = async () => {
     loading.value = true
+    loadError.value = ''
     try {
-        const params: any = {}
+        const params: { uuid?: string; rule_type?: string } = {}
         if (filterRuleType.value) params.rule_type = filterRuleType.value
         const response = await alarmsApi.fetchAlarmRules(params)
-        const data = response.data as any
-        alarmList.value = Array.isArray(data) ? data : (data.data || [])
+        // 接口返回 { status, data, count }，这里保留"直接是数组"的兼容分支
+        const data = response as NodeAlarmRuleListResponse | NodeAlarmRule[]
+        alarmList.value = Array.isArray(data) ? data : data.data || []
     } catch (error) {
         console.error('API fetch failed:', error)
         alarmList.value = []
+        loadError.value = t('messages.error')
     } finally {
         loading.value = false
     }
 }
 
+// 规则类型列显示的是标签、状态列显示的是翻译文案，排序都按原始值
+const columns = computed<Column[]>(() => [
+    { key: 'name', label: t('dashboard.table.nameId'), sortable: true },
+    {
+        key: 'ruleType',
+        label: t('dashboard.alarmActions.ruleType'),
+        sortable: true,
+        sortValue: (a) => a.rule_type || '',
+    },
+    {
+        key: 'status',
+        label: t('dashboard.table.status'),
+        sortable: true,
+        sortValue: (a) => (a.enabled ? 'enabled' : 'disabled'),
+    },
+    { key: 'description', label: t('dashboard.table.description'), sortable: true },
+    { key: 'actions', label: t('dashboard.table.actions'), align: 'center' },
+])
+
 const filteredAlarms = computed(() => {
     if (!searchQuery.value) return alarmList.value
     const query = searchQuery.value.toLowerCase()
-    return alarmList.value.filter(a =>
-        (a.name && a.name.toLowerCase().includes(query)) ||
-        (a.rule_type && a.rule_type.toLowerCase().includes(query)) ||
-        (a.uuid && a.uuid.toLowerCase().includes(query))
+    return alarmList.value.filter(
+        (a) =>
+            (a.name && a.name.toLowerCase().includes(query)) ||
+            (a.rule_type && a.rule_type.toLowerCase().includes(query)) ||
+            (a.uuid && a.uuid.toLowerCase().includes(query))
     )
 })
 
-const getRuleTypeLabel = (type: string) => {
-    const found = RULE_TYPES.find(r => r.value === type)
-    return found ? found.label : type
-}
+const getRuleTypeLabel = (type: string) =>
+    (RULE_TYPES as readonly string[]).includes(type) ? t('dashboard.alarmRuleTypes.' + type) : type
 
-const getRuleTypeClass = (type: string) => {
-    const map: Record<string, string> = {
-        node_available: 'rt-critical',
-        control_node: 'rt-warning',
-        compute_node: 'rt-warning',
-        hypervisor_vcpu: 'rt-info',
-        packet_drop: 'rt-critical',
-        ip_block: 'rt-info',
-        ipgroup_available_ip: 'rt-info'
-    }
-    return map[type] || 'rt-default'
-}
-
-// Config templates per rule type
+// Config templates per rule type.
+// The keys must match the variables in the Prometheus rule templates under
+// deploy/roles/monitor/templates/*.j2 — anything else is silently ignored (the template
+// falls back to its own default), and for a variable without a default the placeholder
+// ends up verbatim in the rule file, which makes Prometheus reject every rule it has.
+// The values below are each template's own defaults.
 const CONFIG_TEMPLATES: Record<string, object> = {
-    node_available: { duration: "5m", severity: "critical" },
-    control_node: { cpu_threshold: 80, memory_threshold: 80, duration: "5m", severity: "warning" },
-    compute_node: { cpu_threshold: 80, memory_threshold: 80, disk_threshold: 85, duration: "5m", severity: "warning" },
-    hypervisor_vcpu: { vcpu_ratio_threshold: 3.0, duration: "10m", severity: "warning" },
-    packet_drop: { drop_rate_threshold: 0.01, duration: "5m", severity: "critical" },
-    ip_block: { threshold: 80, duration: "10m", severity: "info" },
-    ipgroup_available_ip: { min_available: 5, duration: "10m", severity: "info" },
+    // node-availability.yml.j2
+    node_available: { node_down_duration: '5m' },
+    // management-resources.yml.j2 (thresholds in %, disk is *free* space)
+    control_node: {
+        cpu_usage_threshold: 80,
+        cpu_alert_duration: '10m',
+        memory_usage_threshold: 80,
+        memory_alert_duration: '10m',
+        disk_space_threshold: 20,
+        disk_alert_duration: '10m',
+        network_traffic_threshold_gb: 5,
+        network_alert_duration: '10m',
+    },
+    // compute-core-resources.yml.j2 + compute-network-resources.yml.j2
+    // network_types is required: the network template loops over it (pattern is the
+    // Prometheus device matcher, threshold is in Gbps)
+    compute_node: {
+        cpu_usage_threshold: 80,
+        cpu_alert_duration: '10m',
+        memory_usage_threshold: 80,
+        memory_alert_duration: '10m',
+        disk_space_threshold: 10,
+        disk_alert_duration: '20m',
+        network_traffic_threshold_gb: 25,
+        network_alert_duration: '5m',
+        network_types: {
+            public: { pattern: '=~"bond1"', threshold: 20, duration: '5m' },
+            private: { pattern: '=~"bond0"', threshold: 20, duration: '5m' },
+        },
+    },
+    // compute-vcpu-resources.yml.j2 — neither variable has a default, both are required
+    hypervisor_vcpu: { vcpu_usage_threshold: 85, for_duration: '10m' },
+    // packet-drop-monitor.yml.j2
+    packet_drop: { packet_drop_threshold: 0, for_duration: '1m', severity: 'warning' },
+    // ip-block-monitor.yml.j2
+    ip_block: { for_duration: '30s', severity: 'warning' },
+    // ipgroup-available-ip-monitor.yml.j2
+    ipgroup_available_ip: { threshold: 100, for_duration: '5m', severity: 'warning' },
+    // local-pool-monitor.yml.j2: status of the local storage pools and their use in percent
+    local_pool: { usage_threshold: 85, for_duration: '5m', severity: 'warning' },
 }
 
 const onRuleTypeChange = () => {
@@ -125,11 +196,32 @@ const handleCreate = async () => {
         showCreateModal.value = false
         toast.success(t('messages.success'))
         await fetchAlarms()
-    } catch (err: any) {
-        const errData = err.response?.data
-        toast.error(errData?.error || errData?.message || t('messages.error'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     } finally {
         creating.value = false
+    }
+}
+// 编辑弹窗与详情页共用（components/alarm/NodeAlarmRuleEditModal.vue）
+const showEditModal = ref(false)
+const editingRule = ref<NodeAlarmRule | null>(null)
+
+const openEditModal = (rule: NodeAlarmRule) => {
+    editingRule.value = rule
+    showEditModal.value = true
+}
+
+// 停用只改数据库行是不够的：后端会同时撤下这条规则的 Prometheus 规则文件
+const togglingUuid = ref('')
+const toggleEnabled = async (rule: NodeAlarmRule) => {
+    togglingUuid.value = rule.uuid
+    try {
+        await alarmsApi.updateAlarmRule(rule.uuid, { enabled: !rule.enabled })
+        await fetchAlarms()
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
+    } finally {
+        togglingUuid.value = ''
     }
 }
 
@@ -148,24 +240,10 @@ const handleDelete = async () => {
         deletingRule.value = null
         toast.success(t('messages.success'))
         await fetchAlarms()
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || t('messages.error'))
+    } catch (err) {
+        toast.error(errorMessage(err, t('messages.error')))
     } finally {
         deleting.value = false
-    }
-}
-
-// Sync mappings
-const syncing = ref(false)
-const handleSync = async () => {
-    syncing.value = true
-    try {
-        await alarmsApi.syncMappings()
-        toast.success(t('dashboard.alarmActions.syncSuccess'))
-    } catch (err: any) {
-        toast.error(err.response?.data?.error || t('messages.error'))
-    } finally {
-        syncing.value = false
     }
 }
 
@@ -176,325 +254,293 @@ onMounted(() => {
 })
 
 // Re-fetch when region changes
-watch(() => region.currentRegionId, (newId) => {
-    if (newId) {
-        fetchAlarms()
+watch(
+    () => region.currentRegionId,
+    (newId) => {
+        if (newId) {
+            fetchAlarms()
+        }
     }
-})
+)
 </script>
 
 <template>
-  <div class="vpc-list-container">
-    <div class="page-header">
-      <div class="search-wrapper">
-        <div class="search-box">
-          <SearchIcon :size="16" class="search-icon" />
-          <input type="text" v-model="searchQuery" :placeholder="t('actions.search') + '...'" class="search-input" />
-        </div>
-        <select v-model="filterRuleType" @change="fetchAlarms" class="filter-select">
-          <option value="">{{ t('dashboard.alarmActions.allTypes') }}</option>
-          <option v-for="rt in RULE_TYPES" :key="rt.value" :value="rt.value">{{ rt.label }}</option>
-        </select>
-      </div>
-      <div class="header-actions">
-        <button class="btn btn-secondary btn-sm" @click="handleSync" :disabled="syncing" :title="t('dashboard.alarmActions.syncMappings')">
-          <Loader2 v-if="syncing" :size="14" class="spinning" />
-          <RefreshCcw v-else :size="14" />
-          <span>{{ syncing ? t('dashboard.alarmActions.syncing') : t('dashboard.alarmActions.syncMappings') }}</span>
-        </button>
-        <button class="btn btn-secondary btn-sm btn-icon" @click="fetchAlarms" :title="t('actions.refresh')">
-          <RefreshCw :size="14" :class="{ spinning: loading }" />
-        </button>
-        <button class="btn btn-primary btn-sm" @click="openCreateModal">
-          <Plus :size="14" />
-          <span>{{ t('actions.create') }}</span>
-        </button>
-      </div>
-    </div>
-
-    <div class="card table-card">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>{{ t('dashboard.table.nameId') }}</th>
-            <th>{{ t('dashboard.alarmActions.ruleType') }}</th>
-            <th>{{ t('dashboard.table.status') }}</th>
-            <th>{{ t('dashboard.table.description') }}</th>
-            <th>{{ t('dashboard.table.actions') }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="5" class="text-center">
-              <div class="loading-spinner" style="margin: 20px auto;"></div>
-            </td>
-          </tr>
-          <tr v-else-if="filteredAlarms.length === 0">
-            <td colspan="5" class="text-center text-secondary" style="padding: 48px;">
-               <div v-if="searchQuery || filterRuleType">
-                  <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px;" />
-                  <p>{{ t('messages.noResults') }}</p>
-               </div>
-               <div v-else class="empty-state">
-                  <AlertTriangle :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-                  <p>{{ t('messages.noData') }}</p>
-               </div>
-            </td>
-          </tr>
-          <tr v-else v-for="a in filteredAlarms" :key="a.uuid">
-            <td>
-              <router-link :to="{ name: 'alarm-detail', params: { id: a.uuid } }" class="resource-link">
-                <div class="resource-info">
-                  <div class="resource-icon">
-                    <AlertTriangle :size="16" />
-                  </div>
-                  <div>
-                    <div class="resource-name">{{ a.name }}</div>
-                    <div class="resource-id-row">
-                      <span class="resource-id" :title="a.uuid">{{ a.uuid.slice(0, 8) }}...</span>
-                      <button class="copy-btn-mini" @click.stop.prevent="copyId(a.uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                        <Check v-if="copiedId === a.uuid" :size="10" style="color: #10b981;" />
-                        <Copy v-else :size="10" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </router-link>
-            </td>
-            <td>
-              <span class="rule-type-badge" :class="getRuleTypeClass(a.rule_type)">
-                {{ getRuleTypeLabel(a.rule_type) }}
-              </span>
-            </td>
-            <td>
-              <span class="status-pill" :class="a.enabled ? 'status-active' : 'status-disabled'">
-                <span class="status-dot"></span>
-                {{ a.enabled ? t('dashboard.alarmActions.enabled') : t('dashboard.alarmActions.disabled') }}
-              </span>
-            </td>
-            <td class="desc-cell">{{ a.description || '-' }}</td>
-            <td>
-              <button class="icon-btn-table text-error" @click.prevent="confirmDelete(a)" :title="t('actions.delete')">
-                <Trash2 :size="16" />
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Create Modal -->
-    <Teleport to="body">
-      <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-        <div class="modal-content card" style="max-width: 560px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.alarmActions.createTitle') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showCreateModal = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <div class="form-stack">
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.alarmActions.ruleType') }} *</label>
-                <select v-model="createForm.rule_type" @change="onRuleTypeChange" class="form-input">
-                  <option value="" disabled>{{ t('dashboard.alarmActions.selectRuleType') }}</option>
-                  <option v-for="rt in RULE_TYPES" :key="rt.value" :value="rt.value">{{ rt.label }}</option>
+    <div class="vpc-list-container">
+        <PageToolbar v-model:search="searchQuery">
+            <template #filters>
+                <select v-model="filterRuleType" @change="fetchAlarms" class="filter-select">
+                    <option value="">{{ t('dashboard.alarmActions.allTypes') }}</option>
+                    <option v-for="rt in RULE_TYPES" :key="rt" :value="rt">
+                        {{ t('dashboard.alarmRuleTypes.' + rt) }}
+                    </option>
                 </select>
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.table.name') }} *</label>
-                <input type="text" v-model="createForm.name" class="form-input" :placeholder="t('dashboard.forms.placeholder.alarmNameExample')" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">{{ t('dashboard.table.description') }}</label>
-                <input type="text" v-model="createForm.description" class="form-input" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Config (JSON) *</label>
-                <textarea v-model="configJsonStr" class="form-input config-textarea" rows="6" @blur="validateConfig" placeholder='{"threshold": 80, "duration": "5m"}'></textarea>
-                <span v-if="configError" class="form-error">{{ configError }}</span>
-                <span v-else-if="createForm.rule_type" class="form-hint">{{ t('dashboard.alarmActions.configHint') }}</span>
-              </div>
-              <div class="form-group">
-                <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                  <input type="checkbox" v-model="createForm.enabled" />
-                  {{ t('dashboard.alarmActions.enabled') }}
-                </label>
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showCreateModal = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-primary" @click="handleCreate" :disabled="creating || !createForm.rule_type || !createForm.name">
-              <Loader2 v-if="creating" :size="14" class="spinning" />
-              {{ creating ? t('messages.creating') : t('actions.create') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+            </template>
+            <template #actions>
+                <button class="btn btn-secondary btn-sm btn-icon" @click="fetchAlarms" :title="t('actions.refresh')">
+                    <RefreshCw :size="14" :class="{ spinning: loading }" />
+                </button>
+                <button class="btn btn-primary btn-sm" @click="openCreateModal">
+                    <Plus :size="14" />
+                    <span>{{ t('actions.create') }}</span>
+                </button>
+            </template>
+        </PageToolbar>
 
-    <!-- Delete Confirm Modal -->
-    <Teleport to="body">
-      <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
-        <div class="modal-content card" style="max-width: 440px;">
-          <div class="modal-header">
-            <h3>{{ t('dashboard.alarmActions.deleteTitle') }}</h3>
-            <button class="btn btn-ghost btn-icon" @click="showDeleteConfirm = false"><X :size="18" /></button>
-          </div>
-          <div class="modal-body">
-            <p>{{ t('dashboard.alarmActions.deleteConfirm', { name: deletingRule?.name }) }}</p>
-          </div>
-          <div class="modal-footer">
-            <button class="btn btn-secondary" @click="showDeleteConfirm = false">{{ t('actions.cancel') }}</button>
-            <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
-              <Loader2 v-if="deleting" :size="14" class="spinning" />
-              {{ deleting ? t('messages.deleting') : t('actions.delete') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-  </div>
+        <DataTable
+            :columns="columns"
+            :rows="filteredAlarms"
+            row-key="uuid"
+            :loading="loading"
+            :error="loadError"
+            @retry="fetchAlarms"
+        >
+            <template #empty>
+                <div v-if="searchQuery || filterRuleType">
+                    <SearchIcon :size="48" style="opacity: 0.3; margin-bottom: 16px" />
+                    <p>{{ t('messages.noResults') }}</p>
+                </div>
+                <div v-else class="empty-state">
+                    <AlertTriangle :size="48" style="opacity: 0.2; margin-bottom: 16px" />
+                    <p>{{ t('messages.noData') }}</p>
+                </div>
+            </template>
+
+            <template #cell-name="{ row: a }">
+                <router-link :to="{ name: 'alarm-detail', params: { id: a.uuid } }" class="resource-link">
+                    <div class="resource-info">
+                        <div class="resource-icon">
+                            <AlertTriangle :size="16" />
+                        </div>
+                        <div>
+                            <div class="resource-name">{{ a.name }}</div>
+                            <div class="resource-id-row">
+                                <span class="resource-id" :title="a.uuid">{{ a.uuid.slice(0, 8) }}...</span>
+                                <button
+                                    class="copy-btn-mini"
+                                    @click.stop.prevent="copyId(a.uuid)"
+                                    :title="t('actions.copy')"
+                                    :aria-label="t('actions.copy')"
+                                >
+                                    <Check v-if="copiedId === a.uuid" :size="10" style="color: var(--success-color)" />
+                                    <Copy v-else :size="10" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </router-link>
+            </template>
+
+            <template #cell-ruleType="{ row: a }">
+                <span class="badge badge-secondary">
+                    {{ getRuleTypeLabel(a.rule_type) }}
+                </span>
+            </template>
+
+            <template #cell-status="{ row: a }">
+                <StatusBadge
+                    :variant="a.enabled ? 'success' : 'neutral'"
+                    :label="a.enabled ? t('dashboard.alarmActions.enabled') : t('dashboard.alarmActions.disabled')"
+                />
+            </template>
+
+            <template #cell-description="{ row: a }">
+                <div class="desc-cell">{{ a.description || '-' }}</div>
+            </template>
+
+            <template #cell-actions="{ row: a }">
+                <div class="row-actions">
+                    <button class="icon-btn-table" @click.prevent="openEditModal(a)" :title="t('actions.edit')">
+                        <Pencil :size="16" />
+                    </button>
+                    <button
+                        class="icon-btn-table"
+                        :class="{ 'is-active': a.enabled }"
+                        :disabled="togglingUuid === a.uuid"
+                        @click.prevent="toggleEnabled(a)"
+                        :title="a.enabled ? t('actions.disable') : t('actions.enable')"
+                    >
+                        <Power :size="16" />
+                    </button>
+                    <button
+                        class="icon-btn-table icon-danger"
+                        @click.prevent="confirmDelete(a)"
+                        :title="t('actions.delete')"
+                    >
+                        <Trash2 :size="16" />
+                    </button>
+                </div>
+            </template>
+        </DataTable>
+
+        <!-- Create Modal -->
+        <BaseModal
+            :show="showCreateModal"
+            :title="t('dashboard.alarmActions.createTitle')"
+            size="lg"
+            form
+            :loading="creating"
+            @close="showCreateModal = false"
+            @submit="handleCreate"
+        >
+            <div class="form-stack">
+                <div class="form-group">
+                    <label class="form-label">{{ t('dashboard.alarmActions.ruleType') }} *</label>
+                    <select v-model="createForm.rule_type" @change="onRuleTypeChange" class="form-input">
+                        <option value="" disabled>{{ t('dashboard.alarmActions.selectRuleType') }}</option>
+                        <option v-for="rt in RULE_TYPES" :key="rt" :value="rt">
+                            {{ t('dashboard.alarmRuleTypes.' + rt) }}
+                        </option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{ t('dashboard.table.name') }} *</label>
+                    <input
+                        type="text"
+                        v-model="createForm.name"
+                        class="form-input"
+                        :placeholder="t('dashboard.forms.placeholder.alarmNameExample')"
+                    />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{ t('dashboard.table.description') }}</label>
+                    <input type="text" v-model="createForm.description" class="form-input" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">{{ t('dashboard.alarmActions.configLabel') }} *</label>
+                    <textarea
+                        v-model="configJsonStr"
+                        class="form-input config-textarea"
+                        rows="6"
+                        @blur="validateConfig"
+                        placeholder='{"threshold": 80, "duration": "5m"}'
+                    ></textarea>
+                    <span v-if="configError" class="form-error">{{ configError }}</span>
+                    <span v-else-if="createForm.rule_type" class="form-hint">{{
+                        t('dashboard.alarmActions.configHint')
+                    }}</span>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer">
+                        <input type="checkbox" v-model="createForm.enabled" />
+                        {{ t('dashboard.alarmActions.enabled') }}
+                    </label>
+                </div>
+            </div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="showCreateModal = false">
+                    {{ t('actions.cancel') }}
+                </button>
+                <button
+                    type="submit"
+                    class="btn btn-primary"
+                    :disabled="creating || !createForm.rule_type || !createForm.name"
+                >
+                    <Loader2 v-if="creating" :size="14" class="spinning" />
+                    {{ creating ? t('messages.creating') : t('actions.create') }}
+                </button>
+            </template>
+        </BaseModal>
+
+        <NodeAlarmRuleEditModal
+            :show="showEditModal"
+            :rule="editingRule"
+            @close="showEditModal = false"
+            @saved="fetchAlarms()"
+        />
+
+        <!-- Delete Confirm Modal -->
+        <DeleteModal
+            :show="showDeleteConfirm"
+            :title="t('dashboard.alarmActions.deleteTitle')"
+            :message="t('dashboard.alarmActions.deleteConfirm', { name: deletingRule?.name })"
+            :loading="deleting"
+            @close="showDeleteConfirm = false"
+            @confirm="handleDelete"
+        />
+    </div>
 </template>
 
 <style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0;
-  padding-right: 20px;
-}
-
-.search-wrapper {
-  display: flex;
-  gap: 8px;
-  flex: 1;
-  max-width: 560px;
-}
-
-.header-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.search-box {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--bg-secondary);
-  padding: 0 12px;
-  height: 40px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-light);
-  transition: all 0.2s;
-  flex: 1;
-}
-
-.search-box:focus-within {
-  border-color: var(--primary-300);
-  box-shadow: 0 0 0 2px var(--primary-100);
-}
-
-.search-icon { color: var(--gray-400); }
-
-.search-input {
-  border: none;
-  background: transparent;
-  width: 100%;
-  height: 100%;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-}
-
-.search-input:focus { outline: none; }
-
 .filter-select {
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-md);
-  font-size: 0.875rem;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  min-width: 140px;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    min-width: 140px;
 }
 
-.table-card { padding: 0; overflow: hidden; }
-
-
-.resource-link:hover .resource-name { color: var(--primary-600); text-decoration: underline; }
-
-.status-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 10px; border-radius: var(--radius-full);
-  font-size: var(--font-size-xs); font-weight: var(--font-weight-medium);
+.resource-link:hover .resource-name {
+    color: var(--primary-600);
+    text-decoration: underline;
 }
-
-.status-active { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-.status-disabled { background: var(--gray-100); color: var(--gray-500); }
-.status-dot { width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
-
-.rule-type-badge {
-  display: inline-flex; align-items: center;
-  padding: 2px 8px; border-radius: var(--radius-sm);
-  font-size: var(--font-size-xs); font-weight: 500;
-  border: 1px solid var(--border-subtle);
-}
-
-.rt-critical { background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.2); }
-.rt-warning { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border-color: rgba(245, 158, 11, 0.2); }
-.rt-info { background: rgba(59, 130, 246, 0.1); color: #3b82f6; border-color: rgba(59, 130, 246, 0.2); }
-.rt-default { background: var(--gray-100); color: var(--gray-600); }
 
 .desc-cell {
-  max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: var(--font-size-sm); color: var(--text-secondary);
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
 }
 
 .empty-state {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
 }
-
-.icon-btn-table {
-  width: 32px; height: 32px; border-radius: 8px; border: none;
-  background: transparent; color: var(--text-tertiary);
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: all 0.2s;
-}
-
-.icon-btn-table:hover { background-color: var(--bg-tertiary); color: var(--primary-500); }
-.icon-btn-table.text-error:hover { background-color: #fef2f2; color: #ef4444; }
 
 /* Modal */
-.form-stack { display: flex; flex-direction: column; gap: 16px; }
-.form-group { display: flex; flex-direction: column; }
-.form-label { font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 4px; font-weight: 500; }
+.form-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+.form-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    font-weight: 500;
+}
 
 .form-input {
-  width: 100%; padding: 8px 12px;
-  border: 1px solid var(--border-light); border-radius: var(--radius-md);
-  font-size: 0.875rem; background: var(--bg-primary); color: var(--text-primary);
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
 }
 
-.form-input:focus { outline: none; border-color: var(--primary-300); box-shadow: 0 0 0 2px var(--primary-100); }
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary-300);
+    box-shadow: 0 0 0 2px var(--primary-100);
+}
 
 .config-textarea {
-  font-family: var(--font-family-mono); font-size: 0.8125rem; resize: vertical;
+    font-family: var(--font-family-mono);
+    font-size: 0.8125rem;
+    resize: vertical;
 }
 
-.form-error { color: #ef4444; font-size: 0.75rem; margin-top: 4px; }
-.form-hint { color: var(--text-light); font-size: 0.75rem; margin-top: 4px; }
-
-.btn-danger {
-  background: #ef4444; color: white; border: none;
-  padding: 8px 16px; border-radius: var(--radius-md); cursor: pointer; font-weight: 500;
+.form-error {
+    color: var(--error-color);
+    font-size: 0.75rem;
+    margin-top: 4px;
 }
-
-.btn-danger:hover { background: #dc2626; }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.spinning { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.form-hint {
+    color: var(--text-light);
+    font-size: 0.75rem;
+    margin-top: 4px;
+}
 </style>

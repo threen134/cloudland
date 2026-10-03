@@ -15,6 +15,7 @@ import (
 	. "api/src/common"
 	"api/src/services"
 	"api/src/utils/log"
+	"api/src/utils/tracing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -46,17 +47,42 @@ func runAlarmEventCleanup(admin *services.NotificationAdmin) {
 	ctx = SetContextDB(ctx, DB())
 	deleted, err := admin.CleanupExpiredAlarmEvents(ctx, retentionDays)
 	if err != nil {
-		logger.Errorf("Failed to cleanup expired alarm events: %v", err)
+		logger.Ctx(ctx).Errorf("Failed to cleanup expired alarm events: %v", err)
 		return
 	}
 	if deleted > 0 {
-		logger.Infof("Cleaned up %d expired alarm events (older than %d days)", deleted, retentionDays)
+		logger.Ctx(ctx).Infof("Cleaned up %d expired alarm events (older than %d days)", deleted, retentionDays)
+	}
+}
+
+func startAuditLogCleanup() {
+	ticker := time.NewTicker(24 * time.Hour)
+	go func() {
+		time.Sleep(30 * time.Second)
+		runAuditLogCleanup()
+		for range ticker.C {
+			runAuditLogCleanup()
+		}
+	}()
+}
+
+func runAuditLogCleanup() {
+	retentionDays := services.AuditLogRetentionDays()
+	ctx := SetContextDB(context.Background(), DB())
+	deleted, err := services.CleanupExpiredAuditLogs(ctx, retentionDays)
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Failed to cleanup expired audit logs (deleted %d before failure): %v", deleted, err)
+		return
+	}
+	if deleted > 0 {
+		logger.Ctx(ctx).Infof("Cleaned up %d expired audit logs (older than %d days)", deleted, retentionDays)
 	}
 }
 
 func Run() (err error) {
 	logger.Info("Starting cloudland api daemon...")
 	startAlarmEventCleanup()
+	startAuditLogCleanup()
 	r := Register()
 	cert := viper.GetString("rest.cert")
 	key := viper.GetString("rest.key")
@@ -95,7 +121,8 @@ func Register() (r *gin.Engine) {
 	r.SetTrustedProxies(nil)
 
 	r.Use(gin.Recovery())
-	r.Use(log.RequestID())
+	// 版本查询与 Prometheus 服务发现为周期轮询，不产生 trace
+	r.Use(tracing.GinMiddleware("clapi", "/api/v1/version", "/api/v1/prometheus/sd/")...)
 	r.Use(log.Logger())
 
 	apiV1 := "/api/v1"
@@ -111,8 +138,12 @@ func Register() (r *gin.Engine) {
 	// 鉴权由 handler 内的 HMAC token 校验承担；compute 节点无 JWT，故不进 authGroup
 	v1.POST("/internal/images/:id/upload", imageAPI.UploadCapture)
 
-	authGroup := v1.Group("").Use(Authorize())
+	// Audit 必须排在 Authorize 之后：操作者身份取自 MemberShip
+	authGroup := v1.Group("").Use(Authorize(), Audit())
 	{
+		authGroup.GET("/audit_logs", auditAPI.List)
+		authGroup.GET("/activities", auditAPI.Activities)
+
 		authGroup.GET("/zones", zoneAPI.List)
 		authGroup.POST("/zones", zoneAPI.Create)
 		authGroup.GET("/zones/:name", zoneAPI.Get)
@@ -125,9 +156,58 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/hypers/:uuid", hyperAPI.Delete)
 		authGroup.PATCH("/hypers/:uuid", hyperAPI.Patch)
 		authGroup.POST("/hypers/:uuid/maintain", hyperAPI.Maintain)
+		authGroup.POST("/hypers/:uuid/console", consoleAPI.CreateHost)
+		authGroup.POST("/hypers/:uuid/disks/scan", storagePoolAPI.ScanDisks)
+		authGroup.GET("/hypers/:uuid/disks", storagePoolAPI.ListDisks)
+		authGroup.PATCH("/hypers/:uuid/disks/:id", storagePoolAPI.PatchDisk)
+		authGroup.GET("/hypers/:uuid/storage_pools", storagePoolAPI.ListHostPools)
+		authGroup.POST("/hypers/:uuid/storage_pools", storagePoolAPI.CreateHostPool)
+		authGroup.POST("/hypers/:uuid/storage_pools/adopt", storagePoolAPI.Adopt)
+		authGroup.DELETE("/hypers/:uuid/storage_pools/:pool_id", storagePoolAPI.DeleteHostPool)
+		authGroup.POST("/hypers/:uuid/storage_pools/:pool_id/extend", storagePoolAPI.ExtendHostPool)
+		authGroup.POST("/hypers/:uuid/storage_pools/:pool_id/replace_disk", storagePoolAPI.ReplaceDisk)
+		authGroup.POST("/hypers/:uuid/storage_pools/:pool_id/maintenance", storagePoolAPI.Maintenance)
+		authGroup.POST("/hypers/:uuid/storage_pools/:pool_id/lost", storagePoolAPI.DeclareLost)
+		authGroup.POST("/hypers/:uuid/storage_pools/:pool_id/restore", storagePoolAPI.Restore)
+		authGroup.POST("/hypers/:uuid/storage_pools/:pool_id/usage", storagePoolAPI.ScanUsage)
+		authGroup.GET("/hypers/:uuid/storage_pools/:pool_id/usage", storagePoolAPI.GetUsage)
+
+		authGroup.GET("/storage_pools", storagePoolAPI.List)
+		authGroup.POST("/storage_pools", storagePoolAPI.Create)
+		authGroup.GET("/storage_pools/:id", storagePoolAPI.Get)
+		authGroup.PATCH("/storage_pools/:id", storagePoolAPI.Patch)
+		authGroup.DELETE("/storage_pools/:id", storagePoolAPI.Delete)
+		authGroup.GET("/storage_pools/:id/hypers", storagePoolAPI.ListHosts)
+		authGroup.POST("/storage_pools/:id/orphans/abandon", storagePoolAPI.AbandonOrphans)
+
+		authGroup.GET("/storage_backends", storageClusterAPI.ListBackends)
+		authGroup.GET("/storage_packages", storagePackageAPI.List)
+		authGroup.POST("/storage_packages", storagePackageAPI.Create)
+		authGroup.GET("/storage_packages/:id", storagePackageAPI.Get)
+		authGroup.PUT("/storage_packages/:id/parts/:n", storagePackageAPI.UploadPart)
+		authGroup.POST("/storage_packages/:id/complete", storagePackageAPI.Complete)
+		authGroup.POST("/storage_packages/:id/accept_license", storagePackageAPI.AcceptLicense)
+		authGroup.DELETE("/storage_packages/:id", storagePackageAPI.Delete)
+		authGroup.GET("/storage_clusters", storageClusterAPI.List)
+		authGroup.POST("/storage_clusters/precheck", storageClusterAPI.Precheck)
+		authGroup.POST("/storage_clusters", storageClusterAPI.Create)
+		authGroup.POST("/storage_clusters/import", storageClusterAPI.Import)
+		authGroup.DELETE("/storage_clusters/:id", storageClusterAPI.Delete)
+		authGroup.GET("/storage_clusters/:id", storageClusterAPI.Get)
+		authGroup.POST("/storage_clusters/:id/nodes", storageClusterAPI.AddNodes)
+		authGroup.DELETE("/storage_clusters/:id/nodes/:hypervisor", storageClusterAPI.RemoveNode)
+		authGroup.POST("/storage_clusters/:id/disks", storageClusterAPI.AddDisks)
+		authGroup.DELETE("/storage_clusters/:id/disks/:disk_id", storageClusterAPI.RemoveDisk)
+		authGroup.POST("/storage_clusters/:id/rebalance", storageClusterAPI.Rebalance)
+		authGroup.GET("/storage_tasks", storageClusterAPI.ListTasks)
+		authGroup.POST("/storage_tasks/selftest", storageClusterAPI.Selftest)
+		authGroup.GET("/storage_tasks/:id", storageClusterAPI.GetTask)
+		authGroup.POST("/storage_tasks/:id/retry", storageClusterAPI.RetryTask)
+		authGroup.POST("/storage_tasks/:id/abort", storageClusterAPI.AbortTask)
 
 		authGroup.GET("/migrations", migrationAPI.List)
 		authGroup.POST("/migrations", migrationAPI.Create)
+		authGroup.GET("/instances/:id/migration_targets", migrationAPI.Targets)
 		authGroup.GET("/migrations/:id", migrationAPI.Get)
 
 		authGroup.GET("/vpcs", vpcAPI.List)
@@ -181,11 +261,37 @@ func Register() (r *gin.Engine) {
 		authGroup.POST("/load_balancers/:id/listeners", listenerAPI.Create)
 		authGroup.GET("/load_balancers/:id/listeners/:listener_id", listenerAPI.Get)
 		authGroup.DELETE("/load_balancers/:id/listeners/:listener_id", listenerAPI.Delete)
+		authGroup.PATCH("/load_balancers/:id/listeners/:listener_id", listenerAPI.Patch)
 
 		authGroup.GET("/load_balancers/:id/listeners/:listener_id/backends", backendAPI.List)
 		authGroup.POST("/load_balancers/:id/listeners/:listener_id/backends", backendAPI.Create)
 		authGroup.GET("/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Get)
 		authGroup.DELETE("/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Delete)
+		authGroup.PATCH("/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Patch)
+
+		authGroup.GET("/vpn_gateways", vpnGatewayAPI.List)
+		authGroup.POST("/vpn_gateways", vpnGatewayAPI.Create)
+		authGroup.GET("/vpn_gateways/:id", vpnGatewayAPI.Get)
+		authGroup.DELETE("/vpn_gateways/:id", vpnGatewayAPI.Delete)
+		authGroup.PATCH("/vpn_gateways/:id", vpnGatewayAPI.Patch)
+		authGroup.GET("/vpn_gateways/:id/traffic", vpnGatewayAPI.Traffic)
+		authGroup.POST("/vpn_gateways/:id/public_ips", vpnGatewayAPI.AddPublicIp)
+		authGroup.GET("/vpn_gateways/:id/public_ips/:endpoint", vpnGatewayAPI.GetPublicIp)
+		authGroup.DELETE("/vpn_gateways/:id/public_ips/:endpoint", vpnGatewayAPI.RemovePublicIp)
+
+		authGroup.GET("/vpn_gateways/:id/connections", vpnConnectionAPI.List)
+		authGroup.POST("/vpn_gateways/:id/connections", vpnConnectionAPI.Create)
+		authGroup.GET("/vpn_gateways/:id/connections/:conn_id", vpnConnectionAPI.Get)
+		authGroup.DELETE("/vpn_gateways/:id/connections/:conn_id", vpnConnectionAPI.Delete)
+		authGroup.PATCH("/vpn_gateways/:id/connections/:conn_id", vpnConnectionAPI.Patch)
+		authGroup.POST("/vpn_gateways/:id/connections/:conn_id/restart", vpnConnectionAPI.Restart)
+
+		authGroup.GET("/vpn_gateways/:id/clients", vpnClientAPI.List)
+		authGroup.POST("/vpn_gateways/:id/clients", vpnClientAPI.Create)
+		authGroup.GET("/vpn_gateways/:id/clients/:client_id", vpnClientAPI.Get)
+		authGroup.DELETE("/vpn_gateways/:id/clients/:client_id", vpnClientAPI.Delete)
+		authGroup.PATCH("/vpn_gateways/:id/clients/:client_id", vpnClientAPI.Patch)
+		authGroup.GET("/vpn_gateways/:id/clients/:client_id/config", vpnClientAPI.Config)
 
 		authGroup.GET("/floating_ips", floatingIpAPI.List)
 		authGroup.POST("/floating_ips", floatingIpAPI.Create)
@@ -205,6 +311,34 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/keys/:id", keyAPI.Get)
 		authGroup.DELETE("/keys/:id", keyAPI.Delete)
 
+		authGroup.GET("/transit_gateways", transitGatewayAPI.List)
+		authGroup.POST("/transit_gateways", transitGatewayAPI.Create)
+		authGroup.GET("/transit_gateways/:id", transitGatewayAPI.Get)
+		authGroup.PATCH("/transit_gateways/:id", transitGatewayAPI.Patch)
+		authGroup.DELETE("/transit_gateways/:id", transitGatewayAPI.Delete)
+		authGroup.POST("/transit_gateways/:id/resync", transitGatewayAPI.Resync)
+		authGroup.GET("/transit_gateways/:id/attachments", transitGatewayAPI.ListAttachments)
+		authGroup.POST("/transit_gateways/:id/attachments", transitGatewayAPI.CreateAttachment)
+		authGroup.GET("/transit_gateways/:id/attachments/:att_id", transitGatewayAPI.GetAttachment)
+		authGroup.PATCH("/transit_gateways/:id/attachments/:att_id", transitGatewayAPI.PatchAttachment)
+		authGroup.DELETE("/transit_gateways/:id/attachments/:att_id", transitGatewayAPI.DeleteAttachment)
+		authGroup.GET("/transit_gateways/:id/route_tables", transitGatewayAPI.ListRouteTables)
+		authGroup.POST("/transit_gateways/:id/route_tables", transitGatewayAPI.CreateRouteTable)
+		authGroup.GET("/transit_gateways/:id/route_tables/:rt_id", transitGatewayAPI.GetRouteTable)
+		authGroup.PATCH("/transit_gateways/:id/route_tables/:rt_id", transitGatewayAPI.PatchRouteTable)
+		authGroup.DELETE("/transit_gateways/:id/route_tables/:rt_id", transitGatewayAPI.DeleteRouteTable)
+		authGroup.GET("/transit_gateways/:id/route_tables/:rt_id/effective_routes", transitGatewayAPI.EffectiveRoutes)
+		authGroup.POST("/transit_gateways/:id/route_tables/:rt_id/propagations", transitGatewayAPI.CreatePropagation)
+		authGroup.DELETE("/transit_gateways/:id/route_tables/:rt_id/propagations/:prop_id", transitGatewayAPI.DeletePropagation)
+		authGroup.POST("/transit_gateways/:id/route_tables/:rt_id/routes", transitGatewayAPI.CreateRoute)
+		authGroup.DELETE("/transit_gateways/:id/route_tables/:rt_id/routes/:route_id", transitGatewayAPI.DeleteRoute)
+
+		authGroup.GET("/placement_groups", placementGroupAPI.List)
+		authGroup.POST("/placement_groups", placementGroupAPI.Create)
+		authGroup.GET("/placement_groups/:id", placementGroupAPI.Get)
+		authGroup.PATCH("/placement_groups/:id", placementGroupAPI.Patch)
+		authGroup.DELETE("/placement_groups/:id", placementGroupAPI.Delete)
+
 		authGroup.GET("/flavors", flavorAPI.List)
 		authGroup.POST("/flavors", flavorAPI.Create)
 		authGroup.GET("/flavors/:name", flavorAPI.Get)
@@ -215,7 +349,6 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/images/:id", imageAPI.Get)
 		authGroup.DELETE("/images/:id", imageAPI.Delete)
 		authGroup.PATCH("/images/:id", imageAPI.Patch)
-		authGroup.GET("/images/:id/storages", imageAPI.ListStorages)
 
 		authGroup.GET("/volumes", volumeAPI.List)
 		authGroup.POST("/volumes", volumeAPI.Create)
@@ -223,28 +356,7 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/volumes/:id", volumeAPI.Delete)
 		authGroup.PATCH("/volumes/:id", volumeAPI.Patch)
 		authGroup.POST("/volumes/:id/resize", volumeAPI.Resize)
-		authGroup.PUT("/volumes/:id/qos", volumeAPI.UpdateQos)
-
-		authGroup.GET("/backups", volBackupAPI.List)
-		authGroup.POST("/backups", volBackupAPI.Create)
-		authGroup.GET("/backups/:id", volBackupAPI.Get)
-		authGroup.DELETE("/backups/:id", volBackupAPI.Delete)
-		authGroup.POST("/backups/:id/restore", volBackupAPI.Restore)
-
-		authGroup.GET("/consistency_groups", consistencyGroupAPI.List)
-		authGroup.POST("/consistency_groups", consistencyGroupAPI.Create)
-		authGroup.GET("/consistency_groups/:id", consistencyGroupAPI.Get)
-		authGroup.PATCH("/consistency_groups/:id", consistencyGroupAPI.Patch)
-		authGroup.DELETE("/consistency_groups/:id", consistencyGroupAPI.Delete)
-		authGroup.POST("/consistency_groups/:id/volumes", consistencyGroupAPI.AddVolumes)
-		authGroup.DELETE("/consistency_groups/:id/volumes/:volume_id", consistencyGroupAPI.RemoveVolume)
-
-		// CG Snapshots
-		authGroup.GET("/consistency_groups/:id/snapshots", consistencyGroupAPI.ListSnapshots)
-		authGroup.POST("/consistency_groups/:id/snapshots", consistencyGroupAPI.CreateSnapshot)
-		authGroup.GET("/consistency_groups/:id/snapshots/:snap_id", consistencyGroupAPI.GetSnapshot)
-		authGroup.DELETE("/consistency_groups/:id/snapshots/:snap_id", consistencyGroupAPI.DeleteSnapshot)
-		authGroup.POST("/consistency_groups/:id/snapshots/:snap_id/restore", consistencyGroupAPI.RestoreSnapshot)
+		authGroup.POST("/volumes/:id/force_detach", volumeAPI.ForceDetach)
 
 		authGroup.GET("/instances", instanceAPI.List)
 		authGroup.POST("/instances", instanceAPI.Create)
@@ -276,7 +388,6 @@ func Register() (r *gin.Engine) {
 			metricsGroup.POST("/instances/memory/his_data", monitorAPI.GetMemory)
 			metricsGroup.POST("/instances/network/his_data", monitorAPI.GetNetwork)
 			metricsGroup.POST("/instances/traffic/his_data", monitorAPI.GetTraffic)
-			metricsGroup.POST("/instances/volume/his_data", monitorAPI.GetVolume)
 
 			metricsGroup.POST("/hypers/cpu/his_data", monitorAPI.GetHyperCPU)
 			metricsGroup.POST("/hypers/memory/his_data", monitorAPI.GetHyperMemory)
@@ -335,6 +446,7 @@ func Register() (r *gin.Engine) {
 
 		authGroup.POST("/node-alarm-rules", alarmAPI.CreateNodeAlarmRule)
 		authGroup.GET("/node-alarm-rules", alarmAPI.GetNodeAlarmRules)
+		authGroup.PATCH("/node-alarm-rules/:uuid", alarmAPI.UpdateNodeAlarmRule)
 		authGroup.DELETE("/node-alarm-rules/:uuid", alarmAPI.DeleteNodeAlarmRule)
 
 		// OpenMeter API routes
@@ -362,6 +474,8 @@ func Register() (r *gin.Engine) {
 
 		// 内部同步接口（CPGateway 推送 org 记录，保持 organizations 表一致）
 		authGroup.POST("/internal/orgs/sync", SyncOrg)
+		// Org deleted in the control plane: soft-delete it here so its UUID stops resolving
+		authGroup.POST("/internal/orgs/delete", DeleteOrg)
 
 		// 内部告警事件查询（CPGateway 全局汇总用）
 		authGroup.GET("/internal/alarm/events", notificationAPI.InternalListAlarmEvents)

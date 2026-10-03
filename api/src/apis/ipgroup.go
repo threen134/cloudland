@@ -9,7 +9,6 @@ package apis
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -95,20 +94,20 @@ type FloatingIpWithInfo struct {
 func (v *IpGroupAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("IpGroupAPI.Get: uuID=%s", uuID)
+	logger.Ctx(ctx).Debugf("IpGroupAPI.Get: uuID=%s", uuID)
 	ipGroup, err := ipGroupAdmin.GetIpGroupByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.Get: invalid ip group query, uuID=%s, err=%v", uuID, err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.Get: invalid ip group query, uuID=%s, err=%v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid ip group query", err)
 		return
 	}
 	ipGroupResp, err := v.getIpGroupResponse(ctx, ipGroup)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.Get: getIpGroupResponse error, err=%v", err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.Get: getIpGroupResponse error, err=%v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("IpGroupAPI.Get: success, uuID=%s, resp=%+v", uuID, ipGroupResp)
+	logger.Ctx(ctx).Debugf("IpGroupAPI.Get: success, uuID=%s, resp=%+v", uuID, ipGroupResp)
 	c.JSON(http.StatusOK, ipGroupResp)
 }
 
@@ -128,31 +127,31 @@ func (v *IpGroupAPI) Patch(c *gin.Context) {
 	payload := &IpGroupPatchPayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.Patch: bind json error, err=%v", err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.Patch: bind json error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
 	ipGroup, err := ipGroupAdmin.GetIpGroupByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.Patch: invalid ipGroup query, uuID=%s, err=%v", uuID, err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.Patch: invalid ipGroup query, uuID=%s, err=%v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid ipGroup query", err)
 		return
 	}
 	if payload.IpGroupType == nil && payload.Name == "" {
-		logger.Errorf("IpGroupAPI.Patch: missing name and dictionaries id")
+		logger.Ctx(ctx).Errorf("IpGroupAPI.Patch: missing name and dictionaries id")
 		ErrorResponse(c, http.StatusBadRequest, "Name or Dictionaries ID is required", err)
 		return
 	}
 	var dictionaryEntry *model.Dictionary
 	if payload.IpGroupType != nil {
 		if payload.IpGroupType.ID == "" {
-			logger.Errorf("IpGroupAPI.Patch: missing dictionaries id")
+			logger.Ctx(ctx).Errorf("IpGroupAPI.Patch: missing dictionaries id")
 			ErrorResponse(c, http.StatusBadRequest, "Dictionaries ID is required", err)
 			return
 		}
 		dictionary, err := dictionaryAdmin.GetDictionaryByUUID(ctx, payload.IpGroupType.ID)
 		if err != nil {
-			logger.Errorf("IpGroupAPI.Patch: invalid dictionaries id, id=%s, err=%v", payload.IpGroupType.ID, err)
+			logger.Ctx(ctx).Errorf("IpGroupAPI.Patch: invalid dictionaries id, id=%s, err=%v", payload.IpGroupType.ID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid dictionaries ID", err)
 			return
 		}
@@ -161,26 +160,26 @@ func (v *IpGroupAPI) Patch(c *gin.Context) {
 	name := ipGroup.Name
 	if payload.Name != "" {
 		name = payload.Name
-		logger.Debugf("IpGroupAPI.Patch: update name to %s", name)
+		logger.Ctx(ctx).Debugf("IpGroupAPI.Patch: update name to %s", name)
 	}
 	ipGroupType := int(ipGroup.DictionaryType.ID)
 	if dictionaryEntry != nil && ipGroupType != int(dictionaryEntry.ID) {
 		ipGroupType = int(dictionaryEntry.ID)
-		logger.Debugf("IpGroupAPI.Patch: update type to %d", ipGroupType)
+		logger.Ctx(ctx).Debugf("IpGroupAPI.Patch: update type to %d", ipGroupType)
 	}
 	ipGroup, err = ipGroupAdmin.Update(ctx, ipGroup, name, payload.Type, ipGroupType)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.Patch: update error, uuID=%s, err=%v", uuID, err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.Patch: update error, uuID=%s, err=%v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch ipGroup failed", err)
 		return
 	}
 	ipGroupResp, err := v.getIpGroupResponse(ctx, ipGroup)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.Patch: getIpGroupResponse error, err=%v", err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.Patch: getIpGroupResponse error, err=%v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("IpGroupAPI.Patch: success, uuID=%s, resp=%+v", uuID, ipGroupResp)
+	logger.Ctx(ctx).Debugf("IpGroupAPI.Patch: success, uuID=%s, resp=%+v", uuID, ipGroupResp)
 	c.JSON(http.StatusOK, ipGroupResp)
 }
 
@@ -196,20 +195,20 @@ func (v *IpGroupAPI) Patch(c *gin.Context) {
 func (v *IpGroupAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("IpGroupAPI.Delete: delete ipGroup %s", uuID)
+	logger.Ctx(ctx).Debugf("IpGroupAPI.Delete: delete ipGroup %s", uuID)
 	ipGroup, err := ipGroupAdmin.GetIpGroupByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.Delete: getIpGroupByUUID error, uuID=%s, err=%v", uuID, err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.Delete: getIpGroupByUUID error, uuID=%s, err=%v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
 	err = ipGroupAdmin.Delete(ctx, ipGroup)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.Delete: delete error, uuID=%s, err=%v", uuID, err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.Delete: delete error, uuID=%s, err=%v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to delete", err)
 		return
 	}
-	logger.Debugf("IpGroupAPI.Delete: success, uuID=%s", uuID)
+	logger.Ctx(ctx).Debugf("IpGroupAPI.Delete: success, uuID=%s", uuID)
 	c.JSON(http.StatusNoContent, nil)
 }
 
@@ -224,25 +223,25 @@ func (v *IpGroupAPI) Delete(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /ip_groups [post]
 func (v *IpGroupAPI) Create(c *gin.Context) {
-	logger.Debugf("Enter IpGroupAPI.Create")
+	logger.Ctx(c).Debugf("Enter IpGroupAPI.Create")
 	ctx := c.Request.Context()
 	payload := &IpGroupPayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.Create: bind json error, err=%v", err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.Create: bind json error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
 	var dictionaryEntry *model.Dictionary
 	if payload.IpGroupType != nil {
 		if payload.IpGroupType.ID == "" {
-			logger.Errorf("IpGroupAPI.Create: missing dictionaries id")
+			logger.Ctx(ctx).Errorf("IpGroupAPI.Create: missing dictionaries id")
 			ErrorResponse(c, http.StatusBadRequest, "Dictionaries ID is required", err)
 			return
 		}
 		dictionary, err := dictionaryAdmin.GetDictionaryByUUID(ctx, payload.IpGroupType.ID)
 		if err != nil {
-			logger.Errorf("IpGroupAPI.Create: invalid dictionaries id, id=%s, err=%v", payload.IpGroupType.ID, err)
+			logger.Ctx(ctx).Errorf("IpGroupAPI.Create: invalid dictionaries id, id=%s, err=%v", payload.IpGroupType.ID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid dictionaries ID", err)
 			return
 		}
@@ -258,17 +257,17 @@ func (v *IpGroupAPI) Create(c *gin.Context) {
 
 	ipGroup, err := ipGroupAdmin.Create(ctx, payload.Name, payload.Type, dictionaryID)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.Create: create error, err=%v", err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.Create: create error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create ipGroup", err)
 		return
 	}
 	ipGroupResp, err := v.getIpGroupResponse(ctx, ipGroup)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.Create: getIpGroupResponse error, err=%v", err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.Create: getIpGroupResponse error, err=%v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("IpGroupAPI.Create: success, resp=%+v", ipGroupResp)
+	logger.Ctx(ctx).Debugf("IpGroupAPI.Create: success, resp=%+v", ipGroupResp)
 	c.JSON(http.StatusOK, ipGroupResp)
 }
 
@@ -403,58 +402,53 @@ func (v *IpGroupAPI) List(c *gin.Context) {
 	queryStr := c.DefaultQuery("query", "")
 	dicID := strings.TrimSpace(c.DefaultQuery("dic_id", ""))
 	typeFilter := strings.TrimSpace(c.DefaultQuery("type", ""))
-	logger.Debugf("IpGroupAPI.List: offset=%s, limit=%s, query=%s, dic_id=%s, type=%s", offsetStr, limitStr, queryStr, dicID, typeFilter)
+	logger.Ctx(ctx).Debugf("IpGroupAPI.List: offset=%s, limit=%s, query=%s, dic_id=%s, type=%s", offsetStr, limitStr, queryStr, dicID, typeFilter)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.List: invalid offset, offsetStr=%s, err=%v", offsetStr, err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.List: invalid offset, offsetStr=%s, err=%v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
 		return
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.List: invalid limit, limitStr=%s, err=%v", limitStr, err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.List: invalid limit, limitStr=%s, err=%v", limitStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
 	if offset < 0 || limit < 0 {
-		logger.Errorf("IpGroupAPI.List: invalid offset or limit, offset=%d, limit=%d", offset, limit)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.List: invalid offset or limit, offset=%d, limit=%d", offset, limit)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	if queryStr != "" {
-		logger.Debugf("IpGroupAPI.List: filter by name like %%s%%", queryStr)
-		queryStr = fmt.Sprintf("name like '%%%s%%'", queryStr)
-	}
+	var typeID int64
+	groupTypes := []string{}
 	if dicID != "" {
-		logger.Debugf("IpGroupAPI.List: filter by dic_id=%s", dicID)
+		logger.Ctx(ctx).Debugf("IpGroupAPI.List: filter by dic_id=%s", dicID)
 		var dictionary *model.Dictionary
 		dictionary, err := dictionaryAdmin.GetDictionaryByUUID(ctx, dicID)
 		if err != nil {
-			logger.Errorf("IpGroupAPI.List: invalid dic_id, dicID=%s, err=%v", dicID, err)
+			logger.Ctx(ctx).Errorf("IpGroupAPI.List: invalid dic_id, dicID=%s, err=%v", dicID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid query ipGroups by dic_id UUID: "+dicID, err)
 			return
 		}
-		logger.Debugf("IpGroupAPI.List: dictionary found, %+v", dictionary)
-		logger.Debugf("IpGroupAPI.List: dic_id in dictionary is %d", dictionary.ID)
-		queryStr = fmt.Sprintf("type_id = %d AND type = '%s'", dictionary.ID, SystemIpGroupType)
+		logger.Ctx(ctx).Debugf("IpGroupAPI.List: dictionary found, %+v", dictionary)
+		logger.Ctx(ctx).Debugf("IpGroupAPI.List: dic_id in dictionary is %d", dictionary.ID)
+		typeID = dictionary.ID
+		groupTypes = append(groupTypes, string(SystemIpGroupType))
 	}
 	// Add type filter if provided (compatible: no type param means query all)
 	if typeFilter != "" {
 		if typeFilter == "system" || typeFilter == "resource" {
-			if queryStr != "" {
-				queryStr = fmt.Sprintf("%s AND type = '%s'", queryStr, typeFilter)
-			} else {
-				queryStr = fmt.Sprintf("type = '%s'", typeFilter)
-			}
-			logger.Debugf("IpGroupAPI.List: filter by type=%s", typeFilter)
+			groupTypes = append(groupTypes, typeFilter)
+			logger.Ctx(ctx).Debugf("IpGroupAPI.List: filter by type=%s", typeFilter)
 		} else {
-			logger.Errorf("IpGroupAPI.List: invalid type filter, type=%s", typeFilter)
+			logger.Ctx(ctx).Errorf("IpGroupAPI.List: invalid type filter, type=%s", typeFilter)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid type filter, must be 'system' or 'resource'", nil)
 			return
 		}
 	}
-	total, ipGroups, err := ipGroupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	total, ipGroups, err := ipGroupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, typeID, groupTypes...)
 	if err != nil {
-		logger.Errorf("IpGroupAPI.List: list error, err=%v", err)
+		logger.Ctx(ctx).Errorf("IpGroupAPI.List: list error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list ipGroups", err)
 		return
 	}
@@ -467,11 +461,11 @@ func (v *IpGroupAPI) List(c *gin.Context) {
 	for i, ipGroup := range ipGroups {
 		ipGroupListResp.IpGroups[i], err = v.getIpGroupResponse(ctx, ipGroup)
 		if err != nil {
-			logger.Errorf("IpGroupAPI.List: getIpGroupResponse error, err=%v", err)
+			logger.Ctx(ctx).Errorf("IpGroupAPI.List: getIpGroupResponse error, err=%v", err)
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}
 	}
-	logger.Debugf("IpGroupAPI.List: success, resp=%+v", ipGroupListResp)
+	logger.Ctx(ctx).Debugf("IpGroupAPI.List: success, resp=%+v", ipGroupListResp)
 	c.JSON(http.StatusOK, ipGroupListResp)
 }

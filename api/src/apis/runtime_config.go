@@ -34,7 +34,7 @@ func (r *RuntimeConfigAPI) GetRuntimeConfig(c *gin.Context) {
 	endpoint := viper.GetString("s3.endpoint")
 	minioHost := viper.GetString("minio.hostname")
 	secretKey := viper.GetString("s3.secret_key")
-	sciSecret := viper.GetString("sci.shared_secret")
+	captureSecret := viper.GetString("capture.upload_secret")
 
 	resp := gin.H{
 		"mode":                      detectMode(endpoint, minioHost),
@@ -50,8 +50,8 @@ func (r *RuntimeConfigAPI) GetRuntimeConfig(c *gin.Context) {
 		"minio_hostname":            minioHost,
 		"clapi_hostname":            viper.GetString("clapi.hostname"),
 		"clapi_internal_url":        viper.GetString("clapi.internal_url"),
-		"sci_shared_secret":         maskIfSet(sciSecret),
-		"sci_shared_secret_set":     sciSecret != "",
+		"capture_upload_secret":     maskIfSet(captureSecret),
+		"capture_upload_secret_set": captureSecret != "",
 	}
 	c.JSON(http.StatusOK, resp)
 }

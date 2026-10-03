@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 func TestDBMAutomigrate(t *testing.T) {
@@ -30,29 +30,30 @@ func TestDBMAutomigrate(t *testing.T) {
 		ProfileID uint
 		Profile   Profile
 	}
-	DB().DropTableIfExists("users")
-	DB().DropTableIfExists("profiles")
+	db := DB()
+	db.Migrator().DropTable("users")
+	db.Migrator().DropTable("profiles")
 
-	if err := DB().CreateTable(&Profile{}, &User{}).Error; err != nil {
+	if err := db.AutoMigrate(&Profile{}, &User{}); err != nil {
 		t.Fatal(err)
 	}
-	if !DB().HasTable("users") {
+	if !db.Migrator().HasTable("users") {
 		t.Fatal()
 	}
 	profile := &Profile{Name: "my profile"}
 	user := &User{Name: "me"}
-	if err := DB().Create(profile).Error; err != nil {
+	if err := db.Create(profile).Error; err != nil {
 		t.Fatal(err)
 	}
 	user.ProfileID = profile.ID
-	if err := DB().Create(user).Error; err != nil {
+	if err := db.Create(user).Error; err != nil {
 		t.Fatal(err)
 	}
 	users := []*User{}
-	if err := DB().Find(&users).Error; err != nil {
+	if err := db.Find(&users).Error; err != nil {
 		t.Fatal(err)
 	}
-	DB().Preload("Profile").Find(&users)
+	db.Preload("Profile").Find(&users)
 	if len(users) != 1 {
 		t.Fatal(len(users))
 	}
@@ -68,13 +69,13 @@ func Example_testBool() {
 	}
 	db := DB()
 	db.AutoMigrate(&MyTestBool{})
-	db.Unscoped().Delete(&MyTestBool{})
+	db.Unscoped().Where("1 = 1").Delete(&MyTestBool{})
 	db.Create(&MyTestBool{
 		Slims: false,
 	})
 	db.Create(&MyTestBool{})
 	db.Create(&MyTestBool{Slims: true})
-	count := 0
+	var count int64
 	db.Model(&MyTestBool{}).Where(map[string]interface{}{"slims": false}).Count(&count)
 	fmt.Println(count)
 	// Output:
@@ -133,7 +134,7 @@ func Example_testHasOne() {
 		},
 	}
 	db.Create(user2)
-	db.Model(&TestUser{}).Update("billing_address_id", 0)
+	db.Model(&TestUser{}).Where("1 = 1").Update("billing_address_id", 0)
 	fmt.Println(user.BillingAddressID)
 	db.Delete(user)
 	billingAddress := &TestAddress{}
@@ -147,8 +148,8 @@ func Example_testHasOne() {
 
 func TestDialect(t *testing.T) {
 	db := DB()
-	dialect := db.Dialect().GetName()
-	if dialect == "" {
+	dialectName := db.Dialector.Name()
+	if dialectName == "" {
 		t.Fatal()
 	}
 }

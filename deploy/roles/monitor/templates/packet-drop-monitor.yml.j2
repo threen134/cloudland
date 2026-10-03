@@ -9,6 +9,8 @@ groups:
         severity: {{ severity | default("warning") }}
         component: network
         alert_type: packet_drop
+        owner: "{{ owner }}"
+        rule_group: "{{ rule_group }}"
         metric_type: "{{ $labels.type }}"
         hostname: "{{ $labels.hostname }}"
       annotations:
