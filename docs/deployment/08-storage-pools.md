@@ -5,7 +5,7 @@ order: 80
 
 计算节点上除系统盘之外的空闲硬盘，需要先**建成存储池**才能被云硬盘和云服务器的系统盘使用。本文讲如何在部署完计算节点之后配置这些盘。
 
-设计细节见 `docs/architecture/plan/local-multi-disk-storage-plan.md`。
+设计细节见 `docs/architecture/plan/local-multi-disk-storage-plan.md`。要让云硬盘能挂到任何一台节点、迁移时不复制，见[部署共享存储（GPFS）](./09-shared-storage.md)、[部署共享存储（Ceph）](./10-ceph-storage.md)。
 
 ---
 
