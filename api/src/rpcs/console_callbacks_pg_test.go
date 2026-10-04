@@ -86,6 +86,12 @@ func TestRescueCallbackPG(t *testing.T) {
 	// A late report does not bring back a rescue that is over
 	nodeCallback(t, node, fmt.Sprintf("rescue_vm.sh '%d' 'rescuing' '%d' 'sync'", inst.ID, node))
 	expect(model.InstanceStatusShutoff)
+	// Refused before the stop (the boot disk of a shared pool is not usable on the host): the instance is as it was
+	if err := db.Model(&model.Instance{}).Where("id = ?", inst.ID).Update("status", model.InstanceStatusRescuing).Error; err != nil {
+		t.Fatal(err)
+	}
+	nodeCallback(t, node, fmt.Sprintf("rescue_vm.sh '%d' 'running' '%d' 'refused'", inst.ID, node))
+	expect(model.InstanceStatusRunning)
 }
 
 // set_user_passwd.sh leaves a failure on the instance until a change succeeds (D17)

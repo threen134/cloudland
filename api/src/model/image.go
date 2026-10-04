@@ -7,6 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 package model
 
 import (
+	"fmt"
+	"strings"
+
 	"api/src/dbs"
 
 	"gorm.io/gorm"
@@ -74,6 +77,18 @@ func init() {
 		}
 		return nil
 	})
+}
+
+// FilePrefix is the part of the UUID of an image its files are named by, in lower case (the node scripts match it as
+// [0-9a-f])
+func (i *Image) FilePrefix() string {
+	return strings.ToLower(strings.Split(i.UUID, "-")[0])
+}
+
+// FileBase names the files of an image without their extension: the S3 object, the file in the cache of a host, the
+// copy in a shared pool
+func (i *Image) FileBase() string {
+	return fmt.Sprintf("image-%d-%s", i.ID, i.FilePrefix())
 }
 
 func (i *Image) Clone() *Image {

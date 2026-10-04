@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/trace"
@@ -121,7 +120,7 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 		return nil, NewCLError(ErrImageCreateFailed, "Failed to create image record", err)
 	}
 
-	prefix := strings.Split(image.UUID, "-")[0]
+	prefix := image.FilePrefix()
 	// A capture reads the boot disk of the instance on its host
 	bootDiskPath := ""
 	if instance != nil {
@@ -131,7 +130,8 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 				if pool, err = VolumePool(ctx, volume); err != nil {
 					return
 				}
-				bootDiskPath = VolumeAbsPath(pool, volume)
+				// A file, or the rbd: address of a disk in a Ceph pool
+				bootDiskPath = BootDiskSource(pool, volume)
 				break
 			}
 		}
@@ -466,10 +466,18 @@ func (a *ImageAdminService) Delete(ctx context.Context, image *model.Image) (err
 			logger.Ctx(ctx).Info("EXIT ImageAdmin.Delete: success")
 		}
 	}()
+	// The removals of the copies of the image in shared pools that nothing is cloned from, sent after the commit
+	var copyRemovals []*volumeCommand
+	outerCtx := ctx
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
+		}
+		if err == nil {
+			for _, cmd := range copyRemovals {
+				sendVolumeCommand(outerCtx, cmd)
+			}
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -490,8 +498,13 @@ func (a *ImageAdminService) Delete(ctx context.Context, image *model.Image) (err
 		err = NewCLError(ErrImageInUse, "The image can not be deleted if there are instances using it", nil)
 		return
 	}
-	prefix := strings.Split(image.UUID, "-")[0]
+	prefix := image.FilePrefix()
 	control := "inter=0"
+	// The copies in shared pools: removed now when nothing is cloned from them, otherwise once the last boot disk
+	// cloned from them is deleted or reinstalled (shared-storage-design.md §9.6)
+	if copyRemovals, err = deleteImageStorages(db, image); err != nil {
+		return
+	}
 
 	// S3 configured but unusable (initializing or misconfigured): refuse the deletion. Going ahead would skip the
 	// object cleanup and drop the record, leaving the image file in the bucket for good

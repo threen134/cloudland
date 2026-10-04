@@ -171,6 +171,8 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 	// the instance never having got that far, is dropped once the host confirms. After the transaction, like in
 	// LaunchVM: a rollback would undo a release made inside it
 	releaseBootVolume := int64(0)
+	// The removal of a boot disk in a shared pool, sent after the commit
+	sendBootRemoval := func() {}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -178,6 +180,9 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		}
 		if err == nil && releaseBootVolume > 0 {
 			services.ReleaseReservations(outerCtx, 0, releaseBootVolume, model.ReservationBoot)
+		}
+		if err == nil {
+			sendBootRemoval()
 		}
 	}()
 	argn := len(args)
@@ -226,6 +231,7 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 	if db.Unscoped().Where("instance_id = ? AND booting = ?", instance.ID, true).Take(bootVolume).Error == nil {
 		releaseBootVolume = bootVolume.ID
 	}
+	sendBootRemoval = services.SharedBootRemoval(ctx, instance.ID)
 	// Unscoped update
 	err = db.Model(&model.Instance{}).Unscoped().Where("id = ?", instance.ID).Updates(map[string]interface{}{
 		"hostname": fmt.Sprintf("%s-%d", instance.Hostname, instance.CreatedAt.Unix()),

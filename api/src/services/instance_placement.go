@@ -37,6 +37,21 @@ func builtinDiskGB(ctx context.Context, volumes []*model.Volume) (sizeGB int64) 
 	return
 }
 
+// sharedPoolHostsOfZone are the hosts a boot disk in a shared pool can run on (shared-storage-design.md §9.5): the
+// active hosts of the zone where the pool is ready. The disk does not bound a host: it is admitted against the pool
+func sharedPoolHostsOfZone(tx *gorm.DB, pool *model.StoragePool, zoneID int64) (hostids []int32, err error) {
+	if err = tx.Model(&model.Hyper{}).
+		Where("status = 1 AND hostid >= 0 AND zone_id = ? AND hostid IN (?)", zoneID,
+			tx.Model(&model.HyperStoragePool{}).Select("hostid").Where("pool_id = ? AND status = ?", pool.ID, model.HyperPoolReady)).
+		Order("hostid").Pluck("hostid", &hostids).Error; err != nil {
+		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query the hosts of the storage pool", err)
+	}
+	if len(hostids) == 0 {
+		return nil, NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("No active host of the zone reaches storage pool %s now", pool.Name), nil)
+	}
+	return
+}
+
 // instanceHyperGroup is the select= group for new instances whose boot disk goes to the built-in pool: the active
 // hosts of the zone, without those whose built-in pool is too full to take more (§6.1)
 func instanceHyperGroup(tx *gorm.DB, zoneID int64) (group string, err error) {
@@ -133,6 +148,20 @@ func startCreationPlacement(tx *gorm.DB, group *model.PlacementGroup, zone *mode
 	if bootPool.Builtin {
 		var hostids []int32
 		if hostids, err = instanceHyperIDs(tx, zone.ID); err != nil {
+			return nil, err
+		}
+		p.slots, err = hostSlots(tx, hostids)
+		return
+	}
+	if bootPool.Shared() {
+		// The disk is admitted against the pool, not a host: only CPU and memory bound the hosts that reach it
+		p.need.DiskBytes = 0
+		for host, d := range st.Pending {
+			d.DiskBytes = 0
+			st.Pending[host] = d
+		}
+		var hostids []int32
+		if hostids, err = sharedPoolHostsOfZone(tx, bootPool, zone.ID); err != nil {
 			return nil, err
 		}
 		p.slots, err = hostSlots(tx, hostids)

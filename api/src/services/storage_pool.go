@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -236,15 +237,27 @@ func (a *StoragePoolAdmin) Resolve(ctx context.Context, reference *BaseReference
 	return
 }
 
-// ResolveBoot is the pool of the boot disk of a new instance. The default pool may be a shared one, there for data
-// volumes: boot disks in shared pools come with stage S4 (shared-storage-design.md §9.7), so a request that names no
-// pool puts the boot disk in the builtin pool instead of being refused. A shared pool named outright is returned as it
-// is, for the instance creation to refuse with its reason
-func (a *StoragePoolAdmin) ResolveBoot(ctx context.Context, reference *BaseReference) (pool *model.StoragePool, err error) {
+// ResolveBoot is the pool of the boot disk of a new instance: the one named, or the default one. A default pool that is
+// shared and that no active host of the zone (or the host given) reaches now leaves the boot disk to the builtin pool,
+// as before boot disks could be in shared pools: the default pool is a preference, not a reason to refuse; a pool
+// named outright is used as named, the creation says why when it can not be
+func (a *StoragePoolAdmin) ResolveBoot(ctx context.Context, reference *BaseReference, zoneID int64, hostid int) (pool *model.StoragePool, err error) {
 	if pool, err = a.Resolve(ctx, reference); err != nil {
 		return
 	}
-	if (reference == nil || (reference.ID == "" && reference.Name == "")) && pool.Shared() {
+	if (reference != nil && (reference.ID != "" || reference.Name != "")) || !pool.Shared() {
+		return
+	}
+	_, db := GetContextDB(ctx)
+	hosts, herr := sharedPoolHostsOfZone(db, pool, zoneID)
+	if herr != nil {
+		// A failed query is no unreachable pool: the creation fails instead of quietly going to another pool
+		if ce, ok := herr.(*CLError); !ok || ce.Code != ErrStoragePoolUnavailable {
+			return nil, herr
+		}
+	}
+	if herr != nil || (hostid >= 0 && !slices.Contains(hosts, int32(hostid))) {
+		logger.Ctx(ctx).Infof("Default pool %s is not usable in zone %d (host %d): the boot disk goes to the builtin pool", pool.Name, zoneID, hostid)
 		return BuiltinPool(ctx)
 	}
 	return

@@ -88,6 +88,15 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		if instance.Status != model.InstanceStatusShutoff && instance.Status != model.InstanceStatusRunning && instance.Status != model.InstanceStatusPaused {
 			continue
 		}
+		// A reinstall waiting for its image runs later on the host it was meant for
+		if werr := refuseWhileWaiting(dbs.DBContext(ctx), instance); werr != nil {
+			results = append(results, &MigrationResult{Instance: instance, Error: werr})
+			if !batch {
+				err = werr
+				return
+			}
+			continue
+		}
 		if instance.Hyper == tgtHyper {
 			logger.Ctx(ctx).Error("No need to migrate if source and target hypervisors are the same")
 			continue

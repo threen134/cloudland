@@ -59,6 +59,8 @@ type wslCland struct {
 	mu     sync.Mutex
 	queues map[int32]chan string
 	sent   []string
+	// The host the output of an async job that is not a storage task run is taken from (WSL is one host for all)
+	asyncHost int32
 }
 
 // wsl runs a script as root in WSL with NODE_ID set, giving it stdin, and returns its output. WSL ends the session
@@ -117,10 +119,14 @@ func (w *wslCland) callbacks(hostid int32, out string) {
 			m := wslRunRe.FindStringSubmatch(command)
 			run := &model.StorageTaskRun{}
 			if m == nil || w.db.Take(run, m[1]).Error != nil {
-				w.t.Logf("callback of an unknown run: %s", command)
-				continue
+				if w.asyncHost == 0 {
+					w.t.Logf("callback of an unknown run: %s", command)
+					continue
+				}
+				from = w.asyncHost
+			} else {
+				from = run.Hostid
 			}
-			from = run.Hostid
 		}
 		cmd, args := DecodeCommand(command)
 		handler := Get(cmd)

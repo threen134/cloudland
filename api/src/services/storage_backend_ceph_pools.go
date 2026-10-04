@@ -42,6 +42,17 @@ func (d rbdDriver) DriverArgs(pool *model.StoragePool) map[string]interface{} {
 		"quota_bytes": pool.QuotaBytes}
 }
 
+// ImageBaseRef: the copy of an image is the RBD image image-<id>-<prefix>, with its snapshot base
+func (rbdDriver) ImageBaseRef(pool *model.StoragePool, image *model.Image) string {
+	return image.FileBase()
+}
+
+// QemuSource: QEMU tools reach the image through librbd, with the configuration file of the cluster and the client
+func (rbdDriver) QemuSource(pool *model.StoragePool, volume *model.Volume) string {
+	p := poolDriverParams(pool)
+	return fmt.Sprintf("rbd:%s/%s:id=%s:conf=%s", stringParam(p, "ceph_pool"), volume.Path, stringParam(p, "user"), stringParam(p, "conf"))
+}
+
 // CapacityGroup: the pools of a managed cluster without a quota and with the same placement rule draw on the same
 // OSDs (§9.5). A pool of an imported cluster is admitted on its own: what else its RBD pool shares OSDs with is not
 // known
@@ -121,6 +132,11 @@ func cephPoolInput(action string) storageStepInput {
 			in["quota_bytes"] = pool.QuotaBytes
 		case "quota":
 			in["quota_bytes"] = args.QuotaBytes
+		case "delete", "unregister":
+			// The copies of images CloudLand made in the pool go first (§9.6); nothing is cloned from them any more
+			if in["bases"], err = poolImageBases(db, pool); err != nil {
+				return nil, err
+			}
 		}
 		return in, nil
 	}

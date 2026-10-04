@@ -433,8 +433,13 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (deferre
 		if cmd != nil {
 			if err = HyperExecute(ctx, cmd.control, cmd.command); err != nil {
 				logger.Ctx(ctx).Error("Delete volume execution failed", err)
+				// The boot disk of a deleted instance is no data volume to use: it stays to be deleted again
+				status := model.VolumeStatusAvailable
+				if volume.Booting {
+					status = model.VolumeStatusDeleteFailed
+				}
 				dbs.DBContext(ctx).Model(&model.Volume{}).Where("id = ? AND status = ?", volume.ID, model.VolumeStatusDeleting).
-					Updates(map[string]interface{}{"status": model.VolumeStatusAvailable, "reason": "the delete command could not be sent to the host"})
+					Updates(map[string]interface{}{"status": status, "reason": "the delete command could not be sent to the host"})
 			}
 		}
 	}()
@@ -454,7 +459,18 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (deferre
 		err = NewCLError(ErrVolumeIsBusy, "The volume is being deleted", nil)
 		return
 	}
-	if volume.IsAttached() || volume.InstanceID > 0 {
+	// The boot disk of a shared pool outlives its instance until a host removed it: once the instance is gone, a
+	// failed removal is retried by deleting the volume
+	orphanBoot := false
+	if volume.Booting && volume.InstanceID > 0 && !volume.IsAttached() {
+		var live int64
+		if err = tx.Model(&model.Instance{}).Where("id = ?", volume.InstanceID).Count(&live).Error; err != nil {
+			err = NewCLError(ErrSQLSyntaxError, "Failed to query the instance of the volume", err)
+			return
+		}
+		orphanBoot = live == 0
+	}
+	if (volume.IsAttached() || volume.InstanceID > 0) && !orphanBoot {
 		logger.Ctx(ctx).Errorf("Volume is attached to an instance, cannot be deleted %+v", volume)
 		err = NewCLError(ErrVolumeIsInUse, fmt.Sprintf("Volume[%s](%s) is attached to an instance, please detach it first", volume.Name, volume.UUID), nil)
 		return
@@ -663,7 +679,13 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 			err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
 			return
 		}
-		// Boot disks in shared pools come with stage S4
+		// The boot disk of an instance: the instance records the size of its disk too (a failed resize puts it back)
+		if volume.Booting && volume.InstanceID > 0 {
+			if err = tx.Model(&model.Instance{}).Where("id = ?", volume.InstanceID).Update("disk", size).Error; err != nil {
+				err = NewCLError(ErrInstanceUpdateFailed, "Failed to update instance", err)
+				return
+			}
+		}
 		return
 	}
 	if volume.Hyper > 0 {

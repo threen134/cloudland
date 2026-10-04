@@ -260,21 +260,14 @@ func TestSharedPoolPG(t *testing.T) {
 	if p = f.pool(pool.ID); p.UsedBytes != 12*gib {
 		t.Fatalf("pool capacity after the report %+v", p)
 	}
-	// A shared default pool is for data volumes: a boot disk that names no pool goes to the builtin pool (boot disks
-	// in shared pools come with S4); named outright, the shared pool comes back for the creation to refuse. Done in
-	// a transaction that is rolled back, the test database is shared with other packages
+	// A shared pool can be the default one, for boot disks too (S4). Done in a transaction that is rolled back, the
+	// test database is shared with other packages
 	{
 		txCtx, tx, _ := StartTransaction(ctx)
 		must(t, tx.Model(&model.StoragePool{}).Where("is_default = ?", true).Update("is_default", false).Error)
 		must(t, tx.Model(&model.StoragePool{}).Where("id = ?", p.ID).Update("is_default", true).Error)
 		if dp, err := storagePoolAdmin.Resolve(txCtx, nil); err != nil || dp.ID != p.ID {
 			t.Fatalf("default pool %+v %v", dp, err)
-		}
-		if bp, err := storagePoolAdmin.ResolveBoot(txCtx, nil); err != nil || !bp.Builtin {
-			t.Fatalf("boot pool with a shared default %+v %v", bp, err)
-		}
-		if bp, err := storagePoolAdmin.ResolveBoot(txCtx, &BaseReference{ID: p.UUID}); err != nil || bp.ID != p.ID {
-			t.Fatalf("boot pool named outright %+v %v", bp, err)
 		}
 		EndTransaction(txCtx, fmt.Errorf("rolled back on purpose"))
 	}

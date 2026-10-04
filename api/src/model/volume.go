@@ -50,10 +50,13 @@ type Volume struct {
 	Instance   *Instance `gorm:"foreignkey:InstanceID"`
 	// Host holding the file; 0 means not created yet (created on the host of the first attach)
 	Hyper         int32
-	StoragePoolID int64         `gorm:"index"`
-	StoragePool   *StoragePool  `gorm:"foreignkey:StoragePoolID"`
-	Reason        string        `gorm:"type:varchar(512)"`
-	OwnerInfo     *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
+	StoragePoolID int64        `gorm:"index"`
+	StoragePool   *StoragePool `gorm:"foreignkey:StoragePoolID"`
+	Reason        string       `gorm:"type:varchar(512)"`
+	// The base copy (image_storages) a boot disk in a shared pool was cloned from, the reference counted when the
+	// copy is removed; 0 for a full copy and for every other disk (shared-storage-design.md §5.6)
+	BaseImageStorageID int64         `gorm:"index"`
+	OwnerInfo          *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
 }
 
 func (v *Volume) IsBusy() bool {

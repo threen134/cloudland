@@ -42,9 +42,13 @@ func TestRescueStatus(t *testing.T) {
 		state, stage string
 		want         model.InstanceStatus
 	}{
-		{"rescuing", "sync", ""},                         // rescue domain runs
-		{"error", "sync", ""},                            // defined but not started: end_rescue cleans it up
-		{"error", "failed", model.InstanceStatusShutoff}, // no rescue image: nothing to end, the instance is off
+		{"rescuing", "sync", ""},                            // rescue domain runs
+		{"error", "sync", ""},                               // defined but not started: end_rescue cleans it up
+		{"error", "failed", model.InstanceStatusShutoff},    // no rescue image: nothing to end, the instance is off
+		{"running", "refused", model.InstanceStatusRunning}, // shared boot disk not usable: refused before the stop
+		{"paused", "refused", model.InstanceStatusPaused},
+		{"shut_off", "refused", model.InstanceStatusShutoff},
+		{"", "refused", model.InstanceStatusShutoff}, // no domain state read
 	}
 	for _, c := range cases {
 		if got := rescueStatus(c.state, c.stage); got != c.want {

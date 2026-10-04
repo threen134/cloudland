@@ -202,12 +202,115 @@ echo "AFTER: $($rbd status --format json %[4]s/%[5]s | jq '.watchers | length')"
 	if strings.TrimSpace(out) != "0" {
 		t.Fatalf("images left in the pool: %s", out)
 	}
+
+	// Boot disks (S4, §9.6-§9.8): two images copied into the pool by the import script in the background, its report
+	// taken by clapi through the heartbeat; a boot disk cloned from one copy runs in a TCG domain, is captured through
+	// librbd, swapped like a reinstall, keeps its copy from going, then goes; a full copy has no parent. The second copy
+	// is left for the removal of the pool
+	poolArgs := map[string]interface{}{"driver": "ceph_rbd", "pool": p.UUID, "cluster": c.UUID, "conf": "/etc/ceph/" + c.UUID + ".conf",
+		"user": "cloudland", "secret_uuid": c.UUID, "ceph_pool": cephPool, "quota_bytes": 0}
+	copies := []*model.ImageStorage{}
+	hw.fake.asyncHost = host
+	for i, base := range []string{"image-990077-ab12cd34", "image-990078-cd34ab12"} {
+		now := time.Now()
+		is := &model.ImageStorage{ImageID: int64(990077 + i), StoragePoolID: p.ID, Path: base, Status: model.ImageStorageSyncing, Hostid: host, SentAt: &now}
+		must(t, db.Create(is).Error)
+		copies = append(copies, is)
+		in := map[string]interface{}{"image_storage_id": is.ID, "base": base, "image_name": base + ".qcow2", "image_url_b64": "", "clone_mode": "clone"}
+		for k, v := range poolArgs {
+			in[k] = v
+		}
+		b, _ := json.Marshal(in)
+		out, err = wsl(host, fmt.Sprintf(`source /opt/cloudland/scripts/cloudrc; mkdir -p $image_cache; f=$image_cache/%[1]s.qcow2; rm -f $f
+qemu-img create -q -f qcow2 $f 64M && qemu-io -f qcow2 -c "write -P 0xab 0 4M" $f >/dev/null
+/opt/cloudland/scripts/backend/import_image_shared.sh %[2]d <<'JSON'
+%[3]s
+JSON`, base, is.ID, string(b)))
+		if err != nil || strings.TrimSpace(out) != "" {
+			t.Fatalf("import of %s: %v %s", base, err, out)
+		}
+	}
+	deadline = time.Now().Add(3 * time.Minute)
+	for _, is := range copies {
+		for {
+			must(t, db.Take(is, is.ID).Error)
+			if is.Status != model.ImageStorageSyncing || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(time.Second)
+		}
+		if is.Status != model.ImageStorageSynced {
+			t.Fatalf("copy %s: %+v", is.Path, is)
+		}
+	}
+	pa, _ := json.Marshal(poolArgs)
+	script = fmt.Sprintf(`source /opt/cloudland/scripts/cloudrc; cd /opt/cloudland/scripts/kvm; source ./storage_lib.sh
+pj='%[1]s'; P=%[2]s; rbd="rbd --conf /etc/ceph/%[3]s.conf --id cloudland"; dom=inst-990002; A=%[4]d
+echo "SNAP: $($rbd snap ls --format json $P/image-990077-ab12cd34 | jq -r '.[].name')"
+bd=$(jq -c ". + {volume_id: 990012, image: \"volume-990012\", size_gb: 1, image_base: \"image-990077-ab12cd34\", image_storage_id: $A, clone_mode: \"clone\"}" <<<"$pj")
+shared_boot_load "$bd" 990012 990002 || echo "LOAD FAILED $guard_error"
+shared_boot_make volume-990012 1 && echo "MADE cloned=$drv_cloned" || echo "MAKE FAILED $guard_error"
+echo "PARENT: $($rbd info --format json $P/volume-990012 | jq -r '.parent.image + "@" + .parent.snapshot') $($rbd info --format json $P/volume-990012 | jq .size)"
+virsh destroy $dom >/dev/null 2>&1; virsh undefine $dom >/dev/null 2>&1; rm -rf $xml_dir/$dom; mkdir -p $xml_dir/$dom
+{ echo "<domain type='qemu'><name>$dom</name><memory unit='MiB'>96</memory><vcpu>1</vcpu>"
+  echo "<os><type arch='x86_64' machine='q35'>hvm</type><boot dev='hd'/></os><devices><emulator>/usr/bin/qemu-system-x86_64</emulator>"
+  drv_disk_xml volume-990012 vda; echo "</devices></domain>"; } >$xml_dir/$dom/$dom.xml
+virsh define $xml_dir/$dom/$dom.xml >/dev/null && virsh start $dom >/dev/null && echo "STARTED" || echo "DOMAIN FAILED"
+echo "BLK: $(virsh domblklist $dom --details | awk '$1 == "network" {print $3, $4}')"
+echo "WATCHERS: $($rbd status --format json $P/volume-990012 | jq '.watchers | length')"
+echo "CAPTURE: $(bash ./async_job/capture_image.sh 990991 cafe0001 990002 "rbd:$P/volume-990012:id=cloudland:conf=/etc/ceph/%[3]s.conf")"
+qemu-io -f qcow2 -c 'read -P 0xab 0 4M' $image_cache/image-990991-cafe0001.qcow2 | grep -q 'read 4194304' && echo "CAPTURED DATA OK"
+rm -f $image_cache/image-990991-cafe0001.qcow2
+tmp=$(drv_temp_of volume-990012)
+shared_boot_make "$tmp" 1 && echo "TEMP $tmp"
+virsh destroy $dom >/dev/null 2>&1; sleep 1
+drv_drop volume-990012 && drv_rename "$tmp" volume-990012 && echo "SWAPPED" || echo "SWAP FAILED $guard_error"
+virsh start $dom >/dev/null && echo "RESTARTED $($rbd info --format json $P/volume-990012 | jq -r '.parent.image')"
+echo "DELETE COPY: $(/opt/cloudland/scripts/backend/delete_image_shared.sh $A <<<"$(jq -c ". + {image_storage_id: $A, base: \"image-990077-ab12cd34\"}" <<<"$pj")")"
+virsh destroy $dom >/dev/null 2>&1; virsh undefine $dom >/dev/null 2>&1; rm -rf $xml_dir/$dom; sleep 2
+echo "DELETE BOOT: $(/opt/cloudland/scripts/backend/delete_volume_shared.sh 990012 x <<<"$bd")"
+echo "DELETE COPY2: $(/opt/cloudland/scripts/backend/delete_image_shared.sh $A <<<"$(jq -c ". + {image_storage_id: $A, base: \"image-990077-ab12cd34\"}" <<<"$pj")")"
+bd2=$(jq -c ". + {volume_id: 990013, image: \"volume-990013\", size_gb: 1, image_base: \"image-990078-cd34ab12\", image_storage_id: %[5]d, clone_mode: \"copy\"}" <<<"$pj")
+shared_boot_load "$bd2" 990013 990003 && shared_boot_make volume-990013 1 && echo "COPIED cloned=$drv_cloned parent=$($rbd info --format json $P/volume-990013 | jq -r '.parent.image // "none"')"
+drv_drop volume-990013
+echo "LEFT: $($rbd ls -p $P | xargs)"`, string(pa), cephPool, c.UUID, copies[0].ID, copies[1].ID)
+	out, err = wsl(host, script)
+	t.Logf("boot disks:\n%s", out)
+	want = []string{
+		"SNAP: base",
+		"MADE cloned=1",
+		"PARENT: image-990077-ab12cd34@base 1073741824",
+		"STARTED",
+		fmt.Sprintf("BLK: vda %s/volume-990012", cephPool),
+		"WATCHERS: 1",
+		"CAPTURE: |:-COMMAND-:| capture_image.sh '990991' 'available' 'qcow2' '1073741824' ''",
+		"CAPTURED DATA OK",
+		"SWAPPED",
+		"RESTARTED image-990077-ab12cd34",
+		fmt.Sprintf("DELETE COPY: |:-COMMAND-:| image_storage_status '%d' 'delete_failed' '%s/image-990077-ab12cd34 still has clones", copies[0].ID, cephPool),
+		"DELETE BOOT: |:-COMMAND-:| clear_volume '990012' 'deleted' '-'",
+		fmt.Sprintf("DELETE COPY2: |:-COMMAND-:| image_storage_status '%d' 'deleted' '-'", copies[0].ID),
+		"COPIED cloned=0 parent=none",
+		"LEFT: image-990078-cd34ab12",
+	}
+	for _, w := range want {
+		if !strings.Contains(out, w) {
+			t.Fatalf("boot disk check: want %q (%v)", w, err)
+		}
+	}
+
+	// The pool goes with the copy left in it: the removal step drops the copies clapi lists
 	must(t, db.Take(p, pool.ID).Error)
 	dtask, err := pools.DeleteShared(ctx, p)
 	must(t, err)
 	if done := hw.waitTask(t, dtask.ID, 10*time.Minute, model.StorageTaskSucceeded, model.StorageTaskFailed); done.Status != model.StorageTaskSucceeded {
 		logRuns(dtask.ID)
 		t.Fatalf("pool removal: %s", done.Message)
+	}
+	var copiesLeft int64
+	must(t, db.Model(&model.ImageStorage{}).Where("storage_pool_id = ?", p.ID).Count(&copiesLeft).Error)
+	if copiesLeft != 0 {
+		t.Fatalf("%d image copies of the removed pool are left", copiesLeft)
 	}
 	if os.Getenv("CEPH_WSL_KEEP") != "" {
 		t.Logf("the cluster %s (%s) is kept", name, c.UUID)

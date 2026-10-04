@@ -26,7 +26,16 @@ func init() {
 //	                    stay rescuing, end_rescue removes a rescue domain that did not start and starts the instance
 //	'error' 'failed'    the rescue domain was never defined (no rescue image): the instance was stopped for
 //	                    nothing and is shut off, nothing to end
+//	'<state>' 'refused' the boot disk of a shared pool is not usable on the host: refused before the instance was
+//	                    stopped, it is in the domain state reported (running, shut_off, paused)
 func rescueStatus(state, stage string) model.InstanceStatus {
+	if stage == "refused" {
+		switch s := model.InstanceStatus(state); s {
+		case model.InstanceStatusRunning, model.InstanceStatusShutoff, model.InstanceStatusPaused:
+			return s
+		}
+		return model.InstanceStatusShutoff
+	}
 	if state != "rescuing" && stage == "failed" {
 		return model.InstanceStatusShutoff
 	}

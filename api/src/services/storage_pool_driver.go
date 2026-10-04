@@ -45,6 +45,12 @@ type PoolDriver interface {
 	// CapacityGroup names the pools that share one capacity: pools of a group are admitted together (§9.5). Empty
 	// when the pool has a capacity of its own (a quota)
 	CapacityGroup(pool *model.StoragePool) string
+	// ImageBaseRef is where the base copy of an image is in a pool (image_storages.path, §9.6): a path relative to
+	// the root of a file pool, the name of an RBD image whose snapshot base the boot disks are cloned from
+	ImageBaseRef(pool *model.StoragePool, image *model.Image) string
+	// QemuSource is a volume as QEMU tools read it on a host of the pool (capture): the file of a file pool, the
+	// rbd: address of an RBD pool
+	QemuSource(pool *model.StoragePool, volume *model.Volume) string
 }
 
 var poolDrivers = map[string]PoolDriver{}
@@ -99,6 +105,14 @@ func (d fileDriver) CapacityGroup(pool *model.StoragePool) string {
 	return ""
 }
 
+func (d fileDriver) ImageBaseRef(pool *model.StoragePool, image *model.Image) string {
+	return "images/" + image.FileBase() + ".qcow2"
+}
+
+func (d fileDriver) QemuSource(pool *model.StoragePool, volume *model.Volume) string {
+	return VolumeAbsPath(pool, volume)
+}
+
 // gpfsDriver keeps the volumes of a pool in an independent fileset. Pools without a quota in the same GPFS storage
 // pool of one file system draw on the same disks (§9.5)
 type gpfsDriver struct{ fileDriver }
@@ -114,12 +128,8 @@ func init() {
 	registerPoolDriver(gpfsDriver{fileDriver{name: model.StorageDriverGPFS, fsType: "gpfs"}})
 }
 
-// sharedVolumeArgs is the JSON the volume scripts of a shared pool read on stdin: the pool, plus the volume
-func sharedVolumeArgs(pool *model.StoragePool, volume *model.Volume, extra map[string]interface{}) (string, error) {
-	d, err := poolDriverOf(pool)
-	if err != nil {
-		return "", err
-	}
+// sharedVolumeArgMap is what the scripts of a shared pool get about a volume: the pool, plus the volume
+func sharedVolumeArgMap(pool *model.StoragePool, d PoolDriver, volume *model.Volume) map[string]interface{} {
 	args := d.DriverArgs(pool)
 	args["volume_id"] = volume.ID
 	args["size_gb"] = volume.Size
@@ -128,6 +138,16 @@ func sharedVolumeArgs(pool *model.StoragePool, volume *model.Volume, extra map[s
 	} else {
 		args["image"] = volume.Path
 	}
+	return args
+}
+
+// sharedVolumeArgs is the JSON the volume scripts of a shared pool read on stdin: the pool, plus the volume
+func sharedVolumeArgs(pool *model.StoragePool, volume *model.Volume, extra map[string]interface{}) (string, error) {
+	d, err := poolDriverOf(pool)
+	if err != nil {
+		return "", err
+	}
+	args := sharedVolumeArgMap(pool, d, volume)
 	for k, v := range extra {
 		args[k] = v
 	}

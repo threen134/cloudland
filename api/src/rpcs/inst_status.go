@@ -76,6 +76,10 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 		if instance.Status == "rescuing" {
 			continue
 		}
+		// A reinstall waiting for its image keeps the instance reinstalling until it runs
+		if instance.Status == model.InstanceStatusReinstalling && services.InstanceWaitsForImage(db, instance.ID) {
+			continue
+		}
 		if instance.Status == model.InstanceStatusMigrating {
 			// 迁移进行中（本地存储热迁移复制磁盘可能很久，期间目标节点也会上报该虚拟机）：不改状态和所在节点。
 			// 判据是迁移记录 10 分钟内有更新：source_migration.sh 每 3 秒上报一次进度，正常迁移无论多久都算活跃；

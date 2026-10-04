@@ -233,7 +233,16 @@ func HandleClearVolume(ctx context.Context, hostid int32, volumeID int64, result
 		return nil
 	}
 	if result == "deleted" {
-		return db.Delete(&model.Volume{}, volume.ID).Error
+		if err = db.Delete(&model.Volume{}, volume.ID).Error; err != nil {
+			return
+		}
+		// A boot disk cloned from the copy of an image in its pool: the copy may go now
+		releaseImageStorage(ctx, volume.BaseImageStorageID)
+		return nil
+	}
+	if volume.Booting {
+		// The boot disk of a deleted instance: not usable as a data volume, deleting it again retries
+		return db.Model(volume).Updates(map[string]interface{}{"status": model.VolumeStatusDeleteFailed, "reason": truncate("delete failed: "+reason, 512)}).Error
 	}
 	return db.Model(volume).Updates(map[string]interface{}{"status": model.VolumeStatusAvailable, "reason": "delete failed: " + reason}).Error
 }
@@ -321,4 +330,5 @@ func maintainStorage(ctx context.Context) {
 	db.Model(&model.Volume{}).Where("status = ? AND updated_at < ?", model.VolumeStatusDeleting, now.Add(-volumeDeleteTimeout)).
 		Updates(map[string]interface{}{"status": model.VolumeStatusDeleteFailed, "reason": "the host did not confirm the deletion"})
 	maintainSharedPools(ctx, now)
+	maintainImageStorages(ctx)
 }

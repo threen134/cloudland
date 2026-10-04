@@ -235,6 +235,9 @@ func (a *StoragePoolAdmin) DeleteShared(ctx context.Context, pool *model.Storage
 	if count > 0 {
 		return nil, NewCLError(ErrStoragePoolInUse, fmt.Sprintf("Storage pool %s still has %d volumes", pool.Name, count), nil)
 	}
+	if err = poolImportsIdle(db, pool); err != nil {
+		return
+	}
 	if cluster.Status != model.StorageClusterReady {
 		return nil, NewCLError(ErrStorageClusterBusy, fmt.Sprintf("Storage cluster %s is %s, not ready", cluster.Name, cluster.Status), nil)
 	}
@@ -259,6 +262,10 @@ func (a *StoragePoolAdmin) DeleteShared(ctx context.Context, pool *model.Storage
 			if count > 0 {
 				return 0, NewCLError(ErrStoragePoolInUse, fmt.Sprintf("Storage pool %s still has %d volumes", pool.Name, count), nil)
 			}
+			// An import locks the pool row too: none starts from here on
+			if err := poolImportsIdle(tx, pool); err != nil {
+				return 0, err
+			}
 			updates := map[string]interface{}{"status": model.StoragePoolDeleting}
 			if locked.IsDefault {
 				builtin, err := BuiltinPool(ctx)
@@ -272,6 +279,26 @@ func (a *StoragePoolAdmin) DeleteShared(ctx context.Context, pool *model.Storage
 			}
 			return cluster.ID, tx.Model(&model.StoragePool{}).Where("id = ?", pool.ID).Updates(updates).Error
 		}})
+}
+
+// poolImportsIdle refuses while an image is being copied into a pool: the import writes into it, launches wait for it
+func poolImportsIdle(tx *gorm.DB, pool *model.StoragePool) error {
+	var n int64
+	if err := tx.Model(&model.ImageStorage{}).Where("storage_pool_id = ? AND status = ?", pool.ID, model.ImageStorageSyncing).Count(&n).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to query the image copies of the pool", err)
+	}
+	if n > 0 {
+		return NewCLError(ErrStoragePoolInUse, fmt.Sprintf("Storage pool %s is busy: %d images are being copied into it", pool.Name, n), nil)
+	}
+	return nil
+}
+
+// poolImageBases are the copies of images in a pool, as the pool scripts remove them with the pool: RBD image names,
+// or paths in the pool directory
+func poolImageBases(tx *gorm.DB, pool *model.StoragePool) ([]string, error) {
+	bases := []string{}
+	err := tx.Model(&model.ImageStorage{}).Where("storage_pool_id = ?", pool.ID).Order("id").Pluck("path", &bases).Error
+	return bases, err
 }
 
 // sharedPoolsOfCluster are the pools the hosts of a cluster keep in their lists
@@ -442,6 +469,14 @@ func sharedPoolTaskFinish(ctx context.Context, tx *gorm.DB, task *model.StorageT
 			return tx.Model(pool).Update("status", model.StoragePoolError).Error
 		}
 		if err := tx.Unscoped().Where("pool_id = ?", pool.ID).Delete(&model.HyperStoragePool{}).Error; err != nil {
+			return err
+		}
+		// The copies of images went with the pool
+		if err := tx.Unscoped().Where("image_storage_id IN (?)", tx.Model(&model.ImageStorage{}).Select("id").Where("storage_pool_id = ?", pool.ID)).
+			Delete(&model.ImageStorageWaiter{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("storage_pool_id = ?", pool.ID).Delete(&model.ImageStorage{}).Error; err != nil {
 			return err
 		}
 		return tx.Unscoped().Delete(pool).Error

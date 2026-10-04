@@ -257,6 +257,11 @@ func gpfsPoolInput(action string) storageStepInput {
 				return nil, err
 			}
 			in["rules"], in["multi_pool"] = rules, multi
+		case "unregister":
+			// The directory stays with its owners: the copies of images CloudLand made in it go (§9.6)
+			if in["bases"], err = poolImageBases(db, pool); err != nil {
+				return nil, err
+			}
 		}
 		return in, nil
 	}

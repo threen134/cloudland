@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -111,12 +112,18 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		return
 	}
 	var execCommands []*ExecutionCommand
+	// The import of the copy of the image in a shared pool, sent before the launches that wait for it
+	var baseCopy *model.ImageStorage
+	var importCmd *volumeCommand
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
 		if err == nil {
+			if importCmd != nil {
+				sendImageStorageImport(ctx, baseCopy, importCmd)
+			}
 			a.executeCommandList(ctx, execCommands)
 		}
 	}()
@@ -175,10 +182,6 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	if bootPool.Status != model.StoragePoolActive {
 		return nil, NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Storage pool %s is disabled", bootPool.Name), nil)
 	}
-	if bootPool.Shared() {
-		// Boot disks in shared pools (image copies in the pool, clones) come with stage S4 (shared-storage-design.md §9.7)
-		return nil, NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Storage pool %s is shared: it holds data volumes only for now", bootPool.Name), nil)
-	}
 	// Members of a placement group: clapi picks every host under the lock of the group, which is taken before any
 	// storage pool row (placement-group-plan.md §3.2, §6.2)
 	var placement *creationPlacement
@@ -187,6 +190,25 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			return nil, NewCLError(ErrPlacementGroupNotFound, "Placement group not found", nil)
 		}
 		if placement, err = startCreationPlacement(db, group, zone, bootPool, hyperID, count, cpu, memory, disk); err != nil {
+			return
+		}
+	}
+	// Boot disks in a shared pool (shared-storage-design.md §9.5, §9.7): admitted against the pool, after the group
+	// lock; the instances go to the active hosts of the zone that reach the pool, and their disks are cloned from the
+	// copy of the image in the pool, imported first when it is not there yet
+	var sharedHosts []int32
+	if bootPool.Shared() {
+		if err = admitShared(db, bootPool, int64(disk)*int64(count), true); err != nil {
+			return
+		}
+		if sharedHosts, err = sharedPoolHostsOfZone(db, bootPool, zoneID); err != nil {
+			return
+		}
+		if hyperID >= 0 && !slices.Contains(sharedHosts, int32(hyperID)) {
+			return nil, NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Storage pool %s is not usable on the given hypervisor", bootPool.Name), nil)
+		}
+		// The import goes out with the launch commands, after the commit
+		if baseCopy, importCmd, err = prepareImageStorage(ctx, db, bootPool, image); err != nil {
 			return
 		}
 	}
@@ -268,7 +290,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			instance.Flavor = flavor
 		}
 		var bootVolume *model.Volume
-		imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
+		imagePrefix := image.FileBase()
 		// boot volume name format: instance-15-boot-volume-10
 		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, bootPool)
 		if err != nil {
@@ -305,7 +327,23 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		}
 		rcNeeded := schedulerResources(instance.Cpu, instance.Memory, builtinGB)
 		control := "select=" + hyperGroup + " " + rcNeeded
-		if !bootPool.Builtin {
+		if bootPool.Shared() {
+			switch {
+			case placement != nil && hyperID < 0:
+				control = fmt.Sprintf("select=%s %s", hyperGroupOf(zoneID, []int32{pick}), rcNeeded)
+			case hyperID >= 0:
+				control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
+			default:
+				control = fmt.Sprintf("select=%s %s", hyperGroupOf(zoneID, sharedHosts), rcNeeded)
+			}
+			var bootDisk map[string]interface{}
+			if bootDisk, err = sharedBootDisk(bootPool, bootVolume, instance.ID, baseCopy); err != nil {
+				return
+			}
+			if metadata, err = metadataWithBootDisk(metadata, bootDisk); err != nil {
+				return
+			}
+		} else if !bootPool.Builtin {
 			// Boot disk in a local pool (L4): clapi picks the host and holds the room until the disk is created
 			var host int32
 			if placement != nil && hyperID < 0 {
@@ -334,12 +372,22 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			control = fmt.Sprintf("select=%s %s", hyperGroupOf(zoneID, []int32{pick}), rcNeeded)
 		}
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(image.Format), image.QAEnabled, snapshot, ShellEscape(hostname), instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, ShellEscape(image.BootLoader), ShellEscape(instance.UUID), ShellEscape(imageDownloadURLB64), ShellEscape(PoolScriptID(bootPool)), ShellEscape(bootVolume.Path), base64.StdEncoding.EncodeToString([]byte(metadata)))
-		execCommands = append(execCommands, &ExecutionCommand{
-			Control:      control,
-			Command:      command,
-			InstanceID:   instance.ID,
-			BootVolumeID: bootVolume.ID,
-		})
+		if baseCopy != nil && baseCopy.Status != model.ImageStorageSynced {
+			// The copy of the image is imported first: the launch waits for it
+			if err = waitForImageStorage(db, baseCopy, model.ImageWaitLaunch, instance.ID, bootVolume.ID, 0, control, command); err != nil {
+				return
+			}
+			if err = db.Model(instance).Update("reason", fmt.Sprintf("waiting for image %s to be copied into storage pool %s", image.Name, bootPool.Name)).Error; err != nil {
+				return nil, NewCLError(ErrInstanceUpdateFailed, "Failed to update the instance", err)
+			}
+		} else {
+			execCommands = append(execCommands, &ExecutionCommand{
+				Control:      control,
+				Command:      command,
+				InstanceID:   instance.ID,
+				BootVolumeID: bootVolume.ID,
+			})
+		}
 		instances = append(instances, instance)
 		i++
 	}
@@ -390,6 +438,13 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 		err = NewCLError(ErrInstanceInvalidState, "Instance is already in rescue status", nil)
 		return
 	}
+	if instance.Status == model.InstanceStatusReinstalling {
+		err = NewCLError(ErrInstanceInvalidState, "Instance is reinstalling", nil)
+		return
+	}
+	if err = refuseWhileWaiting(db, instance); err != nil {
+		return
+	}
 	image := instance.Image
 	if rescueImage == nil {
 		if image.RescueImage <= 0 {
@@ -407,7 +462,7 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 		return NewCLError(ErrInstanceUpdateFailed, "Failed to update instance status to rescuing", err)
 	}
 	logger.Ctx(ctx).Debugf("Rescue image is %s", rescueImage.Name)
-	imagePrefix := fmt.Sprintf("image-%d-%s", rescueImage.ID, strings.Split(rescueImage.UUID, "-")[0])
+	imagePrefix := rescueImage.FileBase()
 	bootVolume := &model.Volume{}
 	if err = db.Where("instance_id = ? and booting = true", instance.ID).Take(bootVolume).Error; err != nil {
 		logger.Ctx(ctx).Error("Failed to query boot volume, %v", err)
@@ -432,7 +487,20 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 	if err != nil {
 		return
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%s' '%d' '%d' '%d' '%d' '%s' '%s' '%s' '%s' <<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(rescueImage.Format), ShellEscape(instance.Hostname), instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, ShellEscape(rescueImage.BootLoader), ShellEscape(instance.UUID), ShellEscape(imageDownloadURLB64), ShellEscape(VolumeAbsPath(bootPool, bootVolume)), base64.StdEncoding.EncodeToString([]byte(metadata)))
+	// The boot disk is attached to the rescue system as it is: a file, or for a shared pool the disk its driver
+	// describes (an RBD image is no file), given in the metadata
+	bootDiskArg := VolumeAbsPath(bootPool, bootVolume)
+	if bootPool.Shared() {
+		var d PoolDriver
+		if d, err = poolDriverOf(bootPool); err != nil {
+			return
+		}
+		if metadata, err = metadataWithBootDisk(metadata, sharedVolumeArgMap(bootPool, d, bootVolume)); err != nil {
+			return
+		}
+		bootDiskArg = "-"
+	}
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%s' '%d' '%d' '%d' '%d' '%s' '%s' '%s' '%s' <<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(rescueImage.Format), ShellEscape(instance.Hostname), instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, ShellEscape(rescueImage.BootLoader), ShellEscape(instance.UUID), ShellEscape(imageDownloadURLB64), ShellEscape(bootDiskArg), base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Delete vm command execution failed", err)
@@ -553,6 +621,11 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, ho
 			EndTransaction(ctx, err)
 		}
 	}()
+	if string(action) != "" {
+		if err = refuseWhileWaiting(db, instance); err != nil {
+			return
+		}
+	}
 	if hyperID != int(instance.Hyper) {
 		permit = memberShip.IsSystemAdmin()
 		if !permit {
@@ -619,6 +692,13 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 		err = NewCLError(ErrInstanceInvalidState, "Instance is already resizing", nil)
 		return
 	}
+	if instance.Status == model.InstanceStatusReinstalling {
+		err = NewCLError(ErrInstanceInvalidState, "Instance is reinstalling", nil)
+		return
+	}
+	if err = refuseWhileWaiting(db, instance); err != nil {
+		return
+	}
 	instance.Status = status
 	instance.Cpu = cpu
 	instance.Memory = memory
@@ -656,15 +736,24 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 			logger.Ctx(ctx).Info("EXIT InstanceAdmin.Reinstall: success")
 		}
 	}()
-	if instance.Status == "rescuing" {
-		err = NewCLError(ErrInstanceInvalidState, "Instance is not in the right state", nil)
+	// A reinstall may wait for the copy of its image in a shared pool and run later: another one, or a rescue, in
+	// between would be undone by it
+	if instance.Status == model.InstanceStatusRescuing || instance.Status == model.InstanceStatusReinstalling {
+		err = NewCLError(ErrInstanceInvalidState, fmt.Sprintf("Instance is %s", instance.Status), nil)
 		logger.Ctx(ctx).Error("Instance is not in the right state")
 		return
 	}
+	// A boot disk in a shared pool is cloned from the copy of the image in the pool: an import it needs goes out after
+	// the commit, the reinstall waits for it (shared-storage-design.md §9.8)
+	var baseCopy *model.ImageStorage
+	var importCmd *volumeCommand
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
+		}
+		if err == nil && importCmd != nil {
+			sendImageStorageImport(ctx, baseCopy, importCmd)
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -672,6 +761,9 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	if !permit {
 		logger.Ctx(ctx).Error("Not authorized to reinstall the instance")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to reinstall the instance", nil)
+		return
+	}
+	if err = refuseWhileWaiting(db, instance); err != nil {
 		return
 	}
 	var bootVolume *model.Volume
@@ -686,7 +778,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
 		return
 	}
-	imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
+	imagePrefix := image.FileBase()
 	var total int64
 	if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
 		logger.Ctx(ctx).Error("Failed to query total instances with the image", err)
@@ -696,7 +788,19 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	if err != nil {
 		return
 	}
-	if disk > bootVolume.Size {
+	if bootPool.Shared() {
+		if disk > bootVolume.Size {
+			if err = admitShared(db, bootPool, int64(disk-bootVolume.Size), true); err != nil {
+				return
+			}
+		}
+		if _, err = poolUsableOn(db, bootPool, instance.Hyper, false); err != nil {
+			return
+		}
+		if baseCopy, importCmd, err = prepareImageStorage(ctx, db, bootPool, image); err != nil {
+			return
+		}
+	} else if disk > bootVolume.Size {
 		if _, err = admitLocked(db, bootPool, instance.Hyper, int64(disk-bootVolume.Size)); err != nil {
 			return
 		}
@@ -763,6 +867,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	}
 
 	// change volume status to reinstalling
+	priorSize := bootVolume.Size
 	bootVolume.Status = "reinstalling"
 	bootVolume.Size = disk
 	if err = db.Save(&bootVolume).Error; err != nil {
@@ -792,7 +897,27 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	if err != nil {
 		return
 	}
+	if baseCopy != nil {
+		var bootDisk map[string]interface{}
+		if bootDisk, err = sharedBootDisk(bootPool, bootVolume, instance.ID, baseCopy); err != nil {
+			return
+		}
+		if metadata, err = metadataWithBootDisk(metadata, bootDisk); err != nil {
+			return
+		}
+	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%d' '%d' '%d' '%s' '%s' '%s' '%s' '%s' '%s'<<'EOF'\n%s\nEOF", instance.ID, ShellEscape(imagePrefix), ShellEscape(image.Format), snapshot, bootVolume.ID, cpu, memory, disk, ShellEscape(instance.Hostname), ShellEscape(image.BootLoader), ShellEscape(instance.UUID), ShellEscape(imageDownloadURLB64), ShellEscape(PoolScriptID(bootPool)), ShellEscape(bootVolume.Path), base64.StdEncoding.EncodeToString([]byte(metadata)))
+	if baseCopy != nil && baseCopy.Status != model.ImageStorageSynced {
+		// The copy of the new image is imported first; the instance runs on meanwhile, its disk untouched
+		if err = waitForImageStorage(db, baseCopy, model.ImageWaitReinstall, instance.ID, bootVolume.ID, priorSize, control, command); err != nil {
+			return
+		}
+		if err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Update("reason",
+			fmt.Sprintf("waiting for image %s to be copied into storage pool %s", image.Name, bootPool.Name)).Error; err != nil {
+			return NewCLError(ErrInstanceUpdateFailed, "Failed to update the instance", err)
+		}
+		return
+	}
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Ctx(ctx).Error("Reinstall remote exec failed", err)
@@ -1358,13 +1483,21 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		return NewCLError(ErrSQLSyntaxError, "Failed to query volumes for instance", err)
 	}
 
-	// The node deletes the boot disk file; none is passed when its pool was declared lost
+	// The node deletes the boot disk file; none is passed when its pool was declared lost. A boot disk in a shared pool
+	// is removed by a host that reaches the pool once the domain is gone (clear_vm): its record stays until then
 	bootPoolID, bootPath := "-", ""
 	if instance.Volumes != nil {
 		for _, volume := range instance.Volumes {
 			if volume.Booting {
 				if volume.Status != model.VolumeStatusLost {
 					if pool, perr := VolumePool(ctx, volume); perr == nil {
+						if pool.Shared() {
+							if err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{
+								"status": model.VolumeStatusDeleting, "reason": ""}).Error; err != nil {
+								return NewCLError(ErrBootVolumeDeleteFailed, "Delete boot volume failed", err)
+							}
+							continue
+						}
 						bootPoolID, bootPath = PoolScriptID(pool), volume.Path
 					}
 				}
@@ -1377,6 +1510,12 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 			}
 		}
 		instance.Volumes = nil
+	}
+
+	// A launch or a reinstall waiting for the copy of an image in a shared pool goes with the instance, for good: the
+	// command carries its passwords
+	if err = db.Unscoped().Where("instance_id = ?", instance.ID).Delete(&model.ImageStorageWaiter{}).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to drop the commands waiting for the image copy", err)
 	}
 
 	// Cleanup rule links and matched_vms.json

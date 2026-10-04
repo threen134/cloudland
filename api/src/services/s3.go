@@ -109,8 +109,7 @@ func S3Bucket() string {
 //
 //	<ID>-<UUID 前缀> 是全局唯一的（DB id + UUID 去重）
 func s3ObjectName(image *model.Image) string {
-	prefix := strings.Split(image.UUID, "-")[0]
-	return fmt.Sprintf("image-%d-%s", image.ID, prefix)
+	return image.FileBase()
 }
 
 // S3UploadTimeout 返回镜像上传的总超时，默认 120min；可通过 S3_UPLOAD_TIMEOUT_MINUTES 调整

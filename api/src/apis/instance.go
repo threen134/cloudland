@@ -581,6 +581,12 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	for _, ky := range payload.Keys {
 		var key *model.Key
 		key, err = keyAdmin.GetKey(ctx, ky)
+		if err != nil {
+			// Not found: kept, an empty key would be created and bound to the instance
+			logger.Ctx(ctx).Errorf("Failed to get key %+v, %+v", ky, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid key", err)
+			return
+		}
 		keys = append(keys, key)
 	}
 	var routerID int64
@@ -631,7 +637,7 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 
 	logger.Ctx(ctx).Debugf("Creating %d instances with hostname %s, userdata %s, userdata_type %s, vendordata %s, vendordatatype %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, nestedEnable %v, storage pool: %v",
 		count, hostname, userdata, userdataType, vendorData, vendorDataType, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.StoragePool)
-	bootPool, err := storagePoolAdmin.ResolveBoot(ctx, payload.StoragePool)
+	bootPool, err := storagePoolAdmin.ResolveBoot(ctx, payload.StoragePool, zone.ID, hypervisor)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid storage pool", err)
 		return
