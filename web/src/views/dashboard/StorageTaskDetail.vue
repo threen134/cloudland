@@ -5,7 +5,19 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, ListChecks, RefreshCw, Copy, Check, RotateCcw, Square, AlertTriangle, Info } from 'lucide-vue-next'
+import {
+    ArrowLeft,
+    ListChecks,
+    RefreshCw,
+    Copy,
+    Check,
+    RotateCcw,
+    Square,
+    AlertTriangle,
+    Info,
+    Download,
+    Loader2,
+} from 'lucide-vue-next'
 import {
     storageClustersApi,
     TASK_LIVE_STATUSES,
@@ -70,7 +82,48 @@ watch(id, () => fetchTask())
 onMounted(() => fetchTask())
 onUnmounted(() => {
     if (timer) clearInterval(timer)
+    unmounted = true
 })
+
+// ---- whole log of a run (§6.2.6): the host is asked for it, then the page asks clapi again until it is there ----
+let unmounted = false
+const logState = ref<Record<number, { busy: boolean; error: string }>>({})
+const saveText = (name: string, text: string) => {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+const downloadLog = async (run: StorageRun) => {
+    if (!task.value || logState.value[run.id]?.busy) return
+    const taskId = task.value.id
+    logState.value = { ...logState.value, [run.id]: { busy: true, error: '' } }
+    let error = ''
+    try {
+        // Up to about 90 s: the host uploads in the background, on its next free moment
+        for (let i = 0; i < 45 && !unmounted; i++) {
+            const log = await storageClustersApi.runLog(taskId, run.id)
+            if (log.status === 'ready') {
+                saveText(`storage-run-${run.id}.log`, log.content)
+                if (log.truncated) toast.info(t('storage.cluster.fullLogTruncated'))
+                if (log.message)
+                    toast.info(t('storage.cluster.fullLogOfflineCopy', { time: formatDateTime(log.updated_at) }))
+                break
+            }
+            if (log.status === 'error') {
+                error = log.message || t('storage.cluster.fullLogFailed')
+                break
+            }
+            await new Promise((resolve) => setTimeout(resolve, 2000))
+            if (i === 44) error = t('storage.cluster.fullLogTimeout')
+        }
+    } catch (err) {
+        error = errorMessage(err, t('storage.cluster.fullLogFailed'))
+    }
+    logState.value = { ...logState.value, [run.id]: { busy: false, error } }
+}
 
 const steps = computed<StorageStep[]>(() => task.value?.steps || [])
 
@@ -310,7 +363,25 @@ const title = computed(() => (task.value ? taskKindText(t, te, task.value.kind) 
                     <template #cell-updated_at="{ row: run }">{{ formatDateTime(run.updated_at) }}</template>
                     <template #expanded="{ row: run }">
                         <div class="run-detail">
-                            <div class="run-detail-title">{{ t('storage.cluster.log') }}</div>
+                            <div class="run-detail-title log-title">
+                                {{ t('storage.cluster.log') }}
+                                <button
+                                    class="btn btn-ghost btn-xs"
+                                    :disabled="logState[run.id]?.busy"
+                                    @click="downloadLog(run)"
+                                >
+                                    <Loader2 v-if="logState[run.id]?.busy" :size="12" class="spinning" />
+                                    <Download v-else :size="12" />
+                                    {{
+                                        logState[run.id]?.busy
+                                            ? t('storage.cluster.fullLogFetching')
+                                            : t('storage.cluster.fullLog')
+                                    }}
+                                </button>
+                                <span v-if="logState[run.id]?.error" class="text-error log-error">{{
+                                    logState[run.id].error
+                                }}</span>
+                            </div>
                             <pre v-if="run.log_tail" class="log">{{ run.log_tail }}</pre>
                             <div v-else class="muted-line">{{ t('storage.cluster.noLog') }}</div>
                             <template v-if="resultText(run)">
@@ -478,6 +549,17 @@ const title = computed(() => (task.value ? taskKindText(t, te, task.value.kind) 
     font-weight: 600;
     color: var(--text-secondary);
     margin: var(--spacing-2) 0 4px;
+}
+
+.log-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--spacing-2);
+}
+
+.log-error {
+    font-weight: normal;
 }
 
 .log {

@@ -48,6 +48,14 @@ const sectionLayout: Record<'general' | 'quota', Array<{ key: string; fields: st
             key: 'hostConsole',
             fields: ['HOST_CONSOLE_ENABLED', 'HOST_CONSOLE_REQUIRE_PASSWORD', 'HOST_CONSOLE_IDLE_MINUTES'],
         },
+        {
+            key: 'storageAlerts',
+            fields: [
+                'STORAGE_ALERT_DELAY_MINUTES',
+                'STORAGE_POOL_USAGE_WARN_PERCENT',
+                'STORAGE_POOL_USAGE_CRITICAL_PERCENT',
+            ],
+        },
     ],
     quota: [
         { key: 'quotaCompute', fields: ['DEFAULT_CPU_CORES', 'DEFAULT_RAM_GB', 'DEFAULT_DISK_GB'] },
@@ -80,6 +88,9 @@ const savedValues = ref<Record<string, string>>({})
 const numberRanges: Record<string, { min: number; max: number; integer: boolean }> = {
     AUDIT_LOG_RETENTION_DAYS: { min: 90, max: 3650, integer: true },
     HOST_CONSOLE_IDLE_MINUTES: { min: 5, max: 240, integer: true },
+    STORAGE_ALERT_DELAY_MINUTES: { min: 1, max: 60, integer: true },
+    STORAGE_POOL_USAGE_WARN_PERCENT: { min: 50, max: 99, integer: true },
+    STORAGE_POOL_USAGE_CRITICAL_PERCENT: { min: 50, max: 100, integer: true },
     DEFAULT_CPU_CORES: { min: 0, max: 1e6, integer: false },
     DEFAULT_RAM_GB: { min: 0, max: 1e7, integer: false },
     DEFAULT_DISK_GB: { min: 0, max: 1e9, integer: false },
@@ -90,13 +101,16 @@ const numberRanges: Record<string, { min: number; max: number; integer: boolean 
     DEFAULT_IMAGES: { min: 0, max: 1e5, integer: true },
 }
 
-const fieldUnits: Record<string, 'cores' | 'gb' | 'days' | 'minutes'> = {
+const fieldUnits: Record<string, 'cores' | 'gb' | 'days' | 'minutes' | 'percent'> = {
     DEFAULT_CPU_CORES: 'cores',
     DEFAULT_RAM_GB: 'gb',
     DEFAULT_DISK_GB: 'gb',
     ALARM_EVENT_RETENTION_DAYS: 'days',
     AUDIT_LOG_RETENTION_DAYS: 'days',
     HOST_CONSOLE_IDLE_MINUTES: 'minutes',
+    STORAGE_ALERT_DELAY_MINUTES: 'minutes',
+    STORAGE_POOL_USAGE_WARN_PERCENT: 'percent',
+    STORAGE_POOL_USAGE_CRITICAL_PERCENT: 'percent',
 }
 
 // NOTIFICATION_CHANNELS is edited through the channel switches, not as a field

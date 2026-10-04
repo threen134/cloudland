@@ -23,6 +23,10 @@ import {
     Gauge,
     Shuffle,
     AlertTriangle,
+    ChartLine,
+    Replace,
+    UserCog,
+    Settings2,
 } from 'lucide-vue-next'
 import {
     storageClustersApi,
@@ -59,6 +63,10 @@ import DeleteModal from '../../components/modals/DeleteModal.vue'
 import CapacityBar from '../../components/storage/CapacityBar.vue'
 import StorageExpandModal from '../../components/storage/StorageExpandModal.vue'
 import SharedPoolModal from '../../components/storage/SharedPoolModal.vue'
+import StorageClusterMetrics from '../../components/storage/StorageClusterMetrics.vue'
+import StorageReplaceDiskModal from '../../components/storage/StorageReplaceDiskModal.vue'
+import StorageChangeRolesModal from '../../components/storage/StorageChangeRolesModal.vue'
+import StorageAutoJoinModal from '../../components/storage/StorageAutoJoinModal.vue'
 
 const { t, te } = useI18n()
 const route = useRoute()
@@ -123,7 +131,7 @@ watch(id, () => load())
 onMounted(() => load())
 
 // ---- tabs ----
-type TabId = 'overview' | 'nodes' | 'disks' | 'filesystems' | 'pools' | 'tasks'
+type TabId = 'overview' | 'nodes' | 'disks' | 'filesystems' | 'pools' | 'monitoring' | 'tasks'
 const activeTab = ref<TabId>((route.query.tab as TabId) || 'overview')
 const tabs = computed<Tab[]>(() => {
     const list: Tab[] = [
@@ -159,6 +167,7 @@ const tabs = computed<Tab[]>(() => {
             count: cluster.value?.pools?.length ?? 0,
         })
     }
+    list.push({ id: 'monitoring', label: t('storage.metrics.tab'), icon: ChartLine })
     list.push({ id: 'tasks', label: t('storage.cluster.tasksTab'), icon: ListChecks, count: tasks.value.length })
     return list
 })
@@ -173,6 +182,55 @@ const started = (task?: StorageTask) => {
     load(true)
     return task
 }
+
+// ---- replace a disk, change roles, auto join ----
+const replacingDisk = ref<StorageClusterDisk | null>(null)
+const changingNode = ref<StorageClusterNode | null>(null)
+const showAutoJoin = ref(false)
+const autoJoinBusy = ref(false)
+// A disk the storage reports down (and not on its way in or out) can be replaced
+const replaceable = (d: StorageClusterDisk) =>
+    !!d.state && d.state !== 'up' && (d.status === 'active' || d.status === 'failed')
+const autoJoin = computed(() => cluster.value?.auto_join)
+const autoJoinOffered = computed(() => managed.value && !!caps.value?.add_nodes)
+const pendingText = (s: string) =>
+    te(`storage.clusterDetail.pendingStatus.${s}`) ? t(`storage.clusterDetail.pendingStatus.${s}`) : s
+const pendingVariant = (s: string) => (s === 'failed' ? 'error' : s === 'joining' ? 'pending' : 'neutral')
+const autoJoinSaved = () => {
+    showAutoJoin.value = false
+    toast.success(t('storage.clusterDetail.autoJoinSaved'))
+    load(true)
+}
+const retryAutoJoin = async () => {
+    if (!cluster.value) return
+    autoJoinBusy.value = true
+    try {
+        await storageClustersApi.update(cluster.value.id, { retry_auto_join: true })
+        load(true)
+    } catch (err) {
+        toast.error(errorMessage(err, t('storage.cluster.actionFailed')))
+    } finally {
+        autoJoinBusy.value = false
+    }
+}
+const changeStarted = (task: StorageTask) => {
+    replacingDisk.value = null
+    changingNode.value = null
+    started(task)
+}
+
+// ---- health ----
+const healthInfo = computed(() => cluster.value?.health_info)
+const severityText = (s: string) =>
+    te(`storage.clusterDetail.health.severity.${s}`) ? t(`storage.clusterDetail.health.severity.${s}`) : s
+const alarmNameText = (s: string) =>
+    te(`storage.clusterDetail.health.alarmNames.${s}`) ? t(`storage.clusterDetail.health.alarmNames.${s}`) : s
+const flagText = (s: string) =>
+    te(`storage.clusterDetail.health.flagNames.${s}`) ? t(`storage.clusterDetail.health.flagNames.${s}`) : s
+const checkedTitle = (at?: string) =>
+    at ? t('storage.clusterDetail.health.checkedTitle', { time: formatDateTime(at) }) : undefined
+// Both GPFS (availability) and Ceph report "up" for a disk that works; anything else is worth a look
+const diskStateUp = (s: string) => s === 'up'
 
 // ---- hosts ----
 const nodeColumns = computed<Column[]>(() => [
@@ -227,6 +285,7 @@ const diskColumns = computed<Column[]>(() => [
     { key: 'size', label: t('storage.size') },
     { key: 'usage', label: t('storage.clusterDetail.usage'), hideBelow: 1440 },
     { key: 'status', label: t('storage.status') },
+    { key: 'state', label: t('storage.clusterDetail.diskState'), hideBelow: 1280 },
     { key: 'actions', label: t('dashboard.table.actions'), width: '80px', align: 'right' },
 ])
 const diskStatusText = (s: string) =>
@@ -468,43 +527,148 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
             <DetailTabs v-model="activeTab" :tabs="tabs" />
 
             <!-- Overview -->
-            <div v-if="activeTab === 'overview'" class="info-card card">
-                <div class="info-rows">
-                    <InfoRow :label="t('storage.cluster.kind')">{{ storageKindText(t, te, cluster.kind) }}</InfoRow>
-                    <InfoRow :label="t('storage.cluster.mode')">{{ modeText(cluster.mode) }}</InfoRow>
-                    <InfoRow v-if="cluster.layout" :label="t('storage.clusterDetail.layout')">{{
-                        cluster.layout
-                    }}</InfoRow>
-                    <InfoRow v-if="cluster.version" :label="t('storage.clusterDetail.version')">{{
-                        cluster.version
-                    }}</InfoRow>
-                    <InfoRow v-if="cluster.cluster_ref" :label="t('storage.clusterDetail.clusterRef')">
-                        <span class="mono-cell">{{ cluster.cluster_ref }}</span>
-                    </InfoRow>
-                    <InfoRow :label="t('storage.status')">
-                        <StatusBadge :status="cluster.status" :label="clusterStatusText(t, te, cluster.status)" />
-                    </InfoRow>
-                    <InfoRow :label="t('storage.cluster.health')">
-                        <StatusBadge :status="cluster.health" :label="clusterHealthText(t, te, cluster.health)" />
-                    </InfoRow>
-                    <InfoRow :label="t('storage.clusterDetail.counts')">{{
-                        t('storage.clusterDetail.countsValue', {
-                            nodes: cluster.node_count,
-                            disks: cluster.disk_count,
-                            pools: cluster.pool_count,
-                        })
-                    }}</InfoRow>
-                    <InfoRow v-if="cluster.capacity_bytes" :label="t('storage.capacity')">
-                        <CapacityBar
-                            :capacity="cluster.capacity_bytes"
-                            :used="cluster.capacity_bytes - cluster.free_bytes"
-                            :allocated="cluster.allocated_bytes"
-                        />
-                    </InfoRow>
-                    <InfoRow v-if="cluster.description" :label="t('dashboard.table.description')">{{
-                        cluster.description
-                    }}</InfoRow>
-                    <InfoRow :label="t('dashboard.table.createdAt')">{{ formatDateTime(cluster.created_at) }}</InfoRow>
+            <div v-if="activeTab === 'overview'" class="overview-grid">
+                <div class="info-card card">
+                    <div class="info-rows">
+                        <InfoRow :label="t('storage.cluster.kind')">{{ storageKindText(t, te, cluster.kind) }}</InfoRow>
+                        <InfoRow :label="t('storage.cluster.mode')">{{ modeText(cluster.mode) }}</InfoRow>
+                        <InfoRow v-if="cluster.layout" :label="t('storage.clusterDetail.layout')">{{
+                            cluster.layout
+                        }}</InfoRow>
+                        <InfoRow v-if="cluster.version" :label="t('storage.clusterDetail.version')">{{
+                            cluster.version
+                        }}</InfoRow>
+                        <InfoRow v-if="cluster.cluster_ref" :label="t('storage.clusterDetail.clusterRef')">
+                            <span class="mono-cell">{{ cluster.cluster_ref }}</span>
+                        </InfoRow>
+                        <InfoRow :label="t('storage.status')">
+                            <StatusBadge :status="cluster.status" :label="clusterStatusText(t, te, cluster.status)" />
+                        </InfoRow>
+                        <InfoRow :label="t('storage.cluster.health')">
+                            <StatusBadge :status="cluster.health" :label="clusterHealthText(t, te, cluster.health)" />
+                        </InfoRow>
+                        <InfoRow :label="t('storage.clusterDetail.counts')">{{
+                            t('storage.clusterDetail.countsValue', {
+                                nodes: cluster.node_count,
+                                disks: cluster.disk_count,
+                                pools: cluster.pool_count,
+                            })
+                        }}</InfoRow>
+                        <InfoRow v-if="cluster.capacity_bytes" :label="t('storage.capacity')">
+                            <CapacityBar
+                                :capacity="cluster.capacity_bytes"
+                                :used="cluster.capacity_bytes - cluster.free_bytes"
+                                :allocated="cluster.allocated_bytes"
+                            />
+                        </InfoRow>
+                        <InfoRow v-if="cluster.description" :label="t('dashboard.table.description')">{{
+                            cluster.description
+                        }}</InfoRow>
+                        <InfoRow :label="t('dashboard.table.createdAt')">{{
+                            formatDateTime(cluster.created_at)
+                        }}</InfoRow>
+                    </div>
+                </div>
+
+                <!-- Health report and the alarms it raised (shared-storage-design.md §14) -->
+                <div v-if="healthInfo" class="info-card card">
+                    <h3 class="card-section-title">{{ t('storage.clusterDetail.health.title') }}</h3>
+                    <div class="info-rows">
+                        <InfoRow :label="t('storage.clusterDetail.health.checkedAt')">
+                            {{
+                                healthInfo.checked_at
+                                    ? formatDateTime(healthInfo.checked_at)
+                                    : t('storage.clusterDetail.health.never')
+                            }}
+                            <span v-if="healthInfo.hypervisor?.name" class="sub-inline">
+                                ·
+                                {{ t('storage.clusterDetail.health.checkedBy', { host: healthInfo.hypervisor.name }) }}
+                            </span>
+                        </InfoRow>
+                        <InfoRow v-if="healthInfo.summary" :label="t('storage.clusterDetail.health.summary')">{{
+                            healthInfo.summary
+                        }}</InfoRow>
+                        <InfoRow v-if="healthInfo.error" :label="t('storage.clusterDetail.health.error')">
+                            <span class="text-error">{{ healthInfo.error }}</span>
+                        </InfoRow>
+                        <InfoRow v-if="healthInfo.flags?.length" :label="t('storage.clusterDetail.health.flags')">
+                            <span v-for="f in healthInfo.flags" :key="f" class="badge badge-warning flag-badge">{{
+                                flagText(f)
+                            }}</span>
+                        </InfoRow>
+                        <InfoRow v-if="healthInfo.capacity_bytes" :label="t('storage.clusterDetail.health.capacity')">
+                            {{
+                                t('storage.clusterDetail.health.capacityValue', {
+                                    free: formatBytes(healthInfo.free_bytes || 0),
+                                    total: formatBytes(healthInfo.capacity_bytes),
+                                })
+                            }}
+                        </InfoRow>
+                        <InfoRow v-if="healthInfo.messages?.length" :label="t('storage.clusterDetail.health.messages')">
+                            <ul class="health-messages">
+                                <li v-for="(m, i) in healthInfo.messages" :key="i">{{ m }}</li>
+                            </ul>
+                        </InfoRow>
+                        <InfoRow :label="t('storage.clusterDetail.health.alarms')">
+                            <span v-if="!healthInfo.alarms.length" class="text-secondary">{{
+                                t('storage.clusterDetail.health.noAlarms')
+                            }}</span>
+                            <ul v-else class="alarm-list">
+                                <li v-for="a in healthInfo.alarms" :key="a.name + a.since + a.summary">
+                                    <StatusBadge
+                                        :variant="a.severity === 'critical' ? 'error' : 'warning'"
+                                        :label="severityText(a.severity)"
+                                    />
+                                    <span class="alarm-name">{{ alarmNameText(a.name) }}</span>
+                                    <span class="alarm-summary">{{ a.summary }}</span>
+                                    <span class="sub-inline">{{
+                                        t('storage.clusterDetail.health.since', { time: formatDateTime(a.since) })
+                                    }}</span>
+                                </li>
+                            </ul>
+                        </InfoRow>
+                    </div>
+                </div>
+
+                <!-- Hosts that join as clients on their own (shared-storage-design.md §6.3) -->
+                <div v-if="autoJoinOffered" class="info-card card">
+                    <div class="card-head">
+                        <h3 class="card-section-title">{{ t('storage.clusterDetail.autoJoinTitle') }}</h3>
+                        <button class="btn btn-secondary btn-sm" @click="showAutoJoin = true">
+                            <Settings2 :size="14" /> {{ t('storage.clusterDetail.autoJoinEdit') }}
+                        </button>
+                    </div>
+                    <div class="info-rows">
+                        <InfoRow :label="t('storage.clusterDetail.autoJoinZones')">
+                            <span v-if="!autoJoin?.zones.length" class="text-secondary">{{
+                                t('storage.clusterDetail.autoJoinOff')
+                            }}</span>
+                            <span v-else>{{ autoJoin.zones.map((z) => z.name).join(', ') }}</span>
+                        </InfoRow>
+                        <InfoRow v-if="autoJoin?.pending.length" :label="t('storage.clusterDetail.autoJoinHosts')">
+                            <ul class="alarm-list">
+                                <li v-for="p in autoJoin.pending" :key="p.hypervisor.id">
+                                    <StatusBadge :variant="pendingVariant(p.status)" :label="pendingText(p.status)" />
+                                    <span class="alarm-name">{{ p.hypervisor.name || '-' }}</span>
+                                    <router-link
+                                        v-if="p.task"
+                                        class="resource-link sub-inline"
+                                        :to="{ name: 'storage-task-detail', params: { id: p.task } }"
+                                        >{{ t('storage.cluster.task') }}</router-link
+                                    >
+                                    <span v-if="p.reason" class="alarm-summary">{{ p.reason }}</span>
+                                </li>
+                            </ul>
+                            <button
+                                v-if="autoJoin.pending.some((p) => p.status === 'failed')"
+                                class="btn btn-ghost btn-xs retry-join"
+                                :disabled="autoJoinBusy"
+                                @click="retryAutoJoin"
+                            >
+                                {{ t('storage.clusterDetail.autoJoinRetry') }}
+                            </button>
+                        </InfoRow>
+                    </div>
                 </div>
             </div>
 
@@ -525,11 +689,22 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
                     <StatusBadge :variant="nodeVariant(n.status)" :label="nodeStatusText(n.status)" />
                     <div v-if="n.reason" class="sub-line" :title="n.reason">{{ n.reason }}</div>
                 </template>
-                <template #cell-state="{ row: n }">{{ n.state || '-' }}</template>
+                <template #cell-state="{ row: n }">
+                    <span :title="checkedTitle(n.checked_at)">{{ n.state || '-' }}</span>
+                </template>
                 <template #cell-group="{ row: n }">{{ attr(n.attrs, 'failure_group') }}</template>
                 <template #cell-mem="{ row: n }">{{ n.reserved_mem_mb ? `${n.reserved_mem_mb} MiB` : '-' }}</template>
                 <template #cell-actions="{ row: n }">
                     <div class="row-actions">
+                        <button
+                            v-if="caps?.change_roles && managed && n.status === 'active'"
+                            class="icon-btn-table"
+                            :title="t('storage.clusterDetail.changeRoles')"
+                            :disabled="!canChange"
+                            @click="changingNode = n"
+                        >
+                            <UserCog :size="16" />
+                        </button>
                         <button
                             v-if="caps?.remove_node && managed"
                             class="icon-btn-table icon-danger"
@@ -561,12 +736,28 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
                 <template #cell-usage="{ row: d }"
                     >{{ attr(d.attrs, 'usage') }} · {{ attr(d.attrs, 'gpfs_pool') }}</template
                 >
+                <template #cell-state="{ row: d }">
+                    <span
+                        :title="checkedTitle(d.checked_at)"
+                        :class="{ 'state-off': d.state && !diskStateUp(d.state) }"
+                        >{{ d.state || '-' }}</span
+                    >
+                </template>
                 <template #cell-status="{ row: d }">
                     <StatusBadge :variant="diskVariant(d.status)" :label="diskStatusText(d.status)" />
                     <div v-if="d.reason" class="sub-line" :title="d.reason">{{ d.reason }}</div>
                 </template>
                 <template #cell-actions="{ row: d }">
                     <div class="row-actions">
+                        <button
+                            v-if="caps?.replace_disk && replaceable(d)"
+                            class="icon-btn-table"
+                            :title="t('storage.clusterDetail.replaceDisk')"
+                            :disabled="!canChange"
+                            @click="replacingDisk = d"
+                        >
+                            <Replace :size="16" />
+                        </button>
                         <button
                             v-if="caps?.remove_disk"
                             class="icon-btn-table icon-danger"
@@ -690,6 +881,9 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
                 </DataTable>
             </template>
 
+            <!-- Monitoring -->
+            <StorageClusterMetrics v-else-if="activeTab === 'monitoring'" :cluster-id="cluster.id" />
+
             <!-- Tasks -->
             <DataTable v-else-if="activeTab === 'tasks'" :columns="taskColumns" :rows="tasks" row-key="id">
                 <template #empty>
@@ -721,6 +915,27 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
             :backend="backend"
             @close="expandMode = null"
             @created="expanded"
+        />
+        <StorageReplaceDiskModal
+            :show="replacingDisk !== null"
+            :cluster="cluster"
+            :disk="replacingDisk"
+            @close="replacingDisk = null"
+            @created="changeStarted"
+        />
+        <StorageChangeRolesModal
+            :show="changingNode !== null"
+            :cluster="cluster"
+            :node="changingNode"
+            :backend="backend"
+            @close="changingNode = null"
+            @created="changeStarted"
+        />
+        <StorageAutoJoinModal
+            :show="showAutoJoin"
+            :cluster="cluster"
+            @close="showAutoJoin = false"
+            @saved="autoJoinSaved"
         />
         <SharedPoolModal
             :show="showPoolCreate"
@@ -914,6 +1129,85 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.card-section-title {
+    margin: 0 0 var(--spacing-4) 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-bottom: var(--spacing-3);
+    border-bottom: 1px solid var(--border-light);
+}
+
+.overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+    gap: var(--spacing-4);
+    align-items: start;
+}
+
+.sub-inline {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+.flag-badge + .flag-badge {
+    margin-left: 6px;
+}
+
+.health-messages,
+.alarm-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.health-messages li {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    word-break: break-word;
+}
+
+.alarm-list li {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-2);
+}
+
+.card-head .card-section-title {
+    flex: 1;
+}
+
+.retry-join {
+    margin-top: 6px;
+}
+
+.state-off {
+    color: var(--warning-dark);
+    font-weight: var(--font-weight-semibold);
+}
+
+.alarm-name {
+    font-weight: var(--font-weight-semibold);
+}
+
+.alarm-summary {
+    color: var(--text-secondary);
+    word-break: break-word;
 }
 
 .mono-cell {

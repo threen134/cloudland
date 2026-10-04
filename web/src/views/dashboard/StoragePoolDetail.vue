@@ -13,6 +13,7 @@ import InfoRow from '../../components/base/InfoRow.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import CapacityBar from '../../components/storage/CapacityBar.vue'
+import StoragePoolReconcile from '../../components/storage/StoragePoolReconcile.vue'
 import { formatBytes } from '../../utils/format'
 import type { StatusVariant } from '../../utils/status'
 
@@ -220,6 +221,8 @@ const abandon = async () => {
                     </tbody>
                 </table>
             </div>
+
+            <StoragePoolReconcile v-if="pool.shared && pool.cluster?.id" :pool-id="pool.id" />
         </template>
 
         <BaseModal
@@ -256,6 +259,17 @@ const abandon = async () => {
 </template>
 
 <style scoped>
+.card-section-title {
+    margin: 0 0 var(--spacing-4) 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding-bottom: var(--spacing-3);
+    border-bottom: 1px solid var(--border-light);
+}
+
 .info-card {
     margin-bottom: var(--spacing-5);
 }

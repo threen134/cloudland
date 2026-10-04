@@ -226,7 +226,38 @@ export interface PairWarning {
     wasted_bytes: number
 }
 
+/** An object of a shared pool CloudLand has no record of */
+export interface StorageOrphan {
+    name: string
+    size: number
+    /** Unix seconds; 0 for RBD images, which keep no time */
+    mtime?: number
+    /** volume, deleted_volume, image, nvram, temporary, other */
+    kind: string
+}
+
+/** The last orphan report of a shared pool; status empty when never asked */
+export interface StoragePoolReconcile {
+    status: '' | 'running' | 'done' | 'error'
+    hypervisor?: { id?: string; name?: string }
+    error?: string
+    objects: number
+    truncated: boolean
+    requested_at?: string
+    checked_at?: string
+    orphans: StorageOrphan[]
+}
+
 export const storagePoolsApi = {
+    /** Ask a host for what is in a shared pool; the report comes with reconcileReport */
+    reconcile: async (id: string): Promise<StoragePoolReconcile> => {
+        const response = await client.post<StoragePoolReconcile>(`/storage_pools/${id}/reconcile`)
+        return response.data
+    },
+    reconcileReport: async (id: string): Promise<StoragePoolReconcile> => {
+        const response = await client.get<StoragePoolReconcile>(`/storage_pools/${id}/reconcile`)
+        return response.data
+    },
     list: async (params?: { offset?: number; limit?: number; query?: string }): Promise<StoragePoolListResponse> => {
         const response = await client.get<StoragePoolListResponse>('/storage_pools', { params })
         return response.data

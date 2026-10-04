@@ -48,7 +48,9 @@ export interface StorageCapabilities {
     add_disks: boolean
     remove_disk: boolean
     rebalance: boolean
-    clients: boolean
+    /** A failed disk is swapped for a new disk of the same host */
+    replace_disk: boolean
+    change_roles: boolean
 }
 
 export interface StorageClusterNode {
@@ -59,6 +61,8 @@ export interface StorageClusterNode {
     status: string
     state: string
     reason?: string
+    /** When the health watchdog last saw the host */
+    checked_at?: string
     reserved_mem_mb: number
 }
 
@@ -76,6 +80,49 @@ export interface StorageClusterDisk {
     attrs?: Record<string, unknown>
     status: string
     reason?: string
+    /** What the storage software reports for the disk (GPFS availability, Ceph up / down) */
+    state?: string
+    checked_at?: string
+}
+
+/** An alarm the health watchdog raised for the cluster and that still fires */
+export interface StorageClusterAlarm {
+    name: string
+    severity: 'warning' | 'critical' | string
+    summary: string
+    since: string
+}
+
+/** A host of the auto join zones on its way into the cluster */
+export interface StoragePendingClient {
+    hypervisor: StorageRef
+    /** pending: waits for the cluster to be free; joining: its task runs; failed: left alone, see reason */
+    status: 'pending' | 'joining' | 'failed' | string
+    reason?: string
+    task?: string
+    since: string
+}
+
+/** The zones whose hosts join as clients on their own, and the hosts on their way in (detail only) */
+export interface StorageAutoJoin {
+    zones: StorageRef[]
+    pending: StoragePendingClient[]
+}
+
+/** The last health report of a cluster (detail only) */
+export interface StorageClusterHealth {
+    checked_at?: string
+    summary?: string
+    /** Why the last check could not be done */
+    error?: string
+    messages?: string[]
+    flags?: string[]
+    /** Capacity of the whole cluster as its software reports it (Ceph) */
+    capacity_bytes?: number
+    free_bytes?: number
+    /** The host that checked */
+    hypervisor?: StorageRef
+    alarms: StorageClusterAlarm[]
 }
 
 export interface StorageCluster {
@@ -100,6 +147,8 @@ export interface StorageCluster {
     disks?: StorageClusterDisk[]
     /** Detail only */
     filesystems?: StorageFilesystem[]
+    health_info?: StorageClusterHealth
+    auto_join?: StorageAutoJoin
     pools?: StorageClusterPool[]
     node_count: number
     disk_count: number
@@ -156,6 +205,19 @@ export interface StorageRun {
     result?: unknown
     started_at: string
     updated_at: string
+}
+
+/** The whole log of a run, fetched from its host on request */
+export interface StorageRunLog {
+    /** requested: the host was asked, ask again in a moment; ready: content holds it (with a message: the host is
+     * offline and this is the copy fetched at updated_at); error: see message */
+    status: 'requested' | 'ready' | 'error'
+    message?: string
+    /** Size of the log on the host; larger than the content when only its end (16 MiB) was kept */
+    size: number
+    truncated: boolean
+    content: string
+    updated_at?: string
 }
 
 export interface StorageStep {
@@ -248,7 +310,38 @@ export interface ListParams {
     limit?: number
 }
 
+/** One curve of a chart, aligned with StorageMetricsResponse.timestamps; null is no sample */
+export interface StorageMetricSeries {
+    /** read, write, used, total, active, mounted, up, in, pool */
+    key: string
+    /** The file system or the pool when the chart has one curve per file system or pool */
+    label?: string
+    values: Array<number | null>
+}
+
+export interface StorageMetricChart {
+    /** capacity, throughput, iops, pools, nodes, osds */
+    key: string
+    unit: 'bytes' | 'bytes_per_second' | 'ops_per_second' | 'percent' | 'count' | string
+    series: StorageMetricSeries[]
+}
+
+export interface StorageMetricsResponse {
+    start: number
+    end: number
+    step: string
+    timestamps: number[]
+    charts: StorageMetricChart[]
+}
+
 export const storageClustersApi = {
+    metrics: async (
+        id: string,
+        params: { start: number; end: number; step: string }
+    ): Promise<StorageMetricsResponse> => {
+        const response = await client.get<StorageMetricsResponse>(`/storage_clusters/${id}/metrics`, { params })
+        return response.data
+    },
     backends: async (): Promise<StorageBackend[]> => {
         const response = await client.get<{ storage_backends: StorageBackend[] }>('/storage_backends')
         return response.data.storage_backends || []
@@ -304,6 +397,27 @@ export const storageClustersApi = {
         const response = await client.delete<StorageTask>(`/storage_clusters/${id}/disks/${diskId}`)
         return response.data
     },
+    /** Description and the zones whose hosts join as clients on their own; retry_auto_join forgets the failed ones */
+    update: async (
+        id: string,
+        payload: { description?: string; auto_join_zones?: string[]; retry_auto_join?: boolean }
+    ): Promise<StorageCluster> => {
+        const response = await client.patch<StorageCluster>(`/storage_clusters/${id}`, payload)
+        return response.data
+    },
+    /** A failed disk swapped for a new disk (a scanned disk id) of the same host */
+    replaceDisk: async (
+        id: string,
+        diskId: string,
+        payload: { disk_id: string; media?: string; wipe?: boolean }
+    ): Promise<StorageTask> => {
+        const response = await client.post<StorageTask>(`/storage_clusters/${id}/disks/${diskId}/replace`, payload)
+        return response.data
+    },
+    changeRoles: async (id: string, hypervisor: string, roles: StorageRole[]): Promise<StorageTask> => {
+        const response = await client.patch<StorageTask>(`/storage_clusters/${id}/nodes/${hypervisor}`, { roles })
+        return response.data
+    },
     rebalance: async (id: string, filesystem = ''): Promise<StorageTask> => {
         const response = await client.post<StorageTask>(`/storage_clusters/${id}/rebalance`, { filesystem })
         return response.data
@@ -311,6 +425,10 @@ export const storageClustersApi = {
     /** cluster_id: a cluster UUID, '0' for the tasks of no cluster (precheck, selftest), omitted for all */
     listTasks: async (params: ListParams & { cluster_id?: string; status?: StorageTaskStatus } = {}) => {
         const response = await client.get<{ total: number; tasks: StorageTask[] }>('/storage_tasks', { params })
+        return response.data
+    },
+    runLog: async (taskId: string, runId: number): Promise<StorageRunLog> => {
+        const response = await client.get<StorageRunLog>(`/storage_tasks/${taskId}/runs/${runId}/log`)
         return response.data
     },
     getTask: async (id: string): Promise<StorageTask> => {
