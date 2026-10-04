@@ -1100,19 +1100,23 @@ Ceph 写满的后果更重，所以 Ceph 池默认 `over_ratio=1`（不超分）
 
 导入的做法（节点上）：
 
-- **GPFS**：本地缓存镜像（`ensure_image_cached`）→ `qemu-img convert -O qcow2` 到 `tmp/image-<镜像ID>-<作业>.qcow2` → `clone_mode=clone` 时 `mmclone snap`（变成只读的克隆父文件）→ `mv` 到正式路径（目标已存在则删掉自己的临时文件、视为成功）
-- **Ceph**：本地缓存镜像 → `qemu-img convert -O raw` 到 `rbd:<池>/tmp-image-<镜像ID>-<作业>` → `rbd snap create ...@base` → `rbd snap protect`（克隆格式 v2 可用时不需要）→ `rbd rename` 到正式名（目标已存在则删掉自己的临时镜像）
-- 作业中断留下的临时文件 / 临时 RBD 镜像由下一次导入（同一池）先清理：`tmp-image-*` 中没有对应进行中作业的一律删除（带受保护快照的先 `unprotect`、`snap purge`）
+- **GPFS**：本地缓存镜像（`ensure_image_cached`）→ `qemu-img convert -O qcow2 -o cluster_size=2M` 到 `tmp/image-<镜像ID>-<前缀>.<节点>-<进程>.import` → `mmclone snap`（变成只读的克隆父文件；**不论池的 `clone_mode` 都做**，之后把池改成克隆方式也能直接用，复制方式从只读父文件整盘复制同样可以）→ 拿到这个副本的锁目录 `tmp/image-<镜像ID>-<前缀>.place`（`mkdir` 是原子的，GPFS 上跨节点也是）后先查再 `mv` 到正式路径，目标已存在则删掉自己的临时文件、视为成功；锁目录超过 10 分钟算作业死掉留下的、直接清掉。**不用 `ln` 硬链接**：GPFS 拒绝给克隆父文件建硬链接（`Operation not permitted`，2026-10-03 在 `gp1` 上实测）
+- **Ceph**：本地缓存镜像 → `qemu-img convert -W -m 16 -O raw` 到 `rbd:<池>/tmp-image-<镜像ID>-<前缀>-<节点>-<进程>`（乱序写、16 个协程：按顺序写时每块都要等三副本写完，测试集群上慢 4.6 倍） → `rbd snap create ...@base` → `rbd rename` 到正式名（`rbd rename` 遇到同名直接失败；失败时正式名已在就删掉自己的临时镜像、视为成功）。**快照不保护**，克隆用格式 v2（V13：24.04 的 19.2 上可用），所以删副本前要先数子镜像（`rbd children`），有就拒绝——格式 v2 下删有子镜像的快照只会把它移进回收站
+- 作业中断留下的临时文件 / 临时 RBD 镜像由下一次导入同一副本时先清理：一小时没修改的一律删除（clapi 同一副本同时只发一个导入，超时重发要等 3 小时）
 
-可选预热：`PATCH /images/:id` 带 `storage_pools: [...]`，提前导入。
+节点脚本：`import_image_shared.sh`（同步检查后交给 `async_job/import_image_shared.sh`）、`delete_image_shared.sh`，驱动函数 `drv_base_check` / `drv_base_exists` / `drv_base_missing` / `drv_import_image` / `drv_import_cleanup` / `drv_base_delete`（`drivers/file.sh`、`gpfs.sh`、`ceph_rbd.sh`）。导入超过 3 小时没回报就判失败，等着它的命令一并失败，下次使用重新导入（节点上已经有副本时直接回 `synced`）；删除没回报 30 分钟后重发。两者都由存储看护（`maintainImageStorages`）做。
 
-**删除**：删除镜像时，对每个共享池里的基础副本统计引用数（`volumes.base_image_storage_id` 指向它且没删的卷）。为 0 就由 `pickPoolHost` 删除并删记录；不为 0 就置 `deleting`，之后删除或重装云服务器时再检查，归零再删。GPFS 是否允许删除还有子克隆的父文件不确定，Ceph 明确不允许（要先 `rbd flatten` 子镜像），引用计数对两者都适用。删池时引用数为 0 的副本随池删除（§7.4、§8.3）。
+~~可选预热：`PATCH /images/:id` 带 `storage_pools: [...]`，提前导入。~~ S4 没做。
+
+**删除**：删除镜像时，对每个共享池里的基础副本统计引用数（`volumes.base_image_storage_id` 指向它且没删的卷）。为 0 就由 `pickPoolHost` 删除并删记录；不为 0 就置 `deleting`，之后删除或重装云服务器时再检查，归零再删（看护每次看到还有克隆就把下次检查推后，`sent_at` 刷新，不是每分钟都查；看护重发前在行锁下再核对一次 `sent_at`，别的 clapi 刚处理过的跳过）。**副本还在导入（`syncing`、3 小时内）时拒绝删镜像**（`ErrImageInUse`）：删了的话导入完成时副本会放到位、却没有记录，成了孤儿；用这个镜像的云服务器本来就会挡住删除，所以不会有命令在等这个副本。
+
+**只有确定不在才算不在**：`drv_base_delete` 遇到存储不应答（GPFS 上 `stat` 超时、Ceph 命令超时或其他错误）一律失败、保留记录，只有文件不存在 / `rbd` 报 `No such file or directory` 才当作已删；`drv_base_missing` 同理。建系统盘时副本确定不在池里（被手工删掉、从备份恢复），节点回 `create_boot_shared '<卷>' 'nocopy' '<副本 ID>' '<原因>'`，clapi 把这个副本从 `synced` 改成 `error`，下一台云服务器重新导入，不会一直按「已同步」去克隆一个不存在的文件。GPFS 是否允许删除还有子克隆的父文件不确定，Ceph 明确不允许（要先 `rbd flatten` 子镜像），引用计数对两者都适用。删池时引用数为 0 的副本随池删除（§7.4、§8.3）。
 
 ### 9.7 创建云服务器（系统盘在共享池）
 
 clapi（`services/instance.go` 的 `Create`）：
 
-1. 确定系统盘的池（请求里的 `storage_pool` 已有，没给就用默认池），池必须 `active` 并通过准入（§9.5）
+1. 确定系统盘的池（请求里的 `storage_pool` 已有，没给就用默认池），池必须 `active` 并通过准入（§9.5）。**没给池、默认池是共享池，而这个可用区（指定了宿主机时是这台机器）当前没有能用它的节点时，系统盘退回内置池**（`StoragePoolAdmin.ResolveBoot`）：默认池只是偏好，不是拒绝创建的理由；明确指定的池照指定的用，用不了就报错说明原因
 2. 候选节点按 §9.5 过滤
 3. 系统盘记录：`storage_pool_id`、路径（§9.1）、状态 `pending`
 4. 基础副本：`image_storages(镜像, 池)` 不是 `synced` 时先按 §9.6 导入，导入完成后再继续下面一步（`clone_mode=copy` 的池也一样，节点从池内的基础副本整盘复制，不再各自下载）
@@ -1153,16 +1157,17 @@ clapi（`services/instance.go` 的 `Create`）：
 }
 ```
 
-本地系统盘同样用这个结构（`driver=local`，没有 `image_base`）。`existing=true` 只用于宕机恢复（§11.3）：跳过克隆和扩容，直接用已有的盘。
+~~本地系统盘同样用这个结构（`driver=local`，没有 `image_base`）。~~ 实现里本地系统盘仍走原来的位置参数，只有共享池的系统盘带 `boot_disk`（S4）。`existing=true` 只用于宕机恢复（§11.3）：跳过克隆和扩容，直接用已有的盘（S6 再做）。
 
-节点（`launch_vm.sh`）按驱动：可用性检查（失败就回调 `error`，实例进入 `error`）→ **目标已存在就失败**（`qemu-img convert` 会静默覆盖已存在的文件，不能让它发生；`existing=true` 时反过来要求目标存在）→ 克隆或复制 → 校验镜像虚拟大小不超过规格后扩到规格大小 → NVRAM → 定义并启动域 → 回调。回调 `create_volume_shared` 带上 `{"image_storage_id": 7, "cloned": true}`，clapi 据此写 `base_image_storage_id`（实际整盘复制了就是 0）。**克隆或复制开始之后**任何一步失败，删掉这次生成的系统盘（路径唯一，不会误删）；`existing=true` 时绝不删盘。
+节点（`launch_vm.sh`）按驱动：可用性检查（失败就回调 `error`，实例进入 `error`）→ **目标已存在就失败**（`qemu-img convert` 会静默覆盖已存在的文件，不能让它发生；`existing=true` 时反过来要求目标存在）→ 克隆或复制 → 校验镜像虚拟大小不超过规格后扩到规格大小 → NVRAM → 定义并启动域 → 回调。回调 `create_boot_shared '<卷 ID>' 'attached|error|nocopy' '<克隆来源的副本 ID，整盘复制为 0；nocopy 时是找不到的副本>' '<原因>'`（实现里是独立的回调，不与数据卷的 `create_volume_shared` 共用），clapi 据此写 `base_image_storage_id`。磁盘元素由驱动的 `drv_disk_xml` 生成，换掉模板里的文件盘、保留它的 PCI 地址（`storage_lib.sh` 的 `xml_replace_disk`，只改这一个元素，其余逐字节不变）。**克隆或复制开始之后**任何一步失败，删掉这次生成的系统盘（路径唯一，不会误删）；`existing=true` 时绝不删盘。
 
 ### 9.8 重装、救援、捕获、删除云服务器
 
-- **删除云服务器**：`clear_vm.sh` 从 stdin 接收磁盘清单，**只删本地盘**和本地 NVRAM。clapi 收到 `clear_vm` 回调、确认域已经销毁后，再用 `pickPoolHost` 删除共享系统盘，GPFS 池里的 NVRAM（`<池>/nvram/inst-<ID>_VARS.fd`）一并删除，然后检查基础副本的引用数（§9.6）。云服务器所在节点离线时 `clear_vm` 没法执行，共享系统盘先保留，直到节点恢复并清理完，或者按 §11 确认隔离
-- **重装**：取消域定义后，先删旧的共享系统盘，再按 §9.7 从新镜像的基础副本克隆到同一路径；clapi 更新 `base_image_storage_id` 并检查旧基础副本的引用数
-- **救援**：救援盘永远在本地，原系统盘按它自己的磁盘 XML 挂进救援虚拟机
-- **捕获镜像**：源磁盘由 clapi 下发（GPFS 是文件路径，Ceph 是 `rbd:` 地址），临时文件放 `$cache_tmp_dir`
+- **删除云服务器**：删除请求不删共享系统盘的记录，而是置 `deleting`，`clear_vm.sh` 收到的系统盘参数是 `-`（不碰它）。clapi 收到 `clear_vm` 回调（域已经销毁）后，在同一个事务里用 `pickPoolHost` 组好 `delete_volume_shared.sh`（GPFS 池带上 `nvram`，脚本只删 `<池>/nvram/inst-<ID>_VARS.fd` 这种名字的文件），提交后下发；`clear_volume` 回来删记录、检查基础副本的引用数（§9.6）。云服务器所在节点离线时 `clear_vm` 没法执行，共享系统盘先保留。删除失败的系统盘置 `delete_failed`（不像数据卷那样回到 `available`；按卷再删时删除命令发不出去也一样留在 `delete_failed`），云服务器已经不在时可以按卷再删一次（`VolumeAdmin.Delete` 放行「实例已删的系统盘」）。`clear_vm` 回调来得比看护判超时晚（节点上命令排队很久）时，已经是 `delete_failed` 的系统盘同样在这时删掉（先改回 `deleting`，`clear_volume` 只认 `deleting`）。等着基础副本的启动命令随云服务器一起删掉
+- **重装**：先从新镜像的基础副本做一块临时盘（`drv_temp_of`：GPFS `tmp/volume-<ID>.reinstall.disk`，RBD `volume-<ID>-reinstall`），销毁域（`--keep-nvram`）之后删旧盘、把临时盘改名到原来的位置；删旧盘失败就按原定义把云服务器拉回来并报错，旧盘始终不先删（比原设想的「先删再克隆到同一路径」稳妥）。clapi 更新 `base_image_storage_id` 并检查旧基础副本的引用数。新镜像在池里还没有副本时，重装命令同样排在导入后面；导入失败时云服务器置 `error`（它的记录已经写上新镜像、规格、密码，只能再重装一次），系统盘没动、容量记录改回原值；导入好了但重装命令发不出去时同样处理。**云服务器在 `reinstalling` 时拒绝再次重装、救援和调整规格**：等副本的重装会在之后执行，中间插进来的操作会被它覆盖（原来重装、救援只挡 `rescuing`，调整规格只挡 `resizing`）
+- **救援**：救援盘永远在本地，原系统盘按驱动的磁盘 XML（`boot_disk` 放在元数据里，位置参数给 `-`）挂进救援虚拟机；救援时挂的数据盘按 `<source>` 的 `file` 或 `name` 认，RBD 数据盘也能挂进去（原来只认文件盘）
+- **捕获镜像**：源磁盘由 clapi 下发（`BootDiskSource`：GPFS 是文件路径，Ceph 是 `rbd:<池>/<镜像>:id=<用户>:conf=<配置>`），`async_job/capture_image.sh` 对 `rbd:` 按 raw 读，临时文件放 `$cache_tmp_dir`
+- **扩容**：共享池里的系统盘没有 `disk-<ID>.xml`，在线扩容按域定义里 `source` 是这块盘的那个设备找（`resize_volume_shared.sh`）；clapi 同时改 `instances.disk`（本地池原来就改，共享分支漏了；扩容失败的回调与命令发不出去时都改回原值）
 - **调整规格**：只改 CPU 和内存，不涉及磁盘
 
 ### 9.9 节点开机
@@ -1654,7 +1659,87 @@ GPFS 优先：S2 先于 S3 开工。S2 的任何真实验证都要 24.04 的节�
 - 删除镜像时如果还有云服务器在用，基础副本保留，最后一台删除后被清理
 - 重装、救援、捕获镜像、删除云服务器在两种驱动上都正常；删除云服务器时节点离线，共享系统盘保留到节点恢复
 
-### S5：运维完善
+**S4 实施记录**（2026-10-03，未提交；PostgreSQL、WSL 沙箱与本机界面测试都通过，同日按用户要求叠加到 work-x 做完真实节点验收，见本节最后「S4 真实节点验收」；用例 `test-items/TC-22-共享系统盘.md`）：
+
+- **代码**：
+  - clapi：新表 `image_storages`（基础副本，`(image_id, storage_pool_id)` 在未删的行里唯一）与 `image_storage_waiters`（等副本的创建 / 重装命令），`volumes.base_image_storage_id`；`services/image_storage.go`（准备副本、导入与删除命令、回调、等待队列、引用计数、看护）；`PoolDriver.ImageBaseRef`（GPFS `images/image-<ID>-<前缀>.qcow2`，RBD `image-<ID>-<前缀>`）；回调 `rpcs/image_storage.go`（`image_storage_status`、`create_boot_shared`）
+  - 创建（`InstanceAdmin.Create`）：去掉「共享池不能放系统盘」；共享池按池准入（`admitShared`），候选节点 `sharedPoolHostsOfZone`（可用区里池就绪的在线节点），`select=` 只核 CPU 与内存；放置组同样只在这些节点里选（`startCreationPlacement` 的共享分支）；元数据带 `boot_disk`；副本没好时命令进等待队列、实例原因写在等哪个镜像，导入在提交之后下发
+  - 重装、救援、捕获、删除、删镜像、删池、迁移的改动见 §9.6–§9.8、§10（已按实现改写）；默认池是共享池时系统盘放在它上面（代码审查后改为：可用区里没有能用它的节点时退回内置池，`ResolveBoot`，见本节最后）
+  - 节点：驱动函数（§9.6）与 `drv_clone` / `drv_temp_of` / `drv_drop` / `drv_rename` / `drv_nvram_check`；`storage_lib.sh` 的 `shared_boot_load`、`shared_boot_make`、`xml_replace_disk`、`nvram_undefine_flag`；`launch_vm.sh`、`reinstall_vm.sh` 的共享分支；`rescue_vm.sh`、`async_job/capture_image.sh`、`resize_volume_shared.sh`、`delete_volume_shared.sh`；迁移脚本的 NVRAM（`source_migration.sh` 不再把 GPFS 池里的 NVRAM 复制到它自己身上——原来会截断它，RBD 云服务器的 NVRAM 改成复制到目标节点的 `$image_dir`，原来拼成了 `/nvram/...`；`clear_target_migration.sh`、`complete_migration.sh` 取消定义时保留共享池里的 NVRAM）；`ceph_pool.sh` 删池 / 取消登记前先删副本，`gpfs_pool.sh` 取消登记时删副本
+  - 界面：创建云服务器的「系统盘存储池」列出启用的共享池（带「共享 · GPFS / Ceph」），选中共享池时说明首次导入；迁移弹窗在磁盘全在共享池时说明只迁内存
+- **与上文不同的地方**（上文已按实现改写）：
+  1. 回调是独立的 `create_boot_shared`（位置参数），不与数据卷的 `create_volume_shared` 共用 JSON
+  2. 重装先做临时盘、域停下后再删旧盘改名，不是「先删旧盘再克隆到同一路径」；删旧盘失败时把云服务器按原定义拉回来
+  3. GPFS 副本不论 `clone_mode` 一律 `mmclone snap`；RBD 快照不保护（克隆格式 v2），删副本前数子镜像
+  4. 删除云服务器时 clapi 不把共享系统盘交给 `clear_vm.sh`，而是保留记录到 `clear_vm` 回调再删；删除失败的共享系统盘是 `delete_failed`，云服务器已删时可以按卷再删
+  5. 等副本的重装在导入失败时让云服务器进 `error`（记录里已经是新镜像、新规格、新密码，回到原状态会显示错的东西），系统盘没动、容量记录改回原值
+  6. 本地系统盘不改用 `boot_disk` 结构，仍走位置参数
+  7. 救援时原系统盘的磁盘 XML 由驱动生成（元数据里的 `boot_disk`），不从原域定义里抠
+- **没做**：预热（`PATCH /images/:id` 带 `storage_pools`）；`existing=true`（宕机恢复，S6）；导入进度；每台节点同时导入的数量限制；GPFS 克隆父文件与 RBD 副本的孤儿对账（S5）；本地系统盘的元数据结构统一
+- **测试**：
+  - PostgreSQL：新增 `TestImageStoragePG`（第一次使用导入、同时的第二个请求等同一个导入、只认被派去的节点的回报、导入失败时启动与重装的处理、重试、同步后发出等着的命令、重复回报不重发、启动参数、系统盘回调的节点与副本校验、删镜像时有克隆则保留、删云服务器的系统盘连同 NVRAM、最后一块克隆删掉后删副本、删副本失败重发、删除失败的系统盘按卷再删、活着的云服务器的系统盘按卷删被拒、`sharedPoolHostsOfZone`、有导入时拒绝删池、删池带走副本）与 `TestImageStorageRBDRefs`；`services`、`rpcs`、`apis` 的 PostgreSQL 测试全部重跑通过
+  - WSL 节点脚本：新增 `gpfs-spike/stc-test5.sh`（38 项，tmpfs 冒充 GPFS、假 `mmclone`：导入与它的后台作业、过期临时文件、副本已在、镜像不可得、池没检查过、系统盘的各项校验、克隆与整盘复制、规格太小时删掉做出来的盘、`xml_replace_disk`、重装换盘、`drv_drop` 不删别的、删副本、删系统盘连同 NVRAM、`nvram_undefine_flag`）；`stc-test1`–`4` 重跑通过（第一次跑时 2、3 各有失败，是第一次失败的 Ceph 端到端测试在 WSL 里留下的集群目录：内存预留与池列表，清掉后通过）
+  - WSL 端到端（真 Ceph 20.2）：`TestStorageCephWSL` 加了一段，导入两个副本（后台作业，回报经心跳交给 clapi，测试工具为此加了「不属于任务的后台作业算在哪台节点」）、从副本克隆的系统盘在 TCG 域里跑（`rbd status` 有一个 watcher）、经 librbd 捕获（数据一致）、重装式换盘后父镜像不变、有克隆时删副本被拒并点名克隆、删掉系统盘后副本能删、整盘复制没有父镜像、删池时剩下的副本被删掉、数据库里这个池没有副本行；302 秒通过。第一次运行在等回报时失败（测试工具只把存储任务的后台作业交给 clapi），留下了集群，按测试文件头的办法清理后重跑
+  - 界面：本机会话临时目录 `pw/stc-ui-s4.js`（全部接口在浏览器里模拟，12 项：下拉的四个选项、类型与介质、出错的池不列、两种提示的切换、指定宿主机时只列它的池、迁移弹窗逐盘「不复制」与全共享说明、有本地盘时不显示说明、没有写请求、没有页面错误）；`typecheck`、`lint`、`i18n:check` 通过
+- **部署要点**：clapi（AutoMigrate 建两张表、`volumes` 加列，`AutoUpgrade` 建唯一索引）；cpgateway 不变（没有新接口）；三台节点同步 `scripts/`：新增 `import_image_shared.sh`、`delete_image_shared.sh`、`async_job/import_image_shared.sh`（要可执行位，提交时 `git update-index --chmod=+x`），改动的 `launch_vm.sh`、`reinstall_vm.sh`、`rescue_vm.sh`、`source_migration.sh`、`resize_volume_shared.sh`、`delete_volume_shared.sh`、`storage_lib.sh`、`async_job/{capture_image,clear_target_migration,complete_migration}.sh`、`storage/{ceph_pool,gpfs_pool}.sh`、`storage/drivers/{file,gpfs,ceph_rbd}.sh`；节点要有 `python3`（`xml_replace_disk` 用，24.04 自带）；前端随 nginx
+
+**S4 真实节点验收**（2026-10-03，用户要求「部署 并在真实环境测试」；work-01 / 02 / 03，GPFS 池 `gp1` 与 Ceph 池 `rp1`；执行记录 `test-items/runs/2026-10-03-e1a8c167+S4共享系统盘.md`）：
+
+- **通过**（TC-22 全部，含 SHB-10 整机重启）：
+  - 同时两个请求在 gp1 建 10 台、镜像在池里没副本：只导入一次（12 秒），31 秒全部 running，10 块系统盘都是副本的 GPFS 克隆
+  - rp1 建 4 台：克隆格式 v2，子镜像 4 个
+  - 有副本之后 3.5 GiB 的 Ubuntu 与 cirros 一样 3.4 秒起来
+  - 导入失败时等着的创建失败、重装的云服务器留在原盘上；重装途中删旧镜像，旧副本保留、重装完立即删除
+  - 救援挂得上 GPFS 系统盘与 RBD 数据盘；两种池的捕获都能用
+  - 全共享热迁移 16.6 秒、计划里没有要复制的盘；GPFS 池里的 NVRAM 迁移前后是同一个文件，Ceph 的复制到目标
+  - 删云服务器删盘与 NVRAM；节点离线时盘保留
+  - 删池时导入中拒绝、副本随池删除；在线扩容共享系统盘
+  - 导入期间那台节点的命令队列照常执行别的命令；界面对真实数据只读检查通过
+  - **整机重启 work-02**（用户另外同意）：上面三台共享系统盘的云服务器（GPFS、Ceph、GPFS 上的 UEFI）开机后先进待启动列表，各自的池就绪后自动启动（rp1 +335 秒、gp1 +349 秒，+362 秒全部 running），数据完好、UEFI 照常启动；别的节点上往共享系统盘的同步写入 0 失败，GPFS 最长 1.8 秒、Ceph 最长 3.7 秒（OSD 回来时重新 peering）
+- **修了 2 个问题**（TC-22 回归点 6、7）：
+  1. **UEFI 镜像重装成 BIOS 镜像后起不来**（S4 之前就有，本地池同样）：libvirt 10 定义 UEFI 域时会记下自动选到的固件（`<os firmware='efi'>`、`<firmware>`），`reinstall_vm.sh` 换回 BIOS 时只删 `<loader>` 和不带属性的 `<nvram>`，下次定义又被补回 UEFI。现在一并删掉。连带的后果是配置盘被改回 IDE，这台云服务器再重装成 UEFI 镜像时找不到配置盘
+  2. **Ceph 池的导入太慢**：600 MiB 的镜像约 28 分钟。改为 `-W -m 16` 后 267 秒（见 §9.6）
+- **没测**：迁移失败回滚时共享 NVRAM 不被删（只有代码与 WSL 测试，真实环境里不好造回滚）；ECE、外部导入的池上的系统盘
+- **部署状态**：work-01 在 S1–S3 已提交的代码上叠加了 S4 的 35 个文件（覆盖前的备份与数据库见执行记录），之后又单独推了 `reinstall_vm.sh`、`storage/drivers/ceph_rbd.sh`（三台）；三台的脚本与本地工作区一致。nginx 没重建
+
+**S4 代码审查修复**（2026-10-03，用户运行 `/code-review` 报 15 条，「follow 你的建议」后修 1–13 与 15，第 14 条「等待队列存操作意图而不是整条命令」不做；顺带修了 B23；未提交；同日晚用户「执行」后部署到 work-x 复测，见本节最后「真实节点复测」；TC-22 回归点 8–20）：
+
+1. 扩容共享池里的系统盘不改 `instances.disk`（本地池改）→ 共享分支同样改，失败回调与命令发不出去时改回
+2. 副本还在导入时删镜像，导入完成后副本放到位却没有记录 → 3 小时内的 `syncing` 拒绝删镜像（`ErrImageInUse`），`deleteImageStorages` 里处理等待队列的死分支删掉；托管 Ceph 池删除时按名字删掉所有 `image-<ID>-<前缀>`（记录丢了的副本也删，否则「池里还有镜像」删不掉），导入的集群只删 clapi 列出的
+3. 删副本时存储不应答被当作「已不在」，记录删了、副本留下 → 文件池按 `timeout test -e` 的退出码区分（1 才是不在），RBD 只认 `No such file or directory`，`snap ls` 失败一律报错
+4. 等副本的重装执行之前可以再次重装、救援、调整规格，之后被它覆盖 → `reinstalling` 时三者都拒绝
+5. UUID 带大写字母时副本名过不了节点的 `[0-9a-f]` 校验 → `imageBaseName` 转小写；`image_name` 保持缓存里的原名，节点校验改成大小写都认
+6. 导入好了但重装命令发不出去时系统盘停在 `reinstalling` → 与导入失败一样改回 `attached` 和原容量
+7. 默认池是共享池时，可用区里没有能用它的节点的创建一律失败 → 没指定池时退回内置池（`StoragePoolAdmin.ResolveBoot(ctx, ref, 可用区, 宿主机)`），指定了的照用
+8. `clear_vm` 回调晚于看护判超时（系统盘已是 `delete_failed`）时系统盘永远不删 → `SharedBootRemoval` 也取 `delete_failed`，先改回 `deleting` 再下发
+9. 按卷再删共享系统盘、命令发不出去时回到 `available` → 系统盘留在 `delete_failed`
+10. 等待队列的 `control` 是 `varchar(1024)`，`select=` 带很多节点时写不进去 → `text`
+11. 副本在池里被手工删掉后，记录一直是 `synced`，之后每台云服务器都失败 → 节点确定副本不在时回 `nocopy`，clapi 把副本改成 `error`，下一台重新导入
+12. 文件池导入「先查再 `mv -T`」会和同一副本的另一个导入抢 → 先查再 `mv` 放进副本的锁目录（`mkdir tmp/<副本>.place`，GPFS 上跨节点原子；超过 10 分钟的锁算死掉的作业留下的）。第一版用 `ln` 硬链接，真实节点上发现 **GPFS 拒绝给克隆父文件建硬链接**，等于在 GPFS 上一直退回原做法、没修到，改成了锁目录；RBD 的 `rename` 本来就不覆盖，失败时正式名已在算成功
+13. 还有克隆的 `deleting` 副本看护每分钟查一次；两台 clapi 的看护可能同时重发 → 有克隆时刷新 `sent_at` 推后下次检查，看护重发前在行锁下核对 `sent_at`
+15. 清理：删掉没用的 `encodeMetadata`，`containsHost` 换成 `slices.Contains`，`ImageBaseRef` 挪出 `CapacityGroup` 的文档注释
+- **B23**：创建云服务器时 `GetKey` 的错误没检查，不存在的密钥会建出空记录并绑到实例上 → 返回 400 `Invalid key`（重装原来就检查）
+- **测试**：PostgreSQL 新增 `TestImageStorageReviewPG`（逐条对应上面 1、2、4–11、13 与 5 的命名、7 的五种情况），`services` / `rpcs` / `apis` 全部重跑通过；WSL `stc-test5.sh` 加到 57 项（`nocopy` 的上报与清除、存储不应答时不算不在、八个导入同时跑只留一个副本且不覆盖已有副本、过期的锁被清掉、别的导入持有的锁会等、RBD 的不在 / 超时 / 没有快照 / 有克隆），`stc-test1`–`4` 重跑通过；Ceph WSL 端到端见执行记录。B23 只在接口层，没有单独的测试
+- **真实节点复测**（2026-10-03 晚，用户「执行」后部署到 work-x：work-01 覆盖 11 个 Go 文件、重建 clapi，三台同步 7 个脚本，覆盖前的备份与数据库见执行记录；脚本 work-01 `/root/cl-s4-review.sh`）：TC-22 回归点 8、9、10、12、15、16、18（GPFS 与 Ceph）、19、20 与 B23 通过，重装在两种池上照常。发现第 12 条的 `ln` 在 GPFS 上不可用（见上），改成锁目录后补推 `drivers/file.sh`，在 `gp1` 上从 work-01、work-02 各 4 个、共 8 个导入同时写同一个副本：全部成功、只有一个已封好的克隆父文件、`tmp/` 里不留东西。**真实节点上没测的**：11（存储不应答）、13（大写 UUID：改已有镜像的 UUID 会让 S3 里的对象名对不上）、14（要在副本导入完成的那一刻让 cland 下发失败，而回报本身也要经过 cland）、17（要很多节点）、7 / 回归点 1 的退回内置池（三台节点都能用 `gp1`），这几条只有 PostgreSQL 与 WSL 测试
+
+**S4 第二轮代码审查修复**（2026-10-03 晚，用户再次运行 `/code-review` 报 13 条，「执行」后逐条核实，都成立，全部修掉；未提交；TC-22 回归点 21–33）：
+
+1. **排队等副本的重装只靠状态 `reinstalling` 挡**：电源操作不查状态、心跳会改写状态，之后迁移、救援、再次重装都能进来，而副本好了以后重装照旧发到原来那台节点，GPFS 上会删掉别处正在用的系统盘 → 以「有没有等待记录」为准：电源操作、救援、重装、调整规格、迁移一律拒绝（`refuseWhileWaiting`）；心跳在有等待记录时不改 `reinstalling`；副本好了再核对一次（实例还是 `reinstalling`、还在命令发往的节点上），对不上就丢弃并还原（`waiterStillValid`）；节点上 `reinstall_vm.sh` 的共享分支先确认本机定义了这个域，没有就什么都不碰
+2. **`boot_disk` 写进了来宾能读到的配置盘**（`network_data.json`：池与集群 UUID、Ceph 用户与密钥 UUID、路径、副本 ID）→ `build_meta.sh` 去掉它。之前建的云服务器的配置盘里还有，到下次重新生成配置盘为止
+3. **看护判导入超时与创建时重新导入有竞争**，可能把刚重发的导入判失败、连带新建的云服务器 → 看护带上它挑选时的时间，行锁下 `sent_at` 变了就跳过
+4. **锁目录的超时判断写错**（上一轮刚改的）：别的导入一直占着锁时，等满 60 秒后不拿锁照样往下走，最后还删掉别人的锁 → 用「拿到了锁」的标记，没拿到就失败、不碰别人的锁
+5. **等待记录是软删的**，带着密码和密钥的整条命令永远留在库里 → 一律 `Unscoped` 删除，`AutoUpgrade` 清掉以前软删的（work-01 上有 31 行）
+6. **放弃重装时卷改回原容量，`instances.disk` 还是新的** → 一起改回
+7. **发不出去的创建无条件把实例置为出错** → 创建复用 `launchNotSent`（只在 `provisioning` 时改），重装只在 `reinstalling` 时改
+8. **救援在节点上先关机、后检查共享系统盘能不能用** → 先检查；检查失败时回报 `'<当前域状态>' 'refused'`，clapi 按它恢复状态（`rescueStatus`；原来救援失败的回调一律置 `shut_off`，云服务器其实还开着）
+9. **默认池是共享池时，查询出错也退回内置池** → 只有「可用区里没有能用它的节点」才退回，别的错误照常报
+10. **捕获时 RBD 的 `rbd:` 地址写在通用代码里** → `PoolDriver.QemuSource`
+11. **`resize_volume_shared.sh` 用了 Ceph 驱动的变量找系统盘设备** → 通用的 `drv_dev_of`：按驱动 `drv_disk_xml` 生成的 `<source>` 元素的属性去域定义里匹配
+12. **镜像文件名 `image-<ID>-<前缀>` 在 5 处各拼一遍、大小写不一** → `model.Image.FileBase()` / `FilePrefix()`（一律小写：S3 对象名、节点缓存、池里的副本），节点上的校验改回只认小写
+13. **共享系统盘的回报在 `launch_vm.sh`、`reinstall_vm.sh` 各写一遍** → `storage_lib.sh` 的 `shared_boot_report`
+- **测试**：PostgreSQL 新增 `TestImageStorageWaitGuardPG`（有等待记录时五种操作被拒、改名放行；副本好了时状态变了的重装被丢弃并还原、换了节点的被丢弃并置错、没变的照常下发；看护不判刚重发的导入；发不出去的创建只改还在创建中的实例）、`TestImageFileNames`、rpcs `TestInstStatusKeepsWaitingReinstallPG`，`TestRescueStatus` / `TestRescueCallbackPG` 加了 `refused`；`services` / `rpcs` / `apis` 全部通过。WSL `stc-test5.sh` 63 项（新增：锁被别人一直占着、`shared_boot_report`、两种驱动的 `drv_dev_of`、配置盘里没有 `boot_disk`），`stc-test1`–`4` 与 Ceph 端到端（310 秒）通过
+- **真实节点复测**（2026-10-03 晚，部署到 work-x：work-01 覆盖 13 个 Go 文件、重建 clapi，三台同步 8 个脚本，覆盖前的备份与数据库见执行记录；脚本 work-01 `/root/cl-s4-review2.sh <小节>`）：回归点 21、22、24、25、26、28、30、31、33 通过——排队重装期间关机被等待记录挡住（「waits for its image」）、救援 / 调整规格 / 迁移被拒，在节点上直接关掉它的域后心跳仍保持 `reinstalling`，216 秒后副本好了、重装照常执行；在没有定义这台云服务器的节点上手工跑 `reinstall_vm.sh` 被拒、系统盘不动；新云服务器的配置盘里没有 `boot_disk`（修复前建的 s4ga-1 里有）；部署后 31 行软删的等待记录被清掉；GPFS 上锁被一直占着时导入失败、别人的锁还在；导入失败放弃重装时卷和 `instances.disk` 都回到 2 GB；挪走 work-02 的 Ceph 配置后救援被拒、云服务器还是原来那个 QEMU 进程、状态回到 `running`；GPFS、Ceph 上的捕获都成功；在线扩容两种池的系统盘、来宾不重启；上一轮的 nocopy 小节重跑通过。23、27、29、32 只有 PostgreSQL 测试 / 代码审查
+
 
 **范围**：§14 的健康看护、告警、指标与界面监控；完整日志（§6.2.6）；GPFS 的重新均衡、换盘；Ceph 的换盘；改角色；新节点自动加为客户端；孤儿对象对账（共享池里有文件 / 镜像但数据库没有记录的，只报告不删除）。
 
@@ -1723,8 +1808,8 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 | V1 | GPFS 在 24.04 节点上 `mmbuildgpl` 成功、`autoBuildGPL` 在内核变化后自动编译。**前一半已通过**（2026-10-02，work-01）：6.0.0.2 在 Ubuntu 24.04.5、内核 `6.8.0-146-generic`（比 IBM 测过的 139 新）上 `mmbuildgpl` 29 秒编过；三个模块按依赖顺序加载、卸载正常，内核无报错，只有「树外模块、未签名」的提示（安全启动是关的）。测完已卸载干净，包与日志留在 work-01 `/root/gpfs-v1/`。还没测：`autoBuildGPL` 换内核后自动编译、守护进程起来以后的运行 | 能否部署 | S0（24.04 节点） |
 | V2 | 回环设备经 `nsddevices` 用户出口做 NSD；`tspreparedisk -s` 列出本机 NSD 的格式；NSD v2 格式的 GPT 分区类型 GUID；没装 GPFS 时怎么认出 NSD | 测试环境、磁盘扫描（§6.4） | S2（24.04 节点；WSL 跑不了，V22） |
 | V3 | `mmcrcluster -r/-R` 用包装脚本、`adminMode=central` 下非管理节点能执行哪些读命令（`mmlscluster`、`mmlsquota`）；`mmhealth` 的输出格式 | SSH 密钥方案（§6.6）、外部集群（§7.8）、监控（附录 E） | S2（24.04 节点） |
-| V4 | `mmclone`：父文件与克隆必须在同一个独立 fileset；qcow2 克隆后能否 `qemu-img resize`；有子克隆时能否删父文件 | 系统盘（§9.6） | S2 / S4（24.04 节点） |
-| V5 | QEMU 的 OFD 镜像锁在 GPFS 上是否集群范围有效 | 单写入者的第二层（§12.1） | S4 |
+| V4 | `mmclone`：父文件与克隆必须在同一个独立 fileset；qcow2 克隆后能否 `qemu-img resize`；有子克隆时能否删父文件。**已验证**（2026-10-03，work-01 的 `gpfs1`，`/root/cl-s4-verify.sh gpfs`）：`mmclone snap` 后父文件只读、可以改名；`mmclone copy` 到同一 fileset 的另一个目录瞬间完成，克隆读得到父文件的数据、能 `qemu-img resize`、写入互不影响、`qemu-img check` 干净；有克隆时删父文件被拒（只读文件系统），克隆删光后可删；跨 fileset 克隆被拒 | 系统盘（§9.6） | S2 / S4（24.04 节点） |
+| V5 | QEMU 的 OFD 镜像锁在 GPFS 上是否集群范围有效。**是**（2026-10-03，work-01 开着、work-02 读写同一个文件）：另一台节点上 `qemu-img info` 与写入都因拿不到锁被拒，单写入者的第二层在 GPFS 上成立 | 单写入者的第二层（§12.1） | S4 |
 | V6 | libvirt 12 对 GPFS 盘（`cache='none'`）、RBD 盘（`cache='writeback'`）热迁移是否报不安全。**RBD 已验证**（2026-10-03，work-x，24.04 的 libvirt 10.0）：带 RBD 盘（同时带 GPFS 盘）的热迁移 10 秒完成，没有报不安全 | 共享迁移（§10） | S2 / S3 |
 | V7 | 动态属主（含迁移时）与 AppArmor 在 GPFS 路径和 RBD 盘上是否正常。**RBD 已验证**（2026-10-03）：热挂、在线扩容、热迁移都正常；libvirt 的 AppArmor 抽象本来就放行 `/etc/ceph/*.conf`，不用另加规则 | 能否启动 | S2 / S3 |
 | V8 | fileset 配额写满时 `error_policy='stop'` 能否暂停云服务器；Ceph 池配额写满时 I/O 阻塞的具体表现。**Ceph 一半已验证**（2026-10-03）：池到配额约 108% 时 `POOL_FULL`，来宾写入阻塞、云服务器保持 running，各节点的探测 30–50 秒判池不可用；配额改大后写入立即完成 | 写满时的表现（§9.5） | S2 / S3 |
@@ -1732,7 +1817,7 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 | V10 | Ubuntu 打包的 `cephadm` 20.2 与上游镜像搭配；用 docker 而不是 podman。**已验证**（2026-10-03，WSL）：能搭配、docker 可用，但镜像要钉到节点 `ceph-common` 的版本——打包的 cephadm 默认拉 `:v20`（20.2.4），它生成的新类型密钥 20.2.0 的客户端读不出（`Malformed input`）。实现里镜像默认取节点版本、更新的拒绝（§16 S3 实施记录第 1 条） | 能否部署 | S0（WSL 沙箱） |
 | V11 | ceph-volume 收回环设备上的 LVM 逻辑卷；`ceph orch daemon add osd` 接受的设备写法。**已验证**（2026-10-03，WSL）：收 `/dev/<vg>/<lv>`，但 20.2 的 `daemon add osd` 按设备清单校验，逻辑卷要带 `--skip-validation`；刚加入的主机要先刷新清单 | 测试环境、建 OSD（§8.2） | S0（WSL 沙箱） |
 | V12 | libvirt 的 RBD 磁盘支持 `<config file=...>`。**已验证**（2026-10-03，WSL，libvirt 12.0 / QEMU 10.2.1，真实 librbd）：带 `config file` 与 secret 的磁盘能热挂、在线扩容；2026-10-03 在 24.04 节点（libvirt 10.0 / QEMU 8.2）上也确认了，热迁移同样正常 | mon 变更后的域定义（§9.3） | S3 |
-| V13 | 带快照的 RBD 镜像能否 `rbd rename`；克隆格式 v2 是否可用 | 基础副本（§9.6） | S0（WSL 沙箱）/ S4 |
+| V13 | 带快照的 RBD 镜像能否 `rbd rename`；克隆格式 v2 是否可用。**已验证**（2026-10-03，work-x 的 `ceph1`，19.2.3，客户端身份 `client.cloudland`，`/root/cl-s4-verify.sh ceph`）：不保护快照也能克隆（格式 v2）、克隆能扩容；带快照且有克隆的镜像能改名，克隆的父镜像跟着变；`rbd deep cp` 会连快照一起复制，整盘复制要用 `rbd cp`；有克隆时删父镜像被拒，删快照会把它移进回收站（所以删副本前先数子镜像） | 基础副本（§9.6） | S0（WSL 沙箱）/ S4 |
 | V14 | `ceph osd blocklist range add` 的可用版本、有效期参数；`profile rbd` 的客户端能否执行它和 `ceph health`。**后一半已验证**（2026-10-03，WSL）：`profile rbd` 的客户端能执行 `ceph health`、`ceph -s`、`ceph df`、`ceph fsid`、`osd pool get-quota`、`osd pool ls detail`，能读写池里的对象。`blocklist range` 没测 | 隔离（§11.2）、外部集群（§8.8） | S0（WSL 沙箱）/ S6 |
 | V15 | 块大小（GPFS 4 MiB vs qcow2 2 MiB 簇）与性能 | 默认参数 | S2 |
 | V16 | Ceph 云服务器 NVRAM 从模板重建后 UEFI 系统能否启动（宕机恢复） | §11.1 | S6 |
