@@ -92,6 +92,27 @@ function do_quota()
     stc_result "$(jq -cn --argjson q "$quota" '{quota_bytes: $q}')"
 }
 
+# drop_bases <listed|all> <rbd command...>: the copies of images CloudLand made in the pool (clapi lists them, nothing is
+# cloned from them: the pool holds no volume) and the temporary images of imports that died (shared-storage-design.md
+# §9.6). all, for a pool CloudLand made and deletes: any copy by its name, also one whose record was lost (an import
+# whose report never came); the pool of an imported cluster stays with its owners, only the listed copies go
+function drop_bases()
+{
+    local scope=$1 b out extra=""
+    shift
+    for b in $(jq -r '.bases // [] | .[]' <<<"$input"); do
+        [[ "$b" =~ ^image-[0-9]+-[0-9a-f]+$ ]] || stc_fail "invalid image copy $b"
+    done
+    [ "$scope" = "all" ] && extra=$("$@" ls -p $pool 2>/dev/null | grep -E '^image-[0-9]+-[0-9a-f]+$')
+    for b in $( (jq -r '.bases // [] | .[]' <<<"$input"; echo "$extra") | sort -u) $("$@" ls -p $pool 2>/dev/null | grep -E '^tmp-image-[0-9]+-[0-9a-f]+-[0-9]+-[0-9]+$'); do
+        "$@" snap purge --no-progress $pool/$b >/dev/null 2>&1
+        if ! out=$("$@" rm --no-progress $pool/$b 2>&1) && ! grep -q "No such file or directory" <<<"$out"; then
+            stc_fail "removing the image copy $b failed: $(tail -1 <<<"$out" | cut -c1-200)"
+        fi
+        echo "removed $pool/$b"
+    done
+}
+
 function do_delete()
 {
     local images have
@@ -103,6 +124,7 @@ function do_delete()
     fi
     have=$(marker_of rados_admin $fsid)
     [ "$have" = "$uuid" ] || stc_fail "RBD pool $pool is not the one of CloudLand pool $uuid (marker: ${have:-none}): not deleting it"
+    drop_bases all rbd_admin $fsid
     images=$(rbd_admin $fsid ls -p $pool 2>/dev/null | wc -l)
     [ "$images" -eq 0 ] || stc_fail "RBD pool $pool still holds $images images"
     images=$(rbd_admin $fsid trash ls -p $pool 2>/dev/null | wc -l)
@@ -121,6 +143,11 @@ function client_rados()
     timeout 60 rados --conf $conf --id $user "$@"
 }
 
+function client_rbd()
+{
+    timeout 600 rbd --conf $conf --id $user "$@"
+}
+
 function do_register()
 {
     local have
@@ -136,6 +163,8 @@ function do_unregister()
 {
     [ -f "$conf" ] || stc_fail "this host has no client configuration of the cluster"
     if [ "$(marker_of client_rados)" = "$uuid" ]; then
+        # The pool stays with its owners: the copies of images CloudLand made in it go
+        drop_bases listed client_rbd
         client_rados -p $pool rm cloudland-pool || stc_fail "removing the marker failed"
     fi
     stc_result '{"unregistered": true}'

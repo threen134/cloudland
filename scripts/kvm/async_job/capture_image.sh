@@ -17,15 +17,23 @@ image_name=image-$img_ID-$prefix
 state=error
 size=0
 
-if [ ! -f "$boot_disk" ]; then
-    echo "|:-COMMAND-:| capture_image.sh '$img_ID' 'error' 'qcow2' '0' 'boot disk $boot_disk not found'"
-    exit -1
-fi
+case "$boot_disk" in
+    rbd:*)
+        # A disk of a Ceph pool, read through librbd as the client user of its cluster (rbd:<pool>/<image>:id=..:conf=..)
+        format=raw
+        ;;
+    *)
+        if [ ! -f "$boot_disk" ]; then
+            echo "|:-COMMAND-:| capture_image.sh '$img_ID' 'error' 'qcow2' '0' 'boot disk $boot_disk not found'"
+            exit -1
+        fi
+        format=$(qemu-img info -U $boot_disk | grep 'file format' | cut -d' ' -f3)
+        ;;
+esac
 mkdir -p $image_cache
 image=$cache_tmp_dir/image-$vm_ID-$img_ID.qcow2
 mkdir -p $cache_tmp_dir
-format=$(qemu-img info -U $boot_disk | grep 'file format' | cut -d' ' -f3)
-qemu-img convert -U -f $format -O qcow2 $boot_disk $image
+qemu-img convert -U -f $format -O qcow2 "$boot_disk" $image >/dev/null 2>&1
 if [ -s "$image" ]; then
     size=$(qemu-img info $image | grep 'virtual size:' | cut -d' ' -f5 | tr -d '(')
     if [ -n "$upload_url" ] && [ -n "$capture_token" ]; then

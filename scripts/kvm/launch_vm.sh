@@ -37,49 +37,73 @@ metadata=$(echo $md | base64 -d)
 
 let fsize=$disk_size*1024*1024*1024
 
-pool_root=$(pool_root "$pool") || die "invalid pool $pool"
-vm_img=$pool_root/$disk_relpath
-created=0
-
-# Report the boot disk could not be created and give its place back
-disk_fail()
-{
-    [ "$created" = "1" ] && rm -f "$vm_img"
-    echo "|:-COMMAND-:| create_volume_local '$vol_ID' '$disk_relpath' 'error' '${1//\'/}'"
-    exit -1
-}
-
-pool_enter "$pool" "$NODE_ID" "$vm_img" || disk_fail "$guard_error"
-[ -e "$vm_img" ] && disk_fail "boot disk $vm_img already exists"
-mkdir -p "$(dirname $vm_img)" || disk_fail "can not create the directory of $vm_img"
-
-# The image is fetched from S3 through the presigned URL when it is not cached; ensure_image_cached serialises with flock
-if ! ensure_image_cached "$img_name" "$image_download_url"; then
-    disk_fail "image $img_name not available!"
-fi
-# Mark the cached image as recently used for the cache cleanup (find -mtime +30)
-touch "$image_cache/$img_name"
-format=$(qemu-img info $image_cache/$img_name | grep 'file format' | cut -d' ' -f3)
-created=1
-qemu-img convert -f $format -O qcow2 $image_cache/$img_name $vm_img >/dev/null 2>&1 || disk_fail "failed to convert image $img_name"
-vsize=$(qemu-img info $vm_img | grep 'virtual size:' | cut -d' ' -f5 | tr -d '(')
-[ -z "$vsize" ] && disk_fail "failed to read the size of $vm_img"
-[ "$vsize" -gt "$fsize" ] && disk_fail "flavor is smaller than image size"
-qemu-img resize -q $vm_img "${disk_size}G" &>/dev/null || disk_fail "failed to resize $vm_img to ${disk_size}G"
-
-# UEFI variables stay next to the boot disk: the builtin pool keeps them in $image_dir, other pools in nvram/
-if [ "$pool" = "builtin" ]; then
-    vm_nvram="$image_dir/${vm_ID}_VARS.fd"
+boot_disk=$(jq -c '.boot_disk // empty' <<<"$metadata" 2>/dev/null)
+boot_disk_xml=""
+if [ -n "$boot_disk" ]; then
+    # A boot disk in a shared pool (shared-storage-design.md §9.7): made by the driver of the pool from the copy of the
+    # image in the pool, a clone or a full copy; clapi sent where everything is
+    function disk_fail()
+    {
+        shared_boot_report "$vol_ID" error "$1"
+        exit -1
+    }
+    shared_boot_load "$boot_disk" "$vol_ID" "$ID" || disk_fail "$guard_error"
+    shared_boot_make "$drv_vol" "$disk_size" || disk_fail "$guard_error"
+    # UEFI variables next to the disk in a file pool, where every host opens them; on this host for an RBD disk
+    vm_nvram=${sb_nvram:-$image_dir/${vm_ID}_VARS.fd}
+    if [ "$boot_loader" = "uefi" ] && ! cp $nvram_template $vm_nvram; then
+        drv_drop "$drv_vol"
+        disk_fail "failed to create $vm_nvram"
+    fi
+    vm_img=$drv_vol
+    boot_disk_xml=$(drv_disk_xml "$drv_vol" vda)
+    vol_state=attached
+    shared_boot_report "$vol_ID" attached
 else
-    vm_nvram="$pool_root/nvram/${vm_ID}_VARS.fd"
+    pool_root=$(pool_root "$pool") || die "invalid pool $pool"
+    vm_img=$pool_root/$disk_relpath
+    created=0
+
+    # Report the boot disk could not be created and give its place back
+    function disk_fail()
+    {
+        [ "$created" = "1" ] && rm -f "$vm_img"
+        echo "|:-COMMAND-:| create_volume_local '$vol_ID' '$disk_relpath' 'error' '${1//\'/}'"
+        exit -1
+    }
+
+    pool_enter "$pool" "$NODE_ID" "$vm_img" || disk_fail "$guard_error"
+    [ -e "$vm_img" ] && disk_fail "boot disk $vm_img already exists"
+    mkdir -p "$(dirname $vm_img)" || disk_fail "can not create the directory of $vm_img"
+
+    # The image is fetched from S3 through the presigned URL when it is not cached; ensure_image_cached serialises with flock
+    if ! ensure_image_cached "$img_name" "$image_download_url"; then
+        disk_fail "image $img_name not available!"
+    fi
+    # Mark the cached image as recently used for the cache cleanup (find -mtime +30)
+    touch "$image_cache/$img_name"
+    format=$(qemu-img info $image_cache/$img_name | grep 'file format' | cut -d' ' -f3)
+    created=1
+    qemu-img convert -f $format -O qcow2 $image_cache/$img_name $vm_img >/dev/null 2>&1 || disk_fail "failed to convert image $img_name"
+    vsize=$(qemu-img info $vm_img | grep 'virtual size:' | cut -d' ' -f5 | tr -d '(')
+    [ -z "$vsize" ] && disk_fail "failed to read the size of $vm_img"
+    [ "$vsize" -gt "$fsize" ] && disk_fail "flavor is smaller than image size"
+    qemu-img resize -q $vm_img "${disk_size}G" &>/dev/null || disk_fail "failed to resize $vm_img to ${disk_size}G"
+
+    # UEFI variables stay next to the boot disk: the builtin pool keeps them in $image_dir, other pools in nvram/
+    if [ "$pool" = "builtin" ]; then
+        vm_nvram="$image_dir/${vm_ID}_VARS.fd"
+    else
+        vm_nvram="$pool_root/nvram/${vm_ID}_VARS.fd"
+    fi
+    if [ "$boot_loader" = "uefi" ]; then
+        mkdir -p "$(dirname $vm_nvram)" && cp $nvram_template $vm_nvram || disk_fail "failed to create $vm_nvram"
+    fi
+    vol_state=attached
+    echo "|:-COMMAND-:| create_volume_local '$vol_ID' '$disk_relpath' '$vol_state' 'success'"
+    # Release the pool lock: the rest does not write into the pool
+    exec 8>&-
 fi
-if [ "$boot_loader" = "uefi" ]; then
-    mkdir -p "$(dirname $vm_nvram)" && cp $nvram_template $vm_nvram || disk_fail "failed to create $vm_nvram"
-fi
-vol_state=attached
-echo "|:-COMMAND-:| create_volume_local '$vol_ID' '$disk_relpath' '$vol_state' 'success'"
-# Release the pool lock: the rest does not write into the pool
-exec 8>&-
 
 ./build_meta.sh "$vm_ID" "$vm_name" <<< $md >/dev/null 2>&1
 vm_meta=$cache_dir/meta/$vm_ID.iso
@@ -127,6 +151,11 @@ sed -i \
     -e "s#VM_NVRAM#$vm_nvram#g" \
     -e "s/INSTANCE_UUID/$instance_uuid/g" \
     $vm_xml
+# The disk of a shared pool as its driver describes it, in place of the file disk of the template
+if [ -n "$boot_disk_xml" ] && ! xml_replace_disk $vm_xml vda "$boot_disk_xml"; then
+    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'init'"
+    exit -1
+fi
 # A random VNC password of its own: QEMU accepts the password of the console only when started with one
 if ! vnc_xml_set_passwd $vm_xml; then
     echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'init'"

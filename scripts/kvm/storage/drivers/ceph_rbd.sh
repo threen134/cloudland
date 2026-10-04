@@ -176,6 +176,178 @@ function drv_users()
     drv_rbd status --format json "$drv_ceph_pool/$1" 2>/dev/null | jq -r '[.watchers[]?.address] | join(" ")'
 }
 
+# --- Copies of images and the boot disks made from them (shared-storage-design.md §9.6, §9.7). The copy of an image
+# is the raw RBD image image-<id>-<prefix> with its snapshot base; a boot disk is a clone of base (format 2, the
+# snapshot is not protected; V13) or a full copy of it
+
+# drv_base_check <copy>: the copy of an image as clapi names it. Sets guard_error on failure
+function drv_base_check()
+{
+    if ! [[ "$1" =~ ^image-[0-9]+-[0-9a-f]+$ ]]; then
+        guard_error="'$1' is not an image copy of pool $drv_pool"
+        return 1
+    fi
+    return 0
+}
+
+# drv_base_exists <copy>: the image with its snapshot, which an import makes before it renames the image into place
+function drv_base_exists()
+{
+    drv_rbd snap ls --format json "$drv_ceph_pool/$1" 2>/dev/null | jq -e 'any(.[]; .name == "base")' >/dev/null 2>&1
+}
+
+# drv_base_missing <copy>: the copy is surely not there (no image, or an image without its snapshot); a cluster that
+# does not answer is not that
+function drv_base_missing()
+{
+    local out
+    if ! out=$(drv_rbd snap ls --format json "$drv_ceph_pool/$1" 2>&1); then
+        grep -q "No such file or directory" <<<"$out"
+        return
+    fi
+    ! jq -e 'any(.[]; .name == "base")' >/dev/null 2>&1 <<<"$out"
+}
+
+# drv_drop_image <image>: remove an image with its snapshots; one that is gone is fine. Sets guard_error on failure
+function drv_drop_image()
+{
+    local out rc
+    drv_rbd snap purge --no-progress "$drv_ceph_pool/$1" >/dev/null 2>&1
+    out=$(DRV_TIMEOUT=600 drv_rbd rm --no-progress "$drv_ceph_pool/$1" 2>&1)
+    rc=$?
+    [ $rc -eq 0 ] && return 0
+    grep -q "No such file or directory" <<<"$out" && return 0
+    guard_error="rbd rm $drv_ceph_pool/$1 failed: $(tail -1 <<<"$out" | cut -c1-200)"
+    return 1
+}
+
+# drv_import_cleanup <copy>: temporary images of imports of this copy that died (not modified for an hour)
+function drv_import_cleanup()
+{
+    local img ts
+    for img in $(drv_rbd ls -p "$drv_ceph_pool" 2>/dev/null | grep -E "^tmp-$1-[0-9]+-[0-9]+$"); do
+        ts=$(drv_rbd info --format json "$drv_ceph_pool/$img" 2>/dev/null | jq -r '.modify_timestamp // .create_timestamp // empty')
+        ts=$(date -d "$ts" +%s 2>/dev/null) || continue
+        [ $(($(date +%s) - ts)) -gt 3600 ] && drv_drop_image "$img"
+    done
+    return 0
+}
+
+# drv_import_image <image file> <format> <copy>: write the copy of an image into the pool as a temporary image of this
+# job, snapshot it and rename it into place; a copy found in place already is kept. Sets guard_error on failure
+function drv_import_image()
+{
+    local src=$1 fmt=$2 base=$3 tmp=tmp-$3-${NODE_ID:-0}-$$
+    # Out-of-order writes with 16 coroutines: in order, qemu-img waits for each replicated write before the next one
+    # (a fresh thin RBD image does not care about the order; 4.6 times faster on the test cluster)
+    if ! qemu-img convert -q -W -m 16 -f "$fmt" -O raw "$src" "rbd:$drv_ceph_pool/$tmp:id=$drv_user:conf=$drv_conf" >/dev/null 2>&1; then
+        drv_drop_image "$tmp"
+        guard_error="writing the image into $drv_ceph_pool/$tmp failed"
+        return 1
+    fi
+    if ! drv_rbd snap create "$drv_ceph_pool/$tmp@base" >/dev/null 2>&1; then
+        drv_drop_image "$tmp"
+        guard_error="rbd snap create $drv_ceph_pool/$tmp@base failed"
+        return 1
+    fi
+    # rbd rename refuses a name in use: another import of the same copy that got there first is the copy
+    if ! drv_rbd rename "$drv_ceph_pool/$tmp" "$drv_ceph_pool/$base" >/dev/null 2>&1; then
+        drv_drop_image "$tmp"
+        drv_base_exists "$base" && return 0
+        guard_error="rbd rename $drv_ceph_pool/$tmp to $base failed"
+        return 1
+    fi
+    return 0
+}
+
+# drv_base_delete <copy>: remove the copy of an image nothing is cloned from any more; one that is gone is fine. With
+# clones of format 2 a snapshot is not protected: removing it would only move it to the trash, so clones are counted
+# first and refused
+function drv_base_delete()
+{
+    local out
+    drv_base_check "$1" || return 1
+    # Only an image that is not there is gone: a cluster that does not answer keeps the copy and its record
+    if ! out=$(drv_rbd snap ls --format json "$drv_ceph_pool/$1" 2>&1); then
+        grep -q "No such file or directory" <<<"$out" && return 0
+        guard_error="rbd snap ls $drv_ceph_pool/$1 failed: $(tail -1 <<<"$out" | cut -c1-200)"
+        return 1
+    fi
+    if jq -e 'any(.[]; .name == "base")' >/dev/null 2>&1 <<<"$out"; then
+        if ! out=$(drv_rbd children "$drv_ceph_pool/$1@base" 2>&1); then
+            guard_error="rbd children $drv_ceph_pool/$1@base failed: $(tail -1 <<<"$out" | cut -c1-200)"
+            return 1
+        fi
+        if [ -n "$out" ]; then
+            guard_error="$drv_ceph_pool/$1 still has clones: $(xargs <<<"$out" | cut -c1-200)"
+            return 1
+        fi
+    fi
+    drv_drop_image "$1"
+}
+
+# drv_clone <copy> <image> <clone|copy>: a new boot disk made from the copy of its image; rbd refuses a name in use.
+# Sets drv_cloned (1 for a clone, 0 for a full copy), or guard_error on failure; an image this call made is removed
+function drv_clone()
+{
+    local base=$1 image=$2 mode=$3
+    drv_cloned=0
+    if drv_exists "$image"; then
+        guard_error="$drv_ceph_pool/$image already exists"
+        return 1
+    fi
+    if [ "$mode" = "clone" ]; then
+        if drv_rbd clone --rbd-default-clone-format 2 --image-feature $drv_rbd_features "$drv_ceph_pool/$base@base" "$drv_ceph_pool/$image" >/dev/null 2>&1; then
+            drv_cloned=1
+            return 0
+        fi
+        drv_exists "$image" && drv_drop_image "$image"
+    fi
+    # rbd cp of the snapshot: the content only, no snapshot and no parent (deep cp would copy the snapshots too)
+    if ! DRV_TIMEOUT=10800 drv_rbd cp --no-progress --image-feature $drv_rbd_features "$drv_ceph_pool/$base@base" "$drv_ceph_pool/$image" >/dev/null 2>&1; then
+        drv_exists "$image" && drv_drop_image "$image"
+        guard_error="copying $drv_ceph_pool/$base@base to $image failed"
+        return 1
+    fi
+    return 0
+}
+
+# drv_temp_of <image>: where a reinstall makes the new boot disk of a volume before it replaces the old one
+function drv_temp_of()
+{
+    echo "$1-reinstall"
+}
+
+# drv_drop <image>: remove a boot disk or the one a reinstall was making; nothing else
+function drv_drop()
+{
+    if [[ "$1" =~ ^volume-[0-9]+-reinstall$ ]]; then
+        drv_drop_image "$1"
+        return
+    fi
+    drv_delete "$1"
+}
+
+# drv_rename <from> <to>: the new boot disk of a reinstall takes the place of the old one
+function drv_rename()
+{
+    if ! drv_rbd rename "$drv_ceph_pool/$1" "$drv_ceph_pool/$2" >/dev/null 2>&1; then
+        guard_error="rbd rename $drv_ceph_pool/$1 to $2 failed"
+        return 1
+    fi
+    return 0
+}
+
+# drv_nvram_check <path> <instance id>: an RBD instance keeps its UEFI variables on its host, clapi sends none
+function drv_nvram_check()
+{
+    if [ -n "$1" ]; then
+        guard_error="pool $drv_pool keeps no UEFI variables"
+        return 1
+    fi
+    return 0
+}
+
 # drv_disk_xml <image> <device>: the libvirt disk of a volume. The monitors come from the configuration file of the
 # cluster, so the disk does not change when they do
 function drv_disk_xml()

@@ -641,3 +641,115 @@ function shared_pool_of_path()
     local pools=${2:-$(shared_pools_all)}
     jq -r --arg p "$1" '.[] | (.root // "") as $r | select($r != "" and ($p | startswith($r + "/"))) | .pool' <<<"$pools" 2>/dev/null | head -1
 }
+
+# --- Boot disks in shared pools (shared-storage-design.md §9.7, §9.8)
+
+# shared_boot_load <boot_disk json> <volume id> <instance id>: the pool and the boot disk launch_vm.sh, reinstall_vm.sh
+# get in the metadata: sets drv_* and drv_vol, sb_base (the copy of the image to make it from), sb_copy_id, sb_mode
+# and sb_nvram (empty when the UEFI variables stay on the host). Sets guard_error on failure
+function shared_boot_load()
+{
+    local json=$1 vol=$2 inst=$3
+    drv_load "$json" || return 1
+    drv_volume "$json" "$vol" || return 1
+    sb_base=$(jq -r '.image_base // empty' <<<"$json" 2>/dev/null)
+    sb_copy_id=$(jq -r '.image_storage_id // empty' <<<"$json" 2>/dev/null)
+    sb_mode=$(jq -r '.clone_mode // empty' <<<"$json" 2>/dev/null)
+    sb_nvram=$(jq -r '.nvram // empty' <<<"$json" 2>/dev/null)
+    if ! [[ "$sb_copy_id" =~ ^[1-9][0-9]*$ ]]; then
+        guard_error="invalid image copy id '$sb_copy_id'"
+        return 1
+    fi
+    drv_base_check "$sb_base" || return 1
+    drv_nvram_check "$sb_nvram" "$inst" || return 1
+    drv_guard
+}
+
+# shared_boot_make <target> <size GB>: make a boot disk from the copy of its image (shared_boot_load), check the image
+# fits and grow it to the size of the flavor. Sets drv_cloned, or guard_error on failure; a disk this call made is
+# removed again
+function shared_boot_make()
+{
+    local target=$1 gb=$2 vsize
+    sb_missing=0
+    if ! drv_base_exists "$sb_base"; then
+        # Gone from the pool (removed out of band, a restore): clapi imports it again for the next boot disk
+        drv_base_missing "$sb_base" && sb_missing=1
+        guard_error="the copy $sb_base of the image is not in pool $drv_pool"
+        return 1
+    fi
+    drv_clone "$sb_base" "$target" "$sb_mode" || return 1
+    vsize=$(drv_size "$target")
+    if ! [[ "$vsize" =~ ^[0-9]+$ ]]; then
+        drv_drop "$target"
+        guard_error="failed to read the size of $target"
+        return 1
+    fi
+    if [ "$vsize" -gt $((gb * 1024 * 1024 * 1024)) ]; then
+        drv_drop "$target"
+        guard_error="flavor is smaller than image size"
+        return 1
+    fi
+    if [ "$vsize" -lt $((gb * 1024 * 1024 * 1024)) ] && ! drv_resize "$target" "$gb"; then
+        drv_drop "$target"
+        guard_error="failed to resize $target to ${gb}G"
+        return 1
+    fi
+    return 0
+}
+
+# shared_boot_report <volume id> <attached|error> [reason]: the report of a boot disk launch_vm.sh or reinstall_vm.sh
+# made in a shared pool: attached with the copy it was cloned from (0 for a full copy); nocopy with the copy when the
+# copy is surely not in the pool (shared_boot_make), otherwise error
+function shared_boot_report()
+{
+    local state=$2 copy=0 reason=${3:--}
+    if [ "$state" = "attached" ]; then
+        [ "$drv_cloned" = "1" ] && copy=$sb_copy_id
+    elif [ "$sb_missing" = "1" ]; then
+        state=nocopy
+        copy=$sb_copy_id
+    fi
+    echo "|:-COMMAND-:| create_boot_shared '$1' '$state' '$copy' '${reason//\'/}'"
+}
+
+# drv_dev_of <domain> <volume>: the device of a domain whose disk is this volume of the pool (drv_load), found by the
+# source element its driver writes (drv_disk_xml), whatever the driver
+function drv_dev_of()
+{
+    local pred
+    pred=$(drv_disk_xml "$2" vdz | xmllint --xpath '//source/@*' - 2>/dev/null | tr '\n' ' ' |
+        sed -E "s/[[:space:]]*([a-z_]+)=\"([^\"]*)\"/ and source\/@\1='\2'/g; s/^ and //")
+    [ -n "$pred" ] || return 1
+    virsh dumpxml "$1" 2>/dev/null | xmllint --xpath "string(//devices/disk[$pred]/target/@dev)" - 2>/dev/null
+}
+
+# xml_replace_disk <domain xml file> <device> <disk xml>: put a disk element in place of the one of a device, keeping
+# its PCI address; the rest of the definition is left as it is, byte for byte
+function xml_replace_disk()
+{
+    python3 - "$1" "$2" "$3" <<'PYEOF'
+import re, sys
+path, dev, new = sys.argv[1], sys.argv[2], sys.argv[3].strip()
+xml = open(path).read()
+for m in re.finditer(r"<disk\b[^>]*>.*?</disk>", xml, re.S):
+    if re.search(r"<target\s+dev=['\"]%s['\"]" % re.escape(dev), m.group(0)):
+        addr = re.search(r"<address\b[^>]*/>", m.group(0))
+        if addr:
+            new = new.replace("</disk>", "   " + addr.group(0) + "\n</disk>")
+        open(path, "w").write(xml[:m.start()] + new + xml[m.end():])
+        sys.exit(0)
+sys.exit(1)
+PYEOF
+}
+
+# nvram_undefine_flag <nvram path>: how a domain is undefined without removing UEFI variables another host still
+# uses: those of a shared pool are kept, the local ones (built-in cache, local pools) go with the domain
+function nvram_undefine_flag()
+{
+    case "$1" in
+        "") echo "--nvram" ;;
+        $image_dir/* | $cache_dir/* | $pools_dir/*) echo "--nvram" ;;
+        *) echo "--keep-nvram" ;;
+    esac
+}

@@ -46,7 +46,9 @@ state="timeout"
 echo "Migration timeout, cleaning up metrics for VM $vm_ID"
 ../generate_vm_instance_map.sh remove $vm_ID
 
-virsh undefine --nvram $vm_ID
+# UEFI variables in a shared pool may be those of the instance still running on the source
+dom_nvram=$(virsh dumpxml $vm_ID 2>/dev/null | xmllint --xpath 'string(/domain/os/nvram)' - 2>/dev/null)
+virsh undefine $(nvram_undefine_flag "$dom_nvram") $vm_ID
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
 rm -f $run_dir/${vm_ID}-$migrate_ID

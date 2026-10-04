@@ -28,10 +28,12 @@ if [ "$dom_state" = "running" ]; then
     exit 0
 fi
 if [ -n "$dom_state" ]; then
+    # UEFI variables in a shared pool are those of the instance on the source: they stay
+    dom_nvram=$(virsh dumpxml $vm_ID 2>/dev/null | xmllint --xpath 'string(/domain/os/nvram)' - 2>/dev/null)
     virsh shutdown $vm_ID >/dev/null 2>&1
     sleep 5
     virsh destroy $vm_ID >/dev/null 2>&1
-    virsh undefine --nvram $vm_ID >/dev/null 2>&1
+    virsh undefine $(nvram_undefine_flag "$dom_nvram") $vm_ID >/dev/null 2>&1
 fi
 # Network resources sync_nic_info built here in target_migration.sh: security group chains, the VPC router
 # (clear_local_router.sh keeps it while other instances of the VPC run here)

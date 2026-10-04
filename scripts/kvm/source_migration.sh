@@ -116,15 +116,25 @@ src_nvram=$(xmllint --xpath 'string(/domain/os/nvram)' $xml_dir/$vm_ID/${vm_ID}.
 dst_nvram=$src_nvram
 boot_pool=$(jq -r '.[] | select(.booting) | .dst_pool_uuid' <<<"$plan")
 boot_root=$(jq -r '.[] | select(.booting) | .dst_pool_root' <<<"$plan")
+boot_shared=$(jq -r '.[] | select(.booting) | .shared // false' <<<"$plan")
+nvram_shared=0
 if [ -n "$src_nvram" ] && [ -n "$boot_pool" ]; then
-    if [ "$boot_pool" = "builtin" ]; then
+    if [ "$boot_shared" = "true" ]; then
+        # A boot disk of a shared pool (§10): UEFI variables in nvram/ of a file pool are the same file on the target,
+        # never copied (a copy onto itself would empty it); an RBD instance keeps them on its host, copied as usual
+        if [ -n "$boot_root" ] && [ "${src_nvram#$boot_root/}" != "$src_nvram" ]; then
+            nvram_shared=1
+        else
+            dst_nvram=$image_dir/${vm_ID}_VARS.fd
+        fi
+    elif [ "$boot_pool" = "builtin" ]; then
         dst_nvram=$image_dir/${vm_ID}_VARS.fd
     else
         dst_nvram=$boot_root/nvram/${vm_ID}_VARS.fd
     fi
     [ "$src_nvram" != "$dst_nvram" ] && moved="$moved $src_nvram=$dst_nvram"
 fi
-if [ -f "$src_nvram" ]; then
+if [ -f "$src_nvram" ] && [ "$nvram_shared" = "0" ]; then
     scp -q $ssh_opts $src_nvram $target_hyper:$dst_nvram || fail "failed to copy the NVRAM to the target"
 fi
 

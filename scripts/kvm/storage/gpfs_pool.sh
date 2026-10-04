@@ -95,7 +95,18 @@ function do_external()
         if [ -d "$root" ]; then
             files=$(ls $root/volumes 2>/dev/null | grep -c .)
             [ "$files" -gt 0 ] && stc_fail "the pool still holds $files files in volumes/"
-            grep -qx "pool_uuid=$pool" $root/.cloudland-pool 2>/dev/null && rm -f $root/.cloudland-pool
+            if grep -qx "pool_uuid=$pool" $root/.cloudland-pool 2>/dev/null; then
+                # The directory stays with its owners: the copies of images CloudLand made in it go (§9.6), with the
+                # temporary files of imports that died
+                for b in $(jq -r '.bases // [] | .[]' <<<"$input"); do
+                    [[ "$b" =~ ^images/image-[0-9]+-[0-9a-f]+\.qcow2$ ]] || stc_fail "invalid image copy $b"
+                done
+                for b in $(jq -r '.bases // [] | .[]' <<<"$input"); do
+                    rm -f "$root/$b" || stc_fail "removing the image copy $b failed"
+                done
+                find "$root/tmp" -maxdepth 1 -name 'image-*.import' -delete 2>/dev/null
+                rm -f $root/.cloudland-pool
+            fi
         fi
         ;;
     esac

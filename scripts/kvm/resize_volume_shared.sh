@@ -45,6 +45,10 @@ state=""
 if [ -n "$state" ] && [ "$state" != "shut off" ]; then
     # By the device of the disk: an RBD disk has no path virsh could name it by
     dev=$(xmllint --xpath 'string(//target/@dev)' $xml_dir/inst-$inst/disk-${vol_ID}.xml 2>/dev/null)
+    if [ -z "$dev" ]; then
+        # A boot disk is part of the definition of its instance, not attached on its own
+        dev=$(drv_dev_of inst-$inst "$drv_vol")
+    fi
     [[ "$dev" =~ ^vd[a-z]+$ ]] || fail "the disk of volume $vol_ID is not recorded on this host"
     virsh blockresize inst-$inst "$dev" "${size}G" >/dev/null || fail "virsh blockresize failed"
 else

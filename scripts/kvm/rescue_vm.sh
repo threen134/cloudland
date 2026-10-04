@@ -19,7 +19,8 @@ boot_loader=$8
 instance_uuid=${9:-$ID}
 # presigned GET URL of S3 (base64), empty when S3 is not configured
 image_download_url_b64=${10}
-# the boot disk of the instance, attached to the rescue system as vdb
+# the boot disk of the instance, attached to the rescue system as vdb; - for a disk of a shared pool, which comes in
+# the metadata (boot_disk) and is attached as its driver describes it
 boot_disk=${11}
 image_download_url=""
 if [ -n "$image_download_url_b64" ]; then
@@ -31,13 +32,24 @@ vol_state=error
 snapshot=1
 vm_rescue=$vm_ID-rescue
 
+md=$(cat)
+metadata=$(echo $md | base64 -d)
+# A boot disk of a shared pool this host can not reach fails the rescue before the instance is stopped: refused, with
+# the state the instance is in, which clapi puts back
+if [ "$boot_disk" = "-" ]; then
+    bd=$(jq -c '.boot_disk // empty' <<<"$metadata" 2>/dev/null)
+    if ! drv_load "$bd" || ! drv_volume "$bd" "$disk_ID" || ! drv_guard; then
+        log_debug $ID "rescue: the boot disk is not usable here: $guard_error"
+        cur=$(virsh domstate $vm_ID 2>/dev/null | sed 's/shut off/shut_off/g')
+        echo "|:-COMMAND-:| $(basename $0) '$ID' '${cur:-shut_off}' '$NODE_ID' 'refused'"
+        exit -1
+    fi
+fi
 pending_start_remove $ID
 # Only this script reports: the action_vm.sh callbacks would set the instance running, then shut_off,
 # while clapi keeps it rescuing (rescue_vm callback below)
 ./action_vm.sh $ID stop >/dev/null
 ./action_vm.sh $ID hard_stop >/dev/null
-md=$(cat)
-metadata=$(echo $md | base64 -d)
 ./build_meta.sh "$vm_ID" "$vm_name-rescue" "true" <<< $md >/dev/null 2>&1
 
 vm_meta=$cache_dir/meta/$vm_ID-rescue.iso
@@ -117,9 +129,12 @@ virsh define $vm_xml
 ./generate_vm_instance_map.sh add $vm_ID
 
 disk_xml=$xml_dir/$vm_ID/disk-${disk_ID}-rescue.xml
-cp $disk_template $disk_xml
-
-sed -i "s#VOLUME_SOURCE#$boot_disk#g;s#VOLUME_TARGET#vdb#g" $disk_xml
+if [ "$boot_disk" = "-" ]; then
+    drv_disk_xml "$drv_vol" vdb >$disk_xml
+else
+    cp $disk_template $disk_xml
+    sed -i "s#VOLUME_SOURCE#$boot_disk#g;s#VOLUME_TARGET#vdb#g" $disk_xml
+fi
 
 virsh attach-device $vm_rescue $disk_xml --config --persistent
 
@@ -133,7 +148,8 @@ for vol_xml in $xml_dir/$vm_ID/disk-*.xml; do
     [[ "$(basename $vol_xml)" == *-rescue* ]] && continue
     vid=$(basename "$vol_xml" .xml | sed 's/disk-//')
     [ "$vid" = "$disk_ID" ] && continue
-    src_path=$(grep -oP "file='[^']+'" "$vol_xml" | head -1 | cut -d"'" -f2)
+    # The file of a volume, or the pool/image of an RBD volume
+    src_path=$(grep -oP "<source [^>]*(file|name)='\K[^']+" "$vol_xml" | head -1)
     if [ -z "$src_path" ] || ! echo "$original_xml" | grep -q "$src_path"; then
         log_debug $ID "Data volume $vid not found in dumpxml, skipping (likely detached)"
         continue
