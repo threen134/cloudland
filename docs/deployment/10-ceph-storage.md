@@ -7,10 +7,11 @@ Ceph 是第二种共享存储：云硬盘是 Ceph 集群里的 RBD 镜像，能�
 
 设计细节见 `docs/architecture/plan/shared-storage-design.md`（§8；§16 S3 有实施记录）。
 
-> **现在能做什么**（2026-10-03）：
+> **现在能做什么**（2026-10-04）：
 >
 > - **能**：部署三台及以上的 Ceph 集群（3 副本）；导入已有的 Ceph 集群；建 RBD 存储池（托管集群按介质建放置规则、可设配额；导入的集群登记已有的 RBD 池）；池里的**数据盘**（建、挂、在线扩容、删）与**系统盘**（S4：从池里的镜像副本 `image-<ID>-<前缀>@base` 克隆，克隆格式 v2）；带 RBD 盘的迁移（不复制）；加节点、加盘、移除盘、移除节点、离线移除
-> - **还不能**：健康看护与告警（S5）；升级、宕机恢复（S6）。RBD 云服务器的 UEFI 变量放在所在节点上，迁移时照常复制
+> - **也能**（S5）：健康检查与告警、监控曲线、任务的完整日志、换坏盘、改角色（挪 mon / mgr / 管理节点）、新节点自动加为客户端、孤儿对账
+> - **还不能**：升级、宕机恢复（S6）。RBD 云服务器的 UEFI 变量放在所在节点上，迁移时照常复制
 > - **验证情况**：先在本机 WSL 沙箱里用单节点集群跑通，2026-10-03 在三台 Ubuntu 24.04 节点（Ceph 19.2.3，OSD 在回环盘上）上验收：部署、建池、卷的跨节点挂载与扩容、带 RBD 盘的热迁移、池不可用、配额写满、加盘 / 移除盘、导入、删除、节点整机重启都通过；加节点 / 移除节点（只有三台）没测
 
 ---
@@ -137,7 +138,12 @@ ceph auth get-or-create client.cloudland mon 'profile rbd' osd 'profile rbd pool
 | 移除磁盘 | `ceph orch osd rm <编号> --zap`：先把数据迁走再删 OSD、清盘，进度在任务详情里（「moving the data off」） |
 | 移除节点 | `ceph orch host drain`（迁走全部守护进程与数据）→ `ceph orch host rm`；只是客户端的节点不碰集群 |
 | 离线移除 | 节点已永久坏了：`ceph orch host rm --offline --force`，它的 OSD `purge`，Ceph 用其余副本恢复 |
+| 换盘 | 只对健康检查报告不是 `up` 的 OSD 出现，新盘必须在同一台主机：`ceph osd out` → `ceph orch daemon rm osd.<编号> --force` → `ceph osd destroy <编号> --force --yes-i-really-mean-it`（保留编号），再在新盘上建 OSD（沿用原编号）并 `ceph osd in`，数据从其他副本回填。OSD 还是 `up` 时拒绝。不用 `ceph orch osd rm --replace`：它要等 `safe-to-destroy`，OSD 主机数等于副本数时降级的数据无处可去，永远等不到。坏盘不擦除（回环测试盘外面那层 `clceph-*` 卷组会被去掉） |
+| 改角色 | 改 `mon` / `mgr` / `_admin` 标签，cephadm 按标签增减守护进程；mon 要保持奇数，mgr 1–2 台，管理节点必须是 mon。客户端节点第一次得到标签时先加为 cephadm 主机 |
+| 自动加为客户端 | 同 GPFS（[共享存储](./09-shared-storage.md#运维)）：所选可用区里的节点逐台以客户端加入（装 `ceph-common`、写客户端配置与 libvirt secret） |
 | 删除集群 | 先停掉编排器（`ceph mgr module disable cephadm`），每台节点 `cephadm rm-cluster --zap-osds`，删客户端配置、libvirt secret、`authorized_keys` 那一行，擦盘 |
+
+**健康检查、告警、曲线**：做法与 GPFS 相同（[共享存储](./09-shared-storage.md#运维)）。检查用 `ceph health detail`、`ceph orch host ls`、`ceph osd tree`、`ceph df`，Ceph 报 `*_NEARFULL` / `*_FULL` 时立即发「Ceph 容量接近满」告警。曲线来自活动 mgr 的 `prometheus` 模块（端口 9283）：部署时打开，已有集群由健康检查第一次运行时打开；Prometheus 的 `storage_clusters` 任务从 clapi 取 mgr 主机列表（`/api/v1/prometheus/sd/storage`），升级控制面后要用新的 `prometheus.yml` 重建 prometheus 容器。只有活动的 mgr 有数据，备用 mgr 的目标是空的。导入的外部集群没有曲线
 
 **只有 3 台 OSD 节点时坏一台补不回副本**：集群一直降级直到节点回来或换上新节点，这期间再坏一台，部分数据的读写会卡住。正式使用建议 OSD 节点不少于 4 台。计划内维护见设计文档 §8.5。
 

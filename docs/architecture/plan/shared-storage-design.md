@@ -703,7 +703,7 @@ type StorageTaskRun struct {
 #### 6.2.6 日志
 
 - 回调带回最后 64 KiB，界面直接显示
-- 完整日志（阶段 S5）：`GET /storage_tasks/:id/runs/:run/log` 先下发 `stc_upload_log.sh`，节点把日志文件上传到 clapi 的新接口 `/internal/storage_runs/:id/log`，clapi 存进 S3 后，接口再次调用时返回预签名的下载地址（界面先显示「正在取回」，轮询到地址为止）。令牌与捕获镜像同一套 HMAC 机制和上传密钥，但签名内容加用途前缀（`"log|<运行ID>|<过期时间>"`），日志令牌不能用来覆盖镜像
+- 完整日志（阶段 S5）：`GET /storage_tasks/:id/runs/:run/log` 先下发 `stc_upload_log.sh`（后台作业），节点把日志文件（最后 16 MiB）上传到 clapi 的接口 `/internal/storage_runs/:id/log`，clapi 存进数据库（`storage_run_logs`，每个运行一行，下次请求时覆盖），接口第一次返回 202，再次调用时返回 200 和日志内容（界面先显示「正在从节点取回」，每 2 秒问一次、最多约 90 秒，拿到后下载为 `storage-run-<ID>.log`）。还在跑的运行，副本超过 30 秒就重取；节点 2 分钟没回就重发。令牌与捕获镜像同一套 HMAC 机制和上传密钥（`CAPTURE_UPLOAD_SECRET`），但签名内容加用途前缀（`"log|<运行ID>|<过期时间>"`），日志令牌不能用来覆盖镜像，镜像令牌也不能冒充日志令牌；节点上传失败回调 `storage_run_log '<运行ID>' 'error' '<原因>'`。**原设计是存 S3、返回预签名地址**，实施时改了：S3 地址是内网的 MinIO，浏览器打不开；测试节点上最大的任务日志只有 12 KiB
 - 日志里不能出现凭据：脚本不回显密钥，`set -x` 只在不处理凭据的段落里用
 
 ### 6.3 节点与角色
@@ -952,7 +952,7 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 | 加主机 | 预检 → 加入 → 安装 → 拉镜像 → SSH 信任 → `ceph orch host add` → 按角色放置 → 客户端配置；带盘的接着加 OSD | 这台主机没有为别的 Ceph 集群运行守护进程（§4.1） |
 | 加盘 | `resolve_disks` → `ceph orch daemon add osd`；之后 Ceph 自动把一部分数据迁到新盘（见表后），不需要另发起重新均衡 | — |
 | 移除 OSD | `ceph orch osd rm <编号> --zap`，等数据迁完（`ceph orch osd rm status` 轮询进度）→ 盘已被 `--zap` 清掉，再触发扫描 | `ceph osd ok-to-stop`；剩余 OSD 主机数不少于各池副本数；剩余容量够 |
-| 换坏盘 | `ceph orch osd rm <编号> --replace`（保留编号）→ 新盘用同一编号加入 | — |
+| 换坏盘 | `ceph osd out` → `ceph orch daemon rm osd.<编号> --force` → `ceph osd destroy <编号> --force --yes-i-really-mean-it`（保留编号）→ 新盘用同一编号加入。不用 `orch osd rm --replace`：它要等 `safe-to-destroy`，OSD 主机数等于副本数时永远等不到 | — |
 | 移除主机 | `ceph orch host drain <主机>`（迁走全部守护进程，包括 OSD）→ 等完成 → `ceph orch host rm <主机>` → 删客户端配置与 `authorized_keys` 那一行 | 移除后 mon 仍是奇数且不少于 3（先缩 mon）；主机上没有使用本集群存储池的云服务器（先迁走） |
 | 离线移除主机 | 主机已经永久坏了：`ceph orch host rm <主机> --offline --force`，它的 OSD `ceph osd purge <编号> --yes-i-really-mean-it`，等数据在其余 OSD 上恢复 | 主机离线超过 30 分钟；要求输入主机名确认 |
 
@@ -1327,7 +1327,10 @@ clapi（`services/instance.go` 的 `Create`）：
 |---|---|
 | `GET /storage_tasks?cluster_id=&status=` | 分页列表；`cluster_id=0` 列出不占集群的任务（预检、自测） |
 | `GET /storage_tasks/:id` | 步骤、每台节点的结果与日志尾部 |
-| `GET /storage_tasks/:id/runs/:run/log` | 完整日志（阶段 S5）：第一次调用让节点上传，返回 202；之后再调用，上传完成时返回下载地址（§6.2.6） |
+| `GET /storage_tasks/:id/runs/:run/log` | 完整日志（阶段 S5）：第一次调用让节点上传，返回 202；之后再调用，上传完成时返回 200 和日志内容（§6.2.6） |
+| `GET /storage_clusters/:id/metrics` | 监控曲线（S5，§14.3）：`start` / `end` / `step`，返回按图表分组的曲线 |
+| `PATCH /storage_clusters/:id` | 描述、自动加为客户端的可用区（`auto_join_zones`）、重试加入失败的节点（`retry_auto_join`）（S5，§6.3） |
+| `POST /storage_pools/:id/reconcile`、`GET /storage_pools/:id/reconcile` | 共享池孤儿对账（S5）：一台能访问池的节点列出对象，clapi 比对，只报告不删除 |
 | `POST /storage_tasks/:id/retry`、`POST /storage_tasks/:id/abort` | 重试、中止 |
 
 **存储池**（已有的接口，`api/src/apis/routes.go:175-181`）
@@ -1414,6 +1417,8 @@ clapi（`services/instance.go` 的 `Create`）：
 阈值放系统设置（常规类），默认值如上。告警属于集群所在区域的系统组织，走系统组织的通知渠道。
 
 ### 14.3 指标与曲线
+
+**实施时的做法（S5，2026-10-03）**：下面几条是原设计；实际做法与它不同的地方：Ceph mgr 的采集目标由 clapi 的 http_sd 接口给出（`/api/v1/prometheus/sd/storage`，Prometheus 任务 `storage_clusters`，每个目标带 `storage_cluster` 标签），没有写 file_sd 目标文件；GPFS 的成员指标由心跳每分钟在后台起 `storage/stc_metrics.sh` 写出（`/var/lib/node_exporter/cloudland_storage_<集群UUID>.prom`），没有装 systemd 定时器，另外导出 mmpmon 的读写计数；共享池的用量由每个池的探测进程写出（`cloudland_shared_pool_{up,size_bytes,used_bytes}`，两种驱动同一口径），没有导出 fileset 配额；Grafana 面板没做。界面「监控」标签按后端给的查询画图：存储池用量、容量、吞吐、IOPS，GPFS 另有「节点」（GPFS 运行中的节点数、每个文件系统挂载的节点数），Ceph 另有「OSD」（运行 / 在集群内）
 
 - **Ceph**：启用 mgr 的 `prometheus` 模块（端口 9283，只有活动的 mgr 输出数据）。clapi 在部署、mgr 放置变化后把所有 mgr 主机的地址写进 Prometheus 的目标文件 `/etc/prometheus/lists/ceph_targets.json`（与 `matched_vms.json` 同一种 file_sd 做法，Prometheus 自己重读，不用重载），Prometheus 配置加一个 `ceph-mgr` 采集任务
 - **GPFS**：每个成员上一个 node_exporter textfile 采集脚本（附录 E），导出挂载状态、文件系统容量、组件健康。不装 IBM 的性能采集（zimon）
@@ -1741,9 +1746,69 @@ GPFS 优先：S2 先于 S3 开工。S2 的任何真实验证都要 24.04 的节�
 - **真实节点复测**（2026-10-03 晚，部署到 work-x：work-01 覆盖 13 个 Go 文件、重建 clapi，三台同步 8 个脚本，覆盖前的备份与数据库见执行记录；脚本 work-01 `/root/cl-s4-review2.sh <小节>`）：回归点 21、22、24、25、26、28、30、31、33 通过——排队重装期间关机被等待记录挡住（「waits for its image」）、救援 / 调整规格 / 迁移被拒，在节点上直接关掉它的域后心跳仍保持 `reinstalling`，216 秒后副本好了、重装照常执行；在没有定义这台云服务器的节点上手工跑 `reinstall_vm.sh` 被拒、系统盘不动；新云服务器的配置盘里没有 `boot_disk`（修复前建的 s4ga-1 里有）；部署后 31 行软删的等待记录被清掉；GPFS 上锁被一直占着时导入失败、别人的锁还在；导入失败放弃重装时卷和 `instances.disk` 都回到 2 GB；挪走 work-02 的 Ceph 配置后救援被拒、云服务器还是原来那个 QEMU 进程、状态回到 `running`；GPFS、Ceph 上的捕获都成功；在线扩容两种池的系统盘、来宾不重启；上一轮的 nocopy 小节重跑通过。23、27、29、32 只有 PostgreSQL 测试 / 代码审查
 
 
+### S5：运维完善
+
 **范围**：§14 的健康看护、告警、指标与界面监控；完整日志（§6.2.6）；GPFS 的重新均衡、换盘；Ceph 的换盘；改角色；新节点自动加为客户端；孤儿对象对账（共享池里有文件 / 镜像但数据库没有记录的，只报告不删除）。
 
 **验收**：§14.2 的每种告警都能触发、恢复时解除；池配额写满时告警按时触发。
+
+（这个小标题在 2026-10-03 S4 文档那次提交里被误删，S5 实施时补回。）
+
+**实施记录（2026-10-03 代码写完并在本机测完；2026-10-04 按代码审查修复后部署到 work-x 验收，见本节最后两段；未提交）**：
+
+- **健康看护与告警**（§14.1、§14.2）：`services/storage_health.go`，选主循环里每分钟一轮（`maintainStorageClusters` 对 `ready` / `degraded` 的集群都跑）。检查节点：托管集群在线的管理节点，外部集群任一在线成员；命令 `storage/stc_health.sh '<集群>' <<'EOF' {kind, mode, filesystems, ...}` 以后台作业执行（每集群每节点一把 `flock -n`），钩子 `backend_health` 在 `backends/<类型>.sh`：GPFS 用 `mmgetstate -a -Y`、每个文件系统的 `mmlsdisk -Y`（`availability`）、本机 `stat -f` 与 `df`、`mmhealth cluster show -Y` 的汇总；Ceph 用 `health detail`、`orch host ls`（托管）、`osd tree`、`df`，托管集群顺手打开 mgr 的 `prometheus` 模块。回调 `storage_health '<集群>' '<base64 JSON>'` 只认成员节点；报告写集群的 `health` / `health_info`（摘要、错误、消息、标志、裸容量、检查节点、正在触发的告警）、节点的 `state` / `checked_at`（按主机短名匹配）、磁盘新增的 `state` / `checked_at`（按 NSD 名 / `osd.N`）、文件系统容量。报告超过 5 分钟没更新，健康显示 `unknown`；检查节点自己报 `unknown`（命令不应答）时告警不变
+  - 六种告警：`StorageClusterUnhealthy`（warning / critical 按健康）、`StorageNodeDown`、`StorageDiskDown`（warning）、`CephNearFull`（critical，立即）、`StoragePoolUsageHigh`（池用量 ≥ 警告线 warning、≥ 严重线 critical，立即）、`StorageFsUnmounted`（文件型池在某个在线成员上不可用，critical）。前四种来自检查节点的报告，后两种由 clapi 每轮按各节点的池探测结果算（不依赖检查节点）。条件持续 `STORAGE_ALERT_DELAY_MINUTES`（默认 2）才触发；级别变化先解除旧告警再触发新的；条件消失即解除；删除集群时解除它还在触发的告警。告警属于系统组织（`owner` 是系统组织 ID，`vm_uuid` 字段放集群 UUID），走系统组织的通知渠道，指纹 `storage-<sha1(集群|条件|级别)>-<触发时刻纳秒>`
+  - 系统设置（常规类，cpgateway 校验范围）：`STORAGE_ALERT_DELAY_MINUTES` 1–60、`STORAGE_POOL_USAGE_WARN_PERCENT` 50–99（默认 80）、`STORAGE_POOL_USAGE_CRITICAL_PERCENT` 50–100（默认 90）。界面「系统设置 → 常规 → 存储告警」
+  - 界面：集群详情概览加「健康检查」卡片（检查时间与节点、概况、失败原因、标志、裸容量、存储软件的消息、正在触发的告警），节点的「存储软件报告的状态」悬停显示检查时间，磁盘表加「报告的状态」列（不是 up 的标黄）
+- **指标与曲线**（§14.3，做法见那一节开头）：`services/storage_metrics.go`（`storageMetricsSource` / `storageScrapeSource` 两个可选接口，GPFS 与 Ceph 各自给查询），`GET /storage_clusters/:id/metrics`（`apis/storage_metrics.go`，时段限制同 VPN 流量接口：跨度 ≤ 31 天、不超过当前 + 1 小时、步长整秒、点数 ≤ 11000；速率窗口至少 180 秒，因为 GPFS 计数每分钟才变一次；已删的池不画；没有数据的图表不返回），界面 `components/storage/StorageClusterMetrics.vue`（复用 `MonitoringPanel`，容量按 1024 进制）
+- **完整日志**（§6.2.6）：`services/storage_run_log.go`、`apis/storage_run_log.go`、`rpcs` 的 `storage_run_log`、节点 `storage/stc_upload_log.sh`；界面任务详情展开运行后「下载完整日志」
+- **换盘**（§7.5、§8.5）：`POST /storage_clusters/:id/disks/:disk_id/replace {disk_id, media, wipe}`。只接受健康检查报告不是 `up` 的盘（还没检查过的拒绝），新盘必须在同一台节点、是空闲盘；新盘沿用旧盘的种类属性（GPFS 的用途与存储池）。GPFS：`resolve_disks`（不再找正在摘除的盘：坏盘读不出来）→ `create_nsd`（先建新的，盘不对就在动旧盘之前失败）→ `remove_disks`（先核对 GPFS 此刻报告这块盘是 `down` / `unrecovered`，`up`、`recovering` 一律拒绝；`mmdeldisk -p` + `mmdelnsd`，`mmdelnsd` 失败时只要集群里已经没有这个 NSD 就算成功：`-p` 的参数是 NSD 编号，而且只用来清理上次失败的 `mmdelnsd` 留下的盘，原来的 `mmdelnsd -p <名字>` 是错的）→ `add_disks` → `restore`（`mmrestripefs -r` 补齐副本）→ `release_disks`（`no_wipe`：只去掉认领、不擦坏盘）。Ceph：`resolve_disks` → `replace_osd`（OSD 是 `up` 就拒绝；`osd out` → `orch daemon rm osd.<编号> --force` → `osd destroy <编号> --force --yes-i-really-mean-it`，再在新盘上建 OSD，cephadm 把这台主机 destroyed 的编号给新 OSD，最后 `osd in`）→ `release_disks`。原来用 `orch osd rm <编号> --replace --force`，真实节点上永远完不成：cephadm 即使带 `--force` 也要等 `osd safe-to-destroy`，OSD 主机数等于副本数时降级的数据无处可去，坏掉的 OSD 永远不会被判可以销毁（2026-10-04 在 work-x 上卡了 15 分钟超时）。中止时新旧两块盘都标 `failed`
+- **改角色**（§13.1）：`PATCH /storage_clusters/:id/nodes/:hypervisor {roles}`，盘角色跟随磁盘不在这里改；按建集群的规则检查，另查与同类型其他集群的冲突；内存预留按新角色重算。GPFS：`ssh_trust`（所有成员，新的管理节点拿到集群密钥）→ `change_roles`（`gpfs_cluster.sh` 的 `roles`：加仲裁 `mmchnode --quorum --manager`，去仲裁前把集群管理器 `mmchmgr -c`、文件系统管理器 `mmchmgr <fs>` 挪到另一台仲裁节点，再 `--nonquorum --client`）→ `finish`（内存预留）。Ceph：`ssh_trust`（管理与 mgr 节点）→ `set_labels`（加减 `mon` / `mgr` / `_admin` 标签，`osd` 只加不减；客户端第一次得到标签时先 `orch host add`；等 mon 数到位和活动 mgr）→ `finish`。中止时角色和内存预留恢复原值。没有预检的任务取已记住的主机密钥（`gpfsPrecheckFacts` 找不到预检步骤时返回空）
+- **新节点自动加为客户端**（§6.3）：`services/storage_auto_join.go`，`PATCH /storage_clusters/:id {auto_join_zones: [可用区UUID]}`。`pending_clients` 改为 text、存 `{hostid, status: pending|joining|failed, reason, task_id, since}`。每轮：跟进正在加入的节点的任务（成功即移出；失败的任务由后台以系统管理员身份自动中止；中止后那台节点标 `failed`，原因取失败运行的消息）；把可用区里在线、不在集群里、作为客户端不与同类型其他集群冲突的节点排进来；结构槽空闲时**一次只为一台节点**发起 `add_nodes`（角色 client），失败的节点只影响它自己。`failed` 的节点不再重试，它的成员记录停在 `error`（与手工加入中止时一样），管理员移除后点「重试失败的节点」（`retry_auto_join`）。开启时可用区里已有的节点也会加入。界面概览加「自动加为客户端」卡片与设置弹窗
+- **孤儿对账**：`services/storage_pool_reconcile.go`、`apis/storage_pool_reconcile.go`、`rpcs` 的 `shared_pool_objects`、节点 `storage/stc_pool_objects.sh` 与驱动钩子 `drv_list`（文件型 `find` 深度 3，RBD `rbd ls -l`）。一台能访问池（池行 `ready` / `degraded`）且在线的节点列出对象，回调是 gzip 后 base64 的 JSON（回调一行上限 1 MiB，最多 10 万个对象）。期望的对象：池里没删除的卷的 `path`、池里的镜像副本、挂在云服务器上的卷对应的 `nvram/inst-<ID>_VARS.fd`；隐藏文件（标记、探测文件）不算；文件型池里最近一小时改过的、不到一天的临时文件不列。按类型报告：无记录的卷、记录已删除的卷、镜像副本、NVRAM、临时文件、其他。只报告不删除。接口名用 `reconcile`，因为 `orphans` 已经是本地池「放弃待接管的卷」。结果存 `storage_pool_reconciles`，10 分钟没回答显示失败。界面在共享池详情页
+- **与设计不同的地方**：完整日志存数据库不存 S3（§6.2.6）；指标的采集方式（§14.3 开头）；Ceph 换盘不用 `orch osd rm --replace`，直接 `osd destroy --force`（坏盘的数据搬不走；OSD 主机数等于副本数时 Ceph 永远不会判它可以销毁，cephadm 的 `--force` 也不跳过这一项）；自动加入一次一台
+- **测试**（都在本机，没在真实节点上跑）：
+  - PostgreSQL：`TestStorageHealthPG`（检查下发、非成员拒绝、报告更新节点 / 磁盘 / 文件系统、延迟、级别变化、nearfull 立即、unknown 不动告警、解除、池用量 85 / 95 / 10、文件系统未挂载与离线节点、报告过期、删除集群解除）、`TestStorageRunLogPG`、`TestStorageReplaceDiskPG`（GPFS 全流程与中止）、`TestStorageChangeRolesPG`（拒绝的几种、加管理节点、中止后恢复）、`TestStorageAutoJoinPG`（排队、预检失败自动中止并标失败、不重试、重试、成功后移出、关闭）、`TestStorageCephDeployPG` 加了 Ceph 换盘与改标签、`TestStoragePoolReconcilePG`；接口层 `TestStorageMetricsPG`（假 Prometheus：曲线对齐、已删的池与无数据的图表不返回、查询都带集群、速率窗口、时段限制、非管理员）与 `TestStorageRunLogUploadPG`（令牌只认这个运行和用途、超过 16 MiB 拒绝）；单元 `TestStorageAlarmTransitions`、`TestStorageShortName`
+  - WSL：新增 `gpfs-spike/stc-test6.sh`（21 项：GPFS 指标钩子用假 mm 命令、挂载点解码与记住、GPFS 不应答、`stc_metrics.sh` 写文件与删掉离开的集群和 Ceph 的文件、锁、池探测写指标与池被移出后删掉、孤儿列表的 gzip 回调、未在本机的池、上传日志到本机 HTTP 服务、拒绝 / 没有日志 / 坏参数、坏盘释放不擦）；`stc-test1`–`5` 重跑通过（18 / 31 / 32 / 20 / 63）
+  - 界面：会话临时目录 `pw/stc-ui-s5.js`（20 项，接口全在浏览器里模拟）：健康卡片与告警、自动加入卡片与设置 / 重试、磁盘状态列与只给 down 的盘「换盘」、换盘弹窗只列空闲盘、改角色不给盘角色、四张监控图、完整日志 202 后下载、孤儿对账、系统设置的存储告警
+  - 在 work-01 上只读试跑过两个 GPFS 钩子（`backend_health`、`backend_metrics`），输出与真实集群一致
+- **没做 / 没测**：Grafana 面板；GPFS fileset 用量与按 GPFS 存储池分的容量；外部 Ceph 集群没有曲线（mgr 不归 CloudLand 管）；自动加入不能只限新上线的节点；自动加入与「客户端第一次得到守护进程角色时安装」在 work-x 上测不了（三台都在两个集群里，没有客户端节点），只有 PostgreSQL 与单元测试；GPFS `mmdelnsd` 失败后的兜底在真实节点上没触发到（停掉的盘 `mmdelnsd` 也返回 0）
+- **部署要点**：clapi 与 cpgateway 一起（新接口、三项系统设置）；AutoMigrate 建 `storage_run_logs`、`storage_pool_reconciles`，`storage_cluster_disks` 加 `state` / `checked_at`，`storage_clusters.pending_clients` 改为 text；Prometheus 配置加 `storage_clusters` 任务（`deploy/docker/config/prometheus/prometheus.yml`，要重建 / 重启 prometheus 容器）；三台节点同步脚本：新增 `storage/stc_health.sh`、`stc_metrics.sh`、`stc_upload_log.sh`、`stc_pool_objects.sh`（可执行位，提交时 `git update-index --chmod=+x`），改动的 `storage_lib.sh`、`report_rc.sh`、`pool_probe.sh`、`shared_pool_probe.sh`、`storage/backends/{gpfs,ceph}.sh`、`storage/{gpfs_cluster,gpfs_fs,ceph_cluster,stc_release_disks}.sh`、`storage/drivers/{file,ceph_rbd}.sh`；已有的 Ceph 集群由健康检查打开 mgr 的 prometheus 模块；完整日志要 `CAPTURE_UPLOAD_SECRET` 与 clapi 内部地址（与捕获镜像相同）；前端随 nginx
+
+**代码审查修复（2026-10-04，`/code-review` 报 15 条，全部修掉；TC-23 回归点 4–18）**：
+
+1. 孤儿对账列出失败时原因丢了：`drv_list` 原先在 `$( )` 里跑，它设的 `guard_error` 留在子 shell 里，回调的 `error` 是空串。改为输出到临时文件，失败原因照常带回
+2. 健康报告里少了的节点 / 磁盘被当成恢复：某个查询超时、报告没列出某台节点或某块盘时，原先会把它们的告警解除。现在没报告的保持原状（`storageAlarmTransitions` 的 `keep`）
+3. 没人能检查的集群没有告警：检查节点全离线、或报告超过 5 分钟没来、或检查节点报 `unknown` 时，原先告警原样不动、也不报新的——偏偏「mon 失去仲裁、GPFS 全停」这种最要紧的时候就是没有报告。新增条件 `reach`：`StorageClusterUnhealthy`（critical，「can not be checked: <原因>」），持续告警延迟后触发，来了报告就解除；从没报告过的集群从进入 `ready` 起算
+4. GPFS 删 NSD 用错了 `mmdelnsd -p`：`-p` 后面要的是 NSD 编号，而且只用来清理上次失败的 `mmdelnsd` 留下的盘（2026-10-02 在 work-01 上核对过）。改为按名字删，失败时只要集群里已经没有这个 NSD 就算成功（坏盘上的描述符擦不掉）
+5. 换盘凭过时的健康报告就 `mmdeldisk -p`：`-p` 不搬数据，盘其实能用时副本白白丢掉。`remove_disks` 输入带 `require_down`，节点脚本先查 GPFS 此刻的 `availability`，只接受 `down` / `unrecovered`（真实节点验收时又把 `recovering` 排除了，见下一节）；集群有任务时不跑看护（GPFS 的「拉起 down 的 NSD」不会在换盘途中把盘拉起来）
+6. 完整日志：运行中的任务重新取日志时，原先先把旧副本当成完整日志交给界面；现在重新取时状态一律是 `requested`（旧内容留在行里），界面等新副本。节点离线时有副本就给副本（状态 `ready`，`message` 说明是哪个时刻取回的，界面提示「宿主机离线，下载的是 … 取回的副本」），没有才 409
+7. 换盘不认过时的磁盘状态：磁盘状态超过 10 分钟没更新就拒绝（「wait for a fresh check」）
+8. 健康检查拿不到锁时 `exit`，`async_exec` 的作业文件停在 `.in_progress`；改为 `return`
+9. 改角色的集群命令在正在变化的那台节点上执行：刚加为管理节点的主机还没有 admin keyring（Ceph 要过一会儿才下发），刚去掉管理的那台已经不该再做。`changeRolesAdmins`：执行节点排除这台，除非它前后都是唯一的管理节点
+10. Ceph 客户端第一次得到 mon / mgr / osd / 管理角色时没有装成 cephadm 主机：客户端节点安装时是 `orch=false`。改角色计划在这种情况下先跑 `install`（`cephInstallInput` 按新角色算 `orch`）
+11. 自动加入时集群刚被别的任务占了，原先把那台节点标成加入失败；现在留在等待里，下一轮再试（`autoJoinStart`）
+12. 「重试失败的节点」原先把失败的节点直接忘掉，而它的成员记录（`error`）还在、永远不会再排进来；现在成员记录还在的保留在列表里，原因改为「先把它从集群里移除再重试」
+13. 孤儿对账的回调可能超过一行 1 MiB 的上限（10 万个长文件名）：列表按 3/4 递减到 gzip + base64 后不超过 1,000,000 字节（最少保留 1000 个），`truncated` 标出
+14. 文件型池列对象时，有文件在 `find` 遍历中途消失（导入、重装的临时文件）`find` 退出码是 1，原先整次失败；现在只有超时（124 及以上）算失败
+15. 其他：对账命令的脚本路径用 `storageScriptDir`；同类型集群角色冲突的检查合并成 `storageHostConflict`（建集群、改角色、自动加入共用）；删掉没用到的能力 `clients`
+
+测试：PostgreSQL 新增 / 改了 `TestStorageHealthPG`（部分报告保留磁盘告警、没人能检查的告警与解除、报告过期）、`TestStorageRunLogPG`（重新取、离线有 / 无副本）、`TestStorageReplaceDiskPG`（过时状态拒绝、`require_down`）、`TestStorageAutoJoinPG`（成员记录还在时重试保留、集群忙时留在等待）；单元 `TestStorageChangeRolesPlan`（执行节点的选择、客户端加 mgr 先安装、唯一管理节点改自己）、`TestStorageAlarmTransitions` 的 `keep`；WSL `stc-test6.sh` 26 项（新增失败原因、`find` 退出 1、超时、大池截断到 1 MiB 以内、健康检查拿不到锁时作业正常结束）；界面 `pw/stc-ui-s5.js` 21 项（新增离线副本的提示）；全部 Go 测试（PostgreSQL）、WSL `stc-test1`–`6`、CGO 测试通过
+
+**S5 真实节点验收（2026-10-04，用户要求「修复 修改后部署测试」）**：代码审查修复之后部署到 work-x，按 `test-items/TC-23-存储运维.md` 跑 OPS-01–10，执行记录 `test-items/runs/2026-10-04-c9f12ee4+S5存储运维.md`。§14.2 的验收通过：六种告警都在真实集群上触发并解除，池写到警告线 / 严重线时一分钟左右告警。
+
+- **健康与告警**：两个集群的健康卡片、节点与磁盘的报告状态正确；停 work-01 的 cloudlet（两个集群唯一的检查节点）后 2 分钟两条「can not be checked」critical，恢复后一分钟解除；`mmshutdown` work-03：集群 error（critical）、节点离线、磁盘离线 2 分 14 秒后触发，`StorageFsUnmounted`（gp1 在 work-03）再晚 47 秒（池探测与告警延迟），`mmstartup` 后 1–2 分钟内解除，中间集群从 error 变成 warning（盘 recovering）时先解除再触发；停 osd.1：集群 warning 与磁盘离线，`set-nearfull-ratio 0.01` 后下一次报告就发 `CephNearFull`（不等延迟），恢复后全部解除
+- **池用量**：gp1 配额调到 6 GB 灌数据，81% 警告、93% 严重、退回 81% 时严重解除警告再起、清掉后全部解除；rp1 配额 2 GB 用 `rbd bench` 写到 86% / 94% 同样。GPFS 的配额用量按两份数据副本算（写 1 GiB 用量涨 2 GiB），写到 99% 的 Ceph 池探测卡住、报不出用量
+- **指标**：Prometheus `storage_clusters` 目标是两台 mgr 的 9283，改角色挪 mgr 后一分钟内跟着换；两个集群各 5 张图都有数据；三台节点都写了 GPFS 与共享池的 textfile
+- **完整日志**：下载的日志与节点上的文件逐字节一致；节点离线时已结束运行的副本照常给，从没取回过的 409
+- **换盘**：GPFS 用回环盘换 work-02 的 NSD、再换回原来的 sdb，两次都通过（新 NSD 编号 `cl3h2d2`、`cl3h2d3`，副本补齐，旧盘不擦）；Ceph 用回环盘换 osd.1，77 秒完成、沿用编号，回填约 25 分钟后 `HEALTH_OK`
+- **改角色**：GPFS 给 work-02 加 / 去管理角色（集群密钥下发 / 删除，`change_roles` 两次都在 work-01 执行），四种拒绝都对；Ceph 把 mgr 从 work-02 挪到 work-03 再挪回，`set_labels` 都在 work-01 执行，内存预留跟着走
+- **孤儿对账**：gp1 / rp1 各造一个无记录的卷，几秒内列出（类型「云硬盘，无记录」），删掉后为空，什么都没被删
+- **界面**：本机 5173 对真实环境只读检查 11 项（健康卡片、磁盘状态、两组曲线、下载换盘任务的完整日志、孤儿对账结果、存储告警设置），会话临时目录 `pw/stc-ui-s5-live.js`
+- **发现并修掉的 3 个问题**（TC-23 回归点 19–21）：① GPFS 换盘的 `require_down` 只拒绝 `up`，盘被拉起时的 `recovering` 会被当成坏盘 `-p` 掉，改为只接受 `down` / `unrecovered`（第一次换盘时真的碰上了，任务按预期失败，再停盘后重试完成）；② Ceph 换盘用 `orch osd rm --replace --force` 永远完不成：cephadm 带 `--force` 仍要等 `osd safe-to-destroy`，3 台主机 × 3 副本时坏 OSD 降级的数据无处可去，15 分钟超时，改为直接 `osd out` → `orch daemon rm` → `osd destroy --force` → 建新 OSD → `osd in`；③ 一次故障里级别来回变时，第二次严重告警沿用第一次的指纹（指纹用的是条件开始的时刻），覆盖了第一次的事件，改为每次触发用自己的触发时刻（`StorageAlarmState.Fired`）
+- **观察到、不改的**：`mmdelnsd` 对停掉的盘打印 `Unable to find disk with NSD volume id` 但返回 0；Ceph 回环测试盘换掉后 `backend_disks_resolved` 去掉它外面的 `clceph-*` 卷组（只有回环盘有这一层）；被换的盘在换盘任务开始后不再报磁盘离线（只看 `active` 的盘）；GPFS 移除盘后 mmhealth 会留几分钟 `ill_exposed_fs`，集群健康短暂 warning
+- **部署**：work-01 在已有叠加上又覆盖 72 个文件（备份 `/root/s5-overlay-backup-20261004.tar`、清单 `/root/s5-overlay-files-20261004.txt`、数据库 `/root/db-before-s5-overlay-20261004-{cloudland,cloudland_cpgateway}.sql`），重建 clapi、cpgateway，重建 prometheus 容器；三台同步 16 个脚本（work-02 / 03 备份 `/root/s5-scripts-backup-20261004.tar`）；验收中又推了 `gpfs_fs.sh`、`ceph_cluster.sh`（三台，覆盖前 `/root/*.bak-s5r-20261004`）与 `storage_health.go`（重建 clapi）。界面没部署
+- **环境变化**：s2-02 迁到了 work-01（`mmshutdown` 前迁走）；work-02 的 GPFS NSD 现在是 `cl3h2d3`（还是 sdb）；osd.1 现在在 work-02 的 `osd2.img` 上，`osd1.img` 空着；ceph1 的 mgr 回到 work-01 / work-02
 
 ### S6：升级、凭据轮换、宕机恢复
 
