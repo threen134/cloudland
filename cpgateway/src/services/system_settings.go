@@ -62,6 +62,9 @@ var SettingsMetadata = []SettingMeta{
 	{"HOST_CONSOLE_ENABLED", "boolean", "general", "允许系统管理员从 Web 打开计算节点的 root 终端", false, constant(false)},
 	{"HOST_CONSOLE_REQUIRE_PASSWORD", "boolean", "general", "打开计算节点终端前要求再次输入登录密码", false, constant(true)},
 	{"HOST_CONSOLE_IDLE_MINUTES", "number", "general", "计算节点终端空闲断开时间（分钟）", false, constant(DefaultHostConsoleIdleMinutes)},
+	{"STORAGE_ALERT_DELAY_MINUTES", "number", "general", "存储集群的节点、磁盘、健康异常持续多久才告警（分钟）", false, constant(DefaultStorageAlertDelayMinutes)},
+	{"STORAGE_POOL_USAGE_WARN_PERCENT", "number", "general", "共享存储池用量达到多少告警（%）", false, constant(DefaultStoragePoolUsageWarn)},
+	{"STORAGE_POOL_USAGE_CRITICAL_PERCENT", "number", "general", "共享存储池用量达到多少严重告警（%）", false, constant(DefaultStoragePoolUsageCritical)},
 	{"DEFAULT_CPU_CORES", "number", "quota", "默认 CPU 配额（核）", false, cfgNumber("quota.defaults.cpu_cores", 4.0)},
 	{"DEFAULT_RAM_GB", "number", "quota", "默认内存配额（GB）", false, cfgNumber("quota.defaults.ram_gb", 8.0)},
 	{"DEFAULT_DISK_GB", "number", "quota", "默认磁盘配额（GB）", false, cfgNumber("quota.defaults.disk_gb", 50.0)},
@@ -92,6 +95,13 @@ const DefaultAuditLogRetentionDays = 365
 // DefaultHostConsoleIdleMinutes and the HOST_CONSOLE_IDLE_MINUTES range must match clapi (services/host_console.go)
 const DefaultHostConsoleIdleMinutes = 15
 
+// The storage alarm settings and their ranges must match clapi (services/storage_health.go)
+const (
+	DefaultStorageAlertDelayMinutes = 2
+	DefaultStoragePoolUsageWarn     = 80
+	DefaultStoragePoolUsageCritical = 90
+)
+
 // settingRange is the allowed value range (inclusive) of a numeric setting.
 type settingRange struct {
 	Min, Max float64
@@ -102,16 +112,19 @@ type settingRange struct {
 // trail cannot be wiped by mistake (clapi applies the same range when reading it). Default quotas must be
 // non-negative, and count quotas whole numbers, matching the per-org quota update API.
 var settingRanges = map[string]settingRange{
-	"AUDIT_LOG_RETENTION_DAYS":  {90, 3650, true},
-	"HOST_CONSOLE_IDLE_MINUTES": {5, 240, true},
-	"DEFAULT_CPU_CORES":         {0, 1e6, false},
-	"DEFAULT_RAM_GB":            {0, 1e7, false},
-	"DEFAULT_DISK_GB":           {0, 1e9, false},
-	"DEFAULT_PUBLIC_IPS":        {0, 1e5, true},
-	"DEFAULT_VPCS":              {0, 1e5, true},
-	"DEFAULT_LOAD_BALANCERS":    {0, 1e5, true},
-	"DEFAULT_VPN_GATEWAYS":      {0, 1e5, true},
-	"DEFAULT_IMAGES":            {0, 1e5, true},
+	"AUDIT_LOG_RETENTION_DAYS":            {90, 3650, true},
+	"HOST_CONSOLE_IDLE_MINUTES":           {5, 240, true},
+	"STORAGE_ALERT_DELAY_MINUTES":         {1, 60, true},
+	"STORAGE_POOL_USAGE_WARN_PERCENT":     {50, 99, true},
+	"STORAGE_POOL_USAGE_CRITICAL_PERCENT": {50, 100, true},
+	"DEFAULT_CPU_CORES":                   {0, 1e6, false},
+	"DEFAULT_RAM_GB":                      {0, 1e7, false},
+	"DEFAULT_DISK_GB":                     {0, 1e9, false},
+	"DEFAULT_PUBLIC_IPS":                  {0, 1e5, true},
+	"DEFAULT_VPCS":                        {0, 1e5, true},
+	"DEFAULT_LOAD_BALANCERS":              {0, 1e5, true},
+	"DEFAULT_VPN_GATEWAYS":                {0, 1e5, true},
+	"DEFAULT_IMAGES":                      {0, 1e5, true},
 }
 
 // ValidateSetting validates a single setting value: boolean settings must be booleans, numeric settings with a

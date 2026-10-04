@@ -6764,6 +6764,45 @@ const docTemplatev1 = `{
                         }
                     }
                 }
+            },
+            "patch": {
+                "description": "the description, and the zones whose hosts join the cluster as clients on their own (shared-storage-design.md §6.3): every online host of those zones not in the cluster is queued and joins with a task of its own once the cluster is free; one that fails is left alone and listed until retry_auto_join",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "change a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Changes",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageClusterPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageClusterResponse"
+                        }
+                    }
+                }
             }
         },
         "/storage_clusters/{id}/disks": {
@@ -6838,6 +6877,116 @@ const docTemplatev1 = `{
                         "description": "Accepted",
                         "schema": {
                             "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/{id}/disks/{disk_id}/replace": {
+            "post": {
+                "description": "a disk the storage reports down is swapped for a new disk of the same host (shared-storage-design.md §7.5, §8.5): GPFS drops the failed NSD (mmdeldisk -p), adds the new one and restores the replication; Ceph destroys the OSD keeping its id and makes the new disk take it. The failed disk is not wiped. A disk that works is removed the normal way instead",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "replace a failed disk of a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "UUID of the failed disk in the cluster",
+                        "name": "disk_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The new disk",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageReplaceDiskPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/{id}/metrics": {
+            "get": {
+                "description": "Curves of a storage cluster from Prometheus (shared-storage-design.md §14.3): the use of its pools, its capacity, throughput and IOPS, and its hosts (GPFS) or OSDs (Ceph). Only for system admins. A chart with no data at all is left out.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "storage cluster metrics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start, unix seconds",
+                        "name": "start",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "End, unix seconds",
+                        "name": "end",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Resolution as a duration, e.g. 60s or 5m",
+                        "name": "step",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageMetricsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
                         }
                     }
                 }
@@ -6926,6 +7075,52 @@ const docTemplatev1 = `{
                         "description": "Remove the storage software from the host too",
                         "name": "purge_packages",
                         "in": "query"
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "GPFS quorum (with manager) and admin hosts, Ceph mon, mgr and admin placement (shared-storage-design.md §13.1), checked like a new cluster; the disk role follows the disks of the host",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "change the roles of a member of a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "hypervisor",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Roles",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageChangeRolesPayload"
+                        }
                     }
                 ],
                 "responses": {
@@ -7398,6 +7593,61 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/storage_pools/{id}/reconcile": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "the last orphan report of a shared pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Pool UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolReconcileResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "asks a host that reaches the pool for its files (GPFS) or RBD images (Ceph); clapi then reports those it has no record of (shared-storage-design.md §16 S5). Nothing is removed. A request still waiting is not sent again; read the result with GET",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StoragePool"
+                ],
+                "summary": "list the orphans of a shared pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Pool UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StoragePoolReconcileResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/storage_tasks": {
             "get": {
                 "description": "cluster_id is the UUID of a cluster; 0 lists the tasks not tied to a cluster (precheck, selftest); without it every task is listed",
@@ -7548,6 +7798,60 @@ const docTemplatev1 = `{
                         "description": "Accepted",
                         "schema": {
                             "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_tasks/{id}/runs/{run}/log": {
+            "get": {
+                "description": "The callback of a run only brings the last 64 KiB of its log. The first call asks the host for the whole log and answers 202; call again until the answer is 200 with the log (its last 16 MiB). A run that is still running is fetched again when the copy is older than 30 s.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "whole log of a storage task run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Run ID",
+                        "name": "run",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageRunLogResponse"
+                        }
+                    },
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageRunLogResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No such task or run",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "The host is offline, or the hosts can not upload",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
                         }
                     }
                 }
@@ -13404,6 +13708,23 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.StorageAutoJoinResponse": {
+            "type": "object",
+            "properties": {
+                "pending": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StoragePendingClientResponse"
+                    }
+                },
+                "zones": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.ResourceReference"
+                    }
+                }
+            }
+        },
         "apis.StorageBackendListResponse": {
             "type": "object",
             "properties": {
@@ -13475,6 +13796,40 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.StorageChangeRolesPayload": {
+            "type": "object",
+            "required": [
+                "roles"
+            ],
+            "properties": {
+                "roles": {
+                    "description": "The roles as they will be; the disk role follows the disks of the host",
+                    "type": "array",
+                    "maxItems": 8,
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "apis.StorageClusterAlarmResponse": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "severity": {
+                    "type": "string"
+                },
+                "since": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.StorageClusterCreatePayload": {
             "type": "object",
             "required": [
@@ -13531,6 +13886,9 @@ const docTemplatev1 = `{
                     "description": "Kind specific attributes, e.g. the usage and storage pool of a GPFS NSD",
                     "type": "object"
                 },
+                "checked_at": {
+                    "type": "string"
+                },
                 "disk_id": {
                     "type": "string"
                 },
@@ -13559,7 +13917,58 @@ const docTemplatev1 = `{
                 "size_bytes": {
                     "type": "integer"
                 },
+                "state": {
+                    "description": "What the storage software reports for the disk (gpfs availability, ceph up/down) and when it was seen",
+                    "type": "string"
+                },
                 "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.StorageClusterHealthResponse": {
+            "type": "object",
+            "properties": {
+                "alarms": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageClusterAlarmResponse"
+                    }
+                },
+                "capacity_bytes": {
+                    "description": "Capacity of the whole cluster as its software reports it (ceph df)",
+                    "type": "integer"
+                },
+                "checked_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "flags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "free_bytes": {
+                    "type": "integer"
+                },
+                "hypervisor": {
+                    "description": "The host that checked",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.ResourceReference"
+                        }
+                    ]
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "summary": {
                     "type": "string"
                 }
             }
@@ -13627,6 +14036,10 @@ const docTemplatev1 = `{
                     "description": "Kind specific attributes, e.g. the failure group of a GPFS host",
                     "type": "object"
                 },
+                "checked_at": {
+                    "description": "When the health watchdog last saw the host in the storage software's report",
+                    "type": "string"
+                },
                 "hypervisor": {
                     "$ref": "#/definitions/common.ResourceReference"
                 },
@@ -13647,6 +14060,27 @@ const docTemplatev1 = `{
                 },
                 "status": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.StorageClusterPatchPayload": {
+            "type": "object",
+            "properties": {
+                "auto_join_zones": {
+                    "description": "Zones whose hosts join the cluster as clients on their own; [] turns it off (managed clusters only)",
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 256
+                },
+                "retry_auto_join": {
+                    "description": "Forget the hosts that failed to join on their own, so they are tried again",
+                    "type": "boolean"
                 }
             }
         },
@@ -13717,6 +14151,14 @@ const docTemplatev1 = `{
                     "description": "Sum of the volumes in the pools of the cluster",
                     "type": "integer"
                 },
+                "auto_join": {
+                    "description": "Detail only: the zones whose hosts join as clients on their own and the hosts on their way in",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/apis.StorageAutoJoinResponse"
+                        }
+                    ]
+                },
                 "capacity_bytes": {
                     "type": "integer"
                 },
@@ -13751,6 +14193,14 @@ const docTemplatev1 = `{
                 },
                 "health": {
                     "type": "string"
+                },
+                "health_info": {
+                    "description": "Detail only: the last health report and the alarms it raised",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/apis.StorageClusterHealthResponse"
+                        }
+                    ]
                 },
                 "id": {
                     "type": "string"
@@ -13891,6 +14341,70 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.StorageMetricChart": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "description": "capacity, throughput, iops, pools, nodes (GPFS: hosts running GPFS and mounting each file system), osds",
+                    "type": "string"
+                },
+                "series": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageMetricSeries"
+                    }
+                },
+                "unit": {
+                    "description": "bytes, bytes_per_second, ops_per_second, percent, count",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.StorageMetricSeries": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "description": "What the curve is: read, write, used, total, active, mounted, up, in, pool",
+                    "type": "string"
+                },
+                "label": {
+                    "description": "The file system or the pool (its name) when the chart has one curve of Key per file system or pool",
+                    "type": "string"
+                },
+                "values": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                }
+            }
+        },
+        "apis.StorageMetricsResponse": {
+            "type": "object",
+            "properties": {
+                "charts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageMetricChart"
+                    }
+                },
+                "end": {
+                    "type": "integer"
+                },
+                "start": {
+                    "type": "integer"
+                },
+                "step": {
+                    "type": "string"
+                },
+                "timestamps": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
         "apis.StorageNodePayload": {
             "type": "object",
             "required": [
@@ -14027,6 +14541,27 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.StoragePendingClientResponse": {
+            "type": "object",
+            "properties": {
+                "hypervisor": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "since": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "pending: waits for the cluster to be free; joining: its task runs; failed: left alone, see reason",
+                    "type": "string"
+                },
+                "task": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.StoragePoolListResponse": {
             "type": "object",
             "properties": {
@@ -14139,6 +14674,40 @@ const docTemplatev1 = `{
                     "description": "Shared pools: quota of the pool in GB, 0 = none",
                     "type": "integer",
                     "minimum": 0
+                }
+            }
+        },
+        "apis.StoragePoolReconcileResponse": {
+            "type": "object",
+            "properties": {
+                "checked_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "hypervisor": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "objects": {
+                    "type": "integer"
+                },
+                "orphans": {
+                    "description": "What is in the pool with no record in CloudLand: kind volume, deleted_volume (its record is deleted), image,\nnvram, temporary or other. Nothing is removed",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.StorageOrphan"
+                    }
+                },
+                "requested_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "running: a host lists the pool; done: orphans holds the result; error: see error. Empty when never asked",
+                    "type": "string"
+                },
+                "truncated": {
+                    "type": "boolean"
                 }
             }
         },
@@ -14281,6 +14850,55 @@ const docTemplatev1 = `{
                     "description": "Name of the file system; the first one of the cluster when empty",
                     "type": "string",
                     "maxLength": 32
+                }
+            }
+        },
+        "apis.StorageReplaceDiskPayload": {
+            "type": "object",
+            "required": [
+                "disk_id"
+            ],
+            "properties": {
+                "disk_id": {
+                    "description": "The new disk: a scanned disk of the same host (hyper_disks.disk_id)",
+                    "type": "string",
+                    "maxLength": 256
+                },
+                "media": {
+                    "type": "string",
+                    "enum": [
+                        "ssd",
+                        "hdd",
+                        "nvme"
+                    ]
+                },
+                "wipe": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "apis.StorageRunLogResponse": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "size": {
+                    "description": "Size of the log on the host; when larger than the content, only its end was kept",
+                    "type": "integer"
+                },
+                "status": {
+                    "description": "requested: the host was asked for it, ask again in a moment; ready: content holds it (with a message: the host is\noffline and this is the copy fetched at updated_at); error: see message",
+                    "type": "string"
+                },
+                "truncated": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
@@ -16946,8 +17564,7 @@ const docTemplatev1 = `{
                 "add_nodes": {
                     "type": "boolean"
                 },
-                "clients": {
-                    "description": "Clients: hosts join as clients on their own (ceph); a gpfs client is a member like any other",
+                "change_roles": {
                     "type": "boolean"
                 },
                 "external": {
@@ -16973,6 +17590,10 @@ const docTemplatev1 = `{
                 },
                 "remove_node": {
                     "type": "boolean"
+                },
+                "replace_disk": {
+                    "description": "ReplaceDisk swaps a failed disk for a new disk of the same host; ChangeRoles changes the roles of a member",
+                    "type": "boolean"
                 }
             }
         },
@@ -16992,6 +17613,24 @@ const docTemplatev1 = `{
                 "version": {
                     "description": "VERSION_ID of /etc/os-release",
                     "type": "string"
+                }
+            }
+        },
+        "services.StorageOrphan": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "description": "volume, deleted_volume (the record of the volume is deleted), image, nvram, temporary, other",
+                    "type": "string"
+                },
+                "mtime": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
                 }
             }
         },

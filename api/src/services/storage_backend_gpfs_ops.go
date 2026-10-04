@@ -126,6 +126,30 @@ func gpfsChangeTaskPlan(task string, scope *StorageTaskScope) ([]*StorageStepPla
 		}
 	case StorageTaskRebalance:
 		plan = append(plan, step("rebalance", a, admins, 7*24*time.Hour))
+	case StorageTaskReplaceDisk:
+		// The new NSD first, so a disk that is no good stops the task before the failed one goes; then the failed NSD
+		// is dropped (-p: it can not be read), the new one added and the replication restored
+		old := gpfsDiskHosts(scope.Disks, model.StorageDiskRemoving)
+		if len(diskHosts) != 1 || len(old) != 1 {
+			return nil, planError("One disk replaces one disk")
+		}
+		plan = append(plan,
+			step("resolve_disks", n, diskHosts, 5*time.Minute),
+			step("create_nsd", a, admins, 15*time.Minute),
+			step("remove_disks", a, admins, 60*time.Minute),
+			step("add_disks", a, admins, 60*time.Minute),
+			step("restore", a, admins, 7*24*time.Hour),
+			step("release_disks", n, old, 10*time.Minute))
+	case StorageTaskChangeRoles:
+		// The admin hosts get the cluster key and the host keys (ssh_trust on every member), then the quorum changes
+		run := changeRolesAdmins(admins, scope)
+		if len(run) == 0 {
+			return nil, planError("No admin host besides the one that changes is left to run the change")
+		}
+		plan = append(plan,
+			step("ssh_trust", n, gpfsHostsBy(nodes, "", ""), 5*time.Minute),
+			step("change_roles", a, run, 30*time.Minute),
+			step("finish", n, gpfsChangedHost(scope), 5*time.Minute))
 	default:
 		return nil, planError("GPFS clusters have no task %s", task)
 	}
@@ -163,6 +187,18 @@ func init() {
 		}})
 	registerStorageTaskKind("gpfs:"+StorageTaskRebalance, &storageTaskKind{Slot: storageSlotStructural,
 		Steps: map[string]*storageStepDef{"rebalance": {Script: "gpfs_fs.sh", Input: gpfsRebalanceInput}}})
+	replace := expand()
+	replace["remove_disks"] = &storageStepDef{Script: "gpfs_fs.sh", Input: gpfsRemoveDisksInput}
+	replace["restore"] = &storageStepDef{Script: "gpfs_fs.sh", Input: gpfsRestoreInput}
+	replace["release_disks"] = &storageStepDef{Script: "stc_release_disks.sh", Input: storageReplaceReleaseInput}
+	registerStorageTaskKind("gpfs:"+StorageTaskReplaceDisk, &storageTaskKind{Slot: storageSlotStructural, Steps: replace,
+		Finish: storageReplaceFinish(gpfsExpandFinish)})
+	registerStorageTaskKind("gpfs:"+StorageTaskChangeRoles, &storageTaskKind{Slot: storageSlotStructural, Finish: storageChangeRolesFinish,
+		Steps: map[string]*storageStepDef{
+			"ssh_trust":    {Script: "stc_ssh_trust.sh", Input: gpfsTrustInput},
+			"change_roles": {Script: "gpfs_cluster.sh", Input: gpfsChangeRolesInput, RetryFrom: "ssh_trust"},
+			"finish":       {Script: "stc_finish.sh", Input: gpfsFinishInput},
+		}})
 }
 
 // gpfsAddNodeInput: the hosts joining, with their designation and license; mmaddnode skips the ones in already
@@ -259,8 +295,9 @@ func gpfsRemoveDisksInput(ctx context.Context, db *gorm.DB, task *model.StorageT
 	if len(nsds) == 0 {
 		return nil, fmt.Errorf("no disk leaves the cluster")
 	}
+	// A replacement drops a disk as failed: the node looks once more that GPFS has it down before it does
 	return map[string]interface{}{"action": "remove", "cluster_uuid": cluster.UUID, "fs_name": fs.Name, "nsds": nsds,
-		"damaged": storageTaskBool(task, "offline")}, nil
+		"damaged": storageTaskBool(task, "offline") || storageTaskBool(task, "damaged"), "require_down": storageTaskBool(task, "damaged")}, nil
 }
 
 // gpfsReleaseDisksInput: on the host of a disk that left, the disks the cluster keeps there (the nsddevices exit
@@ -296,6 +333,50 @@ func gpfsRemoveNodeInput(ctx context.Context, db *gorm.DB, task *model.StorageTa
 		return nil, err
 	}
 	return map[string]interface{}{"action": "remove", "cluster_uuid": cluster.UUID, "ip": ips[leaving], "offline": storageTaskBool(task, "offline")}, nil
+}
+
+// gpfsRestoreInput: the files that lost a copy with the failed disk get it back (mmrestripefs -r)
+func gpfsRestoreInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
+	cluster, _, _, err := storageClusterOfTask(db, task)
+	if err != nil {
+		return nil, err
+	}
+	fs, err := gpfsClusterFs(db, cluster)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"action": "restore", "cluster_uuid": cluster.UUID, "fs_name": fs.Name}, nil
+}
+
+// gpfsChangedHost is the host whose roles a change of roles changes
+func gpfsChangedHost(scope *StorageTaskScope) []int32 {
+	return []int32{scope.Changed}
+}
+
+// gpfsChangeRolesInput: the address of the host and its quorum (manager with it) designation as it will be; a server
+// license once it is a quorum, NSD or admin host
+func gpfsChangeRolesInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
+	cluster, nodes, _, err := storageClusterOfTask(db, task)
+	if err != nil {
+		return nil, err
+	}
+	changed := int32(storageTaskInt(task, "hostid"))
+	var node *model.StorageClusterNode
+	for _, n := range nodes {
+		if n.Hostid == changed {
+			node = n
+		}
+	}
+	if node == nil {
+		return nil, fmt.Errorf("host %d is not in the cluster", changed)
+	}
+	ips, err := storageHostIPs(db, []int32{changed})
+	if err != nil {
+		return nil, err
+	}
+	quorum := node.HasRole(model.StorageRoleQuorum)
+	return map[string]interface{}{"action": "roles", "cluster_uuid": cluster.UUID, "ip": ips[changed], "quorum": quorum,
+		"server": quorum || node.HasRole(model.StorageRoleNSD) || node.HasRole(model.StorageRoleAdmin)}, nil
 }
 
 func gpfsRebalanceInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {

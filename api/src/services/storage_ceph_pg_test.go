@@ -332,6 +332,66 @@ func TestStorageCephDeployPG(t *testing.T) {
 	}
 	succeed(sent, none)
 	f.wantTask(rtask.ID, model.StorageTaskSucceeded, "")
+
+	// The disk of osd.1 fails: a new disk of its host takes the id; the failed disk is not wiped
+	_, _, disks, _ = StorageClusters.Get(ctx, cluster.UUID)
+	var failed *model.StorageClusterDisk
+	for _, d := range disks {
+		if d.Hostid == h[1] {
+			failed = d
+		}
+	}
+	oldID := cephOsdID(failed)
+	must(t, db.Model(&model.StorageClusterDisk{}).Where("id = ?", failed.ID).Updates(map[string]interface{}{"state": "down", "checked_at": time.Now()}).Error)
+	must(t, db.Create(&model.HyperDisk{Hostid: h[1], DiskID: "wwn-0x5000cebn", Name: "sdc", Serial: "CSNN", SizeBytes: 2 << 40, Media: "hdd",
+		State: model.DiskFree, ScannedAt: time.Now()}).Error)
+	xtask, err := StorageClusters.ReplaceDisk(ctx, c.UUID, failed.UUID, &StorageDiskPlan{DiskID: "wwn-0x5000cebn"})
+	must(t, err)
+	sent = f.expect("resolve the new disk", "stc_resolve_disks.sh", h[1])
+	if ids := sent[0].input["disks"].([]interface{}); len(ids) != 1 {
+		t.Fatalf("resolve input %v", sent[0].input)
+	}
+	succeed(sent, func(*stcSent) string { return `{"disks":[{"id":"wwn-0x5000cebn","path":"/dev/sdc","name":"sdc"}]}` })
+	sent = f.expect("replace the OSD", "ceph_cluster.sh", h[0])
+	osds, _ = sent[0].input["osds"].([]interface{})
+	if sent[0].input["action"] != "replace_osd" || sent[0].input["old_id"] != float64(oldID) || len(osds) != 1 ||
+		osds[0].(map[string]interface{})["device"] != "/dev/sdc" {
+		t.Fatalf("replace_osd input %v", sent[0].input)
+	}
+	succeed(sent, func(*stcSent) string {
+		return fmt.Sprintf(`{"osds":[{"key":%q,"osd_id":%d}]}`, osds[0].(map[string]interface{})["key"], oldID)
+	})
+	sent = f.expect("release the failed disk", "stc_release_disks.sh", h[1])
+	if sent[0].input["no_wipe"] != true {
+		t.Fatalf("release input %v", sent[0].input)
+	}
+	succeed(sent, none)
+	f.wantTask(xtask.ID, model.StorageTaskSucceeded, "")
+	nd := &model.StorageClusterDisk{}
+	must(t, db.Where("cluster_id = ? AND disk_id = ?", c.ID, "wwn-0x5000cebn").Take(nd).Error)
+	if nd.Status != model.StorageDiskActive || nd.Name != fmt.Sprintf("osd.%d", oldID) || cephOsdID(nd) != oldID {
+		t.Fatalf("new disk %+v", nd)
+	}
+
+	// The mgr moves to h[1]: an even number of mons is refused; the labels follow the roles
+	_, err = StorageClusters.ChangeRoles(ctx, c.UUID, h[1], []string{"osd"})
+	wantCode(t, err, ErrStorageInvalidPlan, "even number of mons")
+	gtask, err := StorageClusters.ChangeRoles(ctx, c.UUID, h[1], []string{"mon", "mgr"})
+	must(t, err)
+	succeed(f.expect("trust", "stc_ssh_trust.sh", h...), none)
+	sent = f.expect("labels", "ceph_cluster.sh", h[0])
+	if sent[0].input["action"] != "set_labels" || sent[0].input["hostname"] != fmt.Sprintf("h%d", h[1]) || sent[0].input["mons"] != float64(3) ||
+		fmt.Sprint(sent[0].input["labels"]) != "[mon mgr osd]" {
+		t.Fatalf("set_labels input %v", sent[0].input)
+	}
+	succeed(sent, none)
+	sent = f.expect("finish", "stc_finish.sh", h[1])
+	if sent[0].input["reserve_mb"] != float64(4608) {
+		t.Fatalf("finish input %v", sent[0].input)
+	}
+	succeed(sent, none)
+	f.wantTask(gtask.ID, model.StorageTaskSucceeded, "")
+
 	f.setHostStatus(h[3], 10)
 	ntask, err := StorageClusters.RemoveNode(ctx, c.UUID, &StorageNodeRemove{Hostid: h[3], Offline: true, Confirm: "stc-h4"})
 	must(t, err)

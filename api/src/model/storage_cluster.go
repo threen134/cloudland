@@ -91,8 +91,10 @@ type StorageCluster struct {
 	// Task slots (§6.2.1): a structural task and a pool task can run side by side; a failed task keeps its slot
 	ActiveTask     int64
 	ActivePoolTask int64
-	PendingClients string `gorm:"type:varchar(1024)"` // json array of hostids waiting to join as clients
-	AutoJoinZones  string `gorm:"type:varchar(256)"`  // json array of zone IDs whose new hosts join as clients
+	// json array of the hosts of AutoJoinZones that join as clients on their own: {hostid, status, reason, task_id,
+	// since}, status pending (waits for the structural slot), joining (its task runs) or failed (left alone)
+	PendingClients string `gorm:"type:text"`
+	AutoJoinZones  string `gorm:"type:varchar(256)"` // json array of zone IDs whose hosts join as clients
 	SSHPubKey      string `gorm:"type:text"`
 	SSHPrivKey     string `gorm:"type:text"` // encrypted (common.EncryptSecret)
 	Description    string `gorm:"type:varchar(256)"`
@@ -139,6 +141,9 @@ type StorageClusterDisk struct {
 	SizeBytes int64
 	Status    string `gorm:"type:varchar(16)"`
 	Reason    string `gorm:"type:varchar(512)"`
+	// What the storage software reports for the disk (gpfs availability, ceph up/down), from the health watchdog
+	State     string `gorm:"type:varchar(32)"`
+	CheckedAt *time.Time
 }
 
 // StorageFilesystem is a file system of a cluster, for kinds that have that layer between the cluster and the

@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -158,6 +159,8 @@ type StorageClusterNodeResponse struct {
 	State         string          `json:"state"`
 	Reason        string          `json:"reason,omitempty"`
 	ReservedMemMB int32           `json:"reserved_mem_mb"`
+	// When the health watchdog last saw the host in the storage software's report
+	CheckedAt string `json:"checked_at,omitempty"`
 }
 
 type StorageClusterDiskResponse struct {
@@ -174,16 +177,43 @@ type StorageClusterDiskResponse struct {
 	Attrs  json.RawMessage `json:"attrs,omitempty" swaggertype:"object"`
 	Status string          `json:"status"`
 	Reason string          `json:"reason,omitempty"`
+	// What the storage software reports for the disk (gpfs availability, ceph up/down) and when it was seen
+	State     string `json:"state,omitempty"`
+	CheckedAt string `json:"checked_at,omitempty"`
+}
+
+// StorageClusterHealthResponse is the last health report of a cluster and the alarms it raised (§14)
+type StorageClusterHealthResponse struct {
+	CheckedAt string   `json:"checked_at,omitempty"`
+	Summary   string   `json:"summary,omitempty"`
+	Error     string   `json:"error,omitempty"`
+	Messages  []string `json:"messages,omitempty"`
+	Flags     []string `json:"flags,omitempty"`
+	// Capacity of the whole cluster as its software reports it (ceph df)
+	CapacityBytes int64 `json:"capacity_bytes,omitempty"`
+	FreeBytes     int64 `json:"free_bytes,omitempty"`
+	// The host that checked
+	Hypervisor *ResourceReference             `json:"hypervisor,omitempty"`
+	Alarms     []*StorageClusterAlarmResponse `json:"alarms"`
+}
+
+type StorageClusterAlarmResponse struct {
+	Name     string `json:"name"`
+	Severity string `json:"severity"`
+	Summary  string `json:"summary"`
+	Since    string `json:"since"`
 }
 
 type StorageClusterResponse struct {
 	*ResourceReference
-	Kind    string `json:"kind"`
-	Mode    string `json:"mode"`
-	Layout  string `json:"layout,omitempty"`
-	Status  string `json:"status"`
-	Health  string `json:"health"`
-	Version string `json:"version,omitempty"`
+	Kind   string `json:"kind"`
+	Mode   string `json:"mode"`
+	Layout string `json:"layout,omitempty"`
+	Status string `json:"status"`
+	Health string `json:"health"`
+	// Detail only: the last health report and the alarms it raised
+	HealthInfo *StorageClusterHealthResponse `json:"health_info,omitempty"`
+	Version    string                        `json:"version,omitempty"`
 	// The storage software's own id of the cluster: GPFS cluster name and id, Ceph fsid
 	ClusterRef  string `json:"cluster_ref,omitempty"`
 	Unsupported bool   `json:"unsupported"`
@@ -196,6 +226,8 @@ type StorageClusterResponse struct {
 	// Detail only: the file systems (kinds with that layer) and the CloudLand pools of the cluster
 	Filesystems []*StorageFilesystemResponse  `json:"filesystems,omitempty"`
 	Pools       []*StorageClusterPoolResponse `json:"pools,omitempty"`
+	// Detail only: the zones whose hosts join as clients on their own and the hosts on their way in
+	AutoJoin *StorageAutoJoinResponse `json:"auto_join,omitempty"`
 	// Counts and capacity, in the list and the detail
 	NodeCount     int   `json:"node_count"`
 	DiskCount     int   `json:"disk_count"`
@@ -575,13 +607,37 @@ func storageClusterResponse(ctx context.Context, cluster *model.StorageCluster, 
 			roles = strings.Split(n.Roles, ",")
 		}
 		resp.Nodes = append(resp.Nodes, &StorageClusterNodeResponse{Hypervisor: hosts.get(n.Hostid), Roles: roles, Attrs: rawAttrs(n.Attrs),
-			Status: n.Status, State: n.State, Reason: n.Reason, ReservedMemMB: n.ReservedMemMB})
+			Status: n.Status, State: n.State, Reason: n.Reason, ReservedMemMB: n.ReservedMemMB, CheckedAt: formatTimePtr(n.CheckedAt)})
 	}
 	for _, d := range disks {
 		resp.Disks = append(resp.Disks, &StorageClusterDiskResponse{ID: d.UUID, Hypervisor: hosts.get(d.Hostid), DiskID: d.DiskID, Serial: d.Serial,
-			Role: d.Role, Name: d.Name, Media: d.Media, SizeBytes: d.SizeBytes, Attrs: rawAttrs(d.Attrs), Status: d.Status, Reason: d.Reason})
+			Role: d.Role, Name: d.Name, Media: d.Media, SizeBytes: d.SizeBytes, Attrs: rawAttrs(d.Attrs), Status: d.Status, Reason: d.Reason,
+			State: d.State, CheckedAt: formatTimePtr(d.CheckedAt)})
 	}
 	return resp
+}
+
+// storageClusterHealth is the health report kept with a cluster, for its detail
+func storageClusterHealth(ctx context.Context, cluster *model.StorageCluster) *StorageClusterHealthResponse {
+	info := services.ParseStorageHealthInfo(cluster.HealthInfo)
+	h := &StorageClusterHealthResponse{CheckedAt: formatTimePtr(cluster.HealthAt), Summary: info.Summary, Error: info.Error,
+		Messages: info.Messages, Flags: info.Flags, Alarms: []*StorageClusterAlarmResponse{}}
+	if info.Capacity != nil {
+		h.CapacityBytes, h.FreeBytes = info.Capacity.Total, info.Capacity.Free
+	}
+	if info.Hostid > 0 {
+		h.Hypervisor = (&hyperRefs{ctx: ctx, cache: map[int32]*ResourceReference{}}).get(info.Hostid)
+	}
+	for _, a := range info.Firing {
+		h.Alarms = append(h.Alarms, &StorageClusterAlarmResponse{Name: a.Name, Severity: a.Severity, Summary: a.Summary, Since: a.Since.Format(TimeStringForMat)})
+	}
+	sort.Slice(h.Alarms, func(i, j int) bool {
+		if h.Alarms[i].Severity != h.Alarms[j].Severity {
+			return h.Alarms[i].Severity == "critical"
+		}
+		return h.Alarms[i].Since < h.Alarms[j].Since
+	})
+	return h
 }
 
 // storageClusterSummarize adds the counts and capacity of the clusters of a response
@@ -598,8 +654,10 @@ func storageClusterSummarize(ctx context.Context, resps map[int64]*StorageCluste
 	}
 }
 
-// storageClusterDetail adds the file systems and pools of a cluster to its response
+// storageClusterDetail adds the file systems, pools and health report of a cluster to its response
 func storageClusterDetail(ctx context.Context, cluster *model.StorageCluster, resp *StorageClusterResponse) {
+	resp.HealthInfo = storageClusterHealth(ctx, cluster)
+	resp.AutoJoin = storageAutoJoin(ctx, cluster)
 	for _, f := range storageClusterAdmin.Filesystems(ctx, cluster.ID) {
 		resp.Filesystems = append(resp.Filesystems, &StorageFilesystemResponse{ID: f.UUID, Name: f.Name, MountPoint: f.MountPoint,
 			BlockSize: f.BlockSize, DataReplicas: f.DataReplicas, MetaReplicas: f.MetaReplicas, Status: f.Status,

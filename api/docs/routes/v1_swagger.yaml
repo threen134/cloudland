@@ -2327,6 +2327,17 @@ definitions:
       vlan:
         type: integer
     type: object
+  apis.StorageAutoJoinResponse:
+    properties:
+      pending:
+        items:
+          $ref: '#/definitions/apis.StoragePendingClientResponse'
+        type: array
+      zones:
+        items:
+          $ref: '#/definitions/common.ResourceReference'
+        type: array
+    type: object
   apis.StorageBackendListResponse:
     properties:
       storage_backends:
@@ -2377,6 +2388,30 @@ definitions:
           $ref: '#/definitions/services.StorageOSRule'
         type: array
     type: object
+  apis.StorageChangeRolesPayload:
+    properties:
+      roles:
+        description: The roles as they will be; the disk role follows the disks of
+          the host
+        items:
+          type: string
+        maxItems: 8
+        minItems: 1
+        type: array
+    required:
+    - roles
+    type: object
+  apis.StorageClusterAlarmResponse:
+    properties:
+      name:
+        type: string
+      severity:
+        type: string
+      since:
+        type: string
+      summary:
+        type: string
+    type: object
   apis.StorageClusterCreatePayload:
     properties:
       allow_unsupported:
@@ -2421,6 +2456,8 @@ definitions:
         description: Kind specific attributes, e.g. the usage and storage pool of
           a GPFS NSD
         type: object
+      checked_at:
+        type: string
       disk_id:
         type: string
       hypervisor:
@@ -2440,7 +2477,42 @@ definitions:
         type: string
       size_bytes:
         type: integer
+      state:
+        description: What the storage software reports for the disk (gpfs availability,
+          ceph up/down) and when it was seen
+        type: string
       status:
+        type: string
+    type: object
+  apis.StorageClusterHealthResponse:
+    properties:
+      alarms:
+        items:
+          $ref: '#/definitions/apis.StorageClusterAlarmResponse'
+        type: array
+      capacity_bytes:
+        description: Capacity of the whole cluster as its software reports it (ceph
+          df)
+        type: integer
+      checked_at:
+        type: string
+      error:
+        type: string
+      flags:
+        items:
+          type: string
+        type: array
+      free_bytes:
+        type: integer
+      hypervisor:
+        allOf:
+        - $ref: '#/definitions/common.ResourceReference'
+        description: The host that checked
+      messages:
+        items:
+          type: string
+        type: array
+      summary:
         type: string
     type: object
   apis.StorageClusterImportPayload:
@@ -2489,6 +2561,10 @@ definitions:
       attrs:
         description: Kind specific attributes, e.g. the failure group of a GPFS host
         type: object
+      checked_at:
+        description: When the health watchdog last saw the host in the storage software's
+          report
+        type: string
       hypervisor:
         $ref: '#/definitions/common.ResourceReference'
       reason:
@@ -2503,6 +2579,23 @@ definitions:
         type: string
       status:
         type: string
+    type: object
+  apis.StorageClusterPatchPayload:
+    properties:
+      auto_join_zones:
+        description: Zones whose hosts join the cluster as clients on their own; []
+          turns it off (managed clusters only)
+        items:
+          type: string
+        maxItems: 32
+        type: array
+      description:
+        maxLength: 256
+        type: string
+      retry_auto_join:
+        description: Forget the hosts that failed to join on their own, so they are
+          tried again
+        type: boolean
     type: object
   apis.StorageClusterPoolResponse:
     properties:
@@ -2554,6 +2647,11 @@ definitions:
       allocated_bytes:
         description: Sum of the volumes in the pools of the cluster
         type: integer
+      auto_join:
+        allOf:
+        - $ref: '#/definitions/apis.StorageAutoJoinResponse'
+        description: 'Detail only: the zones whose hosts join as clients on their
+          own and the hosts on their way in'
       capacity_bytes:
         type: integer
       cluster_ref:
@@ -2580,6 +2678,10 @@ definitions:
         type: integer
       health:
         type: string
+      health_info:
+        allOf:
+        - $ref: '#/definitions/apis.StorageClusterHealthResponse'
+        description: 'Detail only: the last health report and the alarms it raised'
       id:
         type: string
       kind:
@@ -2675,6 +2777,52 @@ definitions:
         type: string
       status:
         type: string
+    type: object
+  apis.StorageMetricChart:
+    properties:
+      key:
+        description: 'capacity, throughput, iops, pools, nodes (GPFS: hosts running
+          GPFS and mounting each file system), osds'
+        type: string
+      series:
+        items:
+          $ref: '#/definitions/apis.StorageMetricSeries'
+        type: array
+      unit:
+        description: bytes, bytes_per_second, ops_per_second, percent, count
+        type: string
+    type: object
+  apis.StorageMetricSeries:
+    properties:
+      key:
+        description: 'What the curve is: read, write, used, total, active, mounted,
+          up, in, pool'
+        type: string
+      label:
+        description: The file system or the pool (its name) when the chart has one
+          curve of Key per file system or pool
+        type: string
+      values:
+        items:
+          type: number
+        type: array
+    type: object
+  apis.StorageMetricsResponse:
+    properties:
+      charts:
+        items:
+          $ref: '#/definitions/apis.StorageMetricChart'
+        type: array
+      end:
+        type: integer
+      start:
+        type: integer
+      step:
+        type: string
+      timestamps:
+        items:
+          type: integer
+        type: array
     type: object
   apis.StorageNodePayload:
     properties:
@@ -2774,6 +2922,21 @@ definitions:
       version:
         type: string
     type: object
+  apis.StoragePendingClientResponse:
+    properties:
+      hypervisor:
+        $ref: '#/definitions/common.ResourceReference'
+      reason:
+        type: string
+      since:
+        type: string
+      status:
+        description: 'pending: waits for the cluster to be free; joining: its task
+          runs; failed: left alone, see reason'
+        type: string
+      task:
+        type: string
+    type: object
   apis.StoragePoolListResponse:
     properties:
       limit:
@@ -2857,6 +3020,32 @@ definitions:
         type: integer
     required:
     - name
+    type: object
+  apis.StoragePoolReconcileResponse:
+    properties:
+      checked_at:
+        type: string
+      error:
+        type: string
+      hypervisor:
+        $ref: '#/definitions/common.ResourceReference'
+      objects:
+        type: integer
+      orphans:
+        description: |-
+          What is in the pool with no record in CloudLand: kind volume, deleted_volume (its record is deleted), image,
+          nvram, temporary or other. Nothing is removed
+        items:
+          $ref: '#/definitions/services.StorageOrphan'
+        type: array
+      requested_at:
+        type: string
+      status:
+        description: 'running: a host lists the pool; done: orphans holds the result;
+          error: see error. Empty when never asked'
+        type: string
+      truncated:
+        type: boolean
     type: object
   apis.StoragePoolResponse:
     properties:
@@ -2957,6 +3146,43 @@ definitions:
       filesystem:
         description: Name of the file system; the first one of the cluster when empty
         maxLength: 32
+        type: string
+    type: object
+  apis.StorageReplaceDiskPayload:
+    properties:
+      disk_id:
+        description: 'The new disk: a scanned disk of the same host (hyper_disks.disk_id)'
+        maxLength: 256
+        type: string
+      media:
+        enum:
+        - ssd
+        - hdd
+        - nvme
+        type: string
+      wipe:
+        type: boolean
+    required:
+    - disk_id
+    type: object
+  apis.StorageRunLogResponse:
+    properties:
+      content:
+        type: string
+      message:
+        type: string
+      size:
+        description: Size of the log on the host; when larger than the content, only
+          its end was kept
+        type: integer
+      status:
+        description: |-
+          requested: the host was asked for it, ask again in a moment; ready: content holds it (with a message: the host is
+          offline and this is the copy fetched at updated_at); error: see message
+        type: string
+      truncated:
+        type: boolean
+      updated_at:
         type: string
     type: object
   apis.StorageRunResponse:
@@ -4841,9 +5067,7 @@ definitions:
         type: boolean
       add_nodes:
         type: boolean
-      clients:
-        description: 'Clients: hosts join as clients on their own (ceph); a gpfs client
-          is a member like any other'
+      change_roles:
         type: boolean
       external:
         type: boolean
@@ -4864,6 +5088,10 @@ definitions:
         type: boolean
       remove_node:
         type: boolean
+      replace_disk:
+        description: ReplaceDisk swaps a failed disk for a new disk of the same host;
+          ChangeRoles changes the roles of a member
+        type: boolean
     type: object
   services.StorageOSRule:
     properties:
@@ -4877,6 +5105,19 @@ definitions:
       version:
         description: VERSION_ID of /etc/os-release
         type: string
+    type: object
+  services.StorageOrphan:
+    properties:
+      kind:
+        description: volume, deleted_volume (the record of the volume is deleted),
+          image, nvram, temporary, other
+        type: string
+      mtime:
+        type: integer
+      name:
+        type: string
+      size:
+        type: integer
     type: object
   services.UsageEntry:
     properties:
@@ -9454,6 +9695,35 @@ paths:
       summary: get a storage cluster
       tags:
       - StorageCluster
+    patch:
+      consumes:
+      - application/json
+      description: 'the description, and the zones whose hosts join the cluster as
+        clients on their own (shared-storage-design.md §6.3): every online host of
+        those zones not in the cluster is queued and joins with a task of its own
+        once the cluster is free; one that fails is left alone and listed until retry_auto_join'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Changes
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageClusterPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StorageClusterResponse'
+      summary: change a storage cluster
+      tags:
+      - StorageCluster
   /storage_clusters/{id}/disks:
     post:
       consumes:
@@ -9506,6 +9776,87 @@ paths:
           schema:
             $ref: '#/definitions/apis.StorageTaskResponse'
       summary: remove a disk from a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/disks/{disk_id}/replace:
+    post:
+      consumes:
+      - application/json
+      description: 'a disk the storage reports down is swapped for a new disk of the
+        same host (shared-storage-design.md §7.5, §8.5): GPFS drops the failed NSD
+        (mmdeldisk -p), adds the new one and restores the replication; Ceph destroys
+        the OSD keeping its id and makes the new disk take it. The failed disk is
+        not wiped. A disk that works is removed the normal way instead'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: UUID of the failed disk in the cluster
+        in: path
+        name: disk_id
+        required: true
+        type: string
+      - description: The new disk
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageReplaceDiskPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: replace a failed disk of a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/metrics:
+    get:
+      description: 'Curves of a storage cluster from Prometheus (shared-storage-design.md
+        §14.3): the use of its pools, its capacity, throughput and IOPS, and its hosts
+        (GPFS) or OSDs (Ceph). Only for system admins. A chart with no data at all
+        is left out.'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Start, unix seconds
+        in: query
+        name: start
+        required: true
+        type: string
+      - description: End, unix seconds
+        in: query
+        name: end
+        required: true
+        type: string
+      - description: Resolution as a duration, e.g. 60s or 5m
+        in: query
+        name: step
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StorageMetricsResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: storage cluster metrics
       tags:
       - StorageCluster
   /storage_clusters/{id}/nodes:
@@ -9574,6 +9925,39 @@ paths:
           schema:
             $ref: '#/definitions/apis.StorageTaskResponse'
       summary: remove a host from a storage cluster
+      tags:
+      - StorageCluster
+    patch:
+      consumes:
+      - application/json
+      description: GPFS quorum (with manager) and admin hosts, Ceph mon, mgr and admin
+        placement (shared-storage-design.md §13.1), checked like a new cluster; the
+        disk role follows the disks of the host
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Hypervisor UUID
+        in: path
+        name: hypervisor
+        required: true
+        type: string
+      - description: Roles
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageChangeRolesPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: change the roles of a member of a storage cluster
       tags:
       - StorageCluster
   /storage_clusters/{id}/rebalance:
@@ -9942,6 +10326,45 @@ paths:
       summary: abandon the volumes of a pool that wait for adoption
       tags:
       - StoragePool
+  /storage_pools/{id}/reconcile:
+    get:
+      parameters:
+      - description: Pool UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StoragePoolReconcileResponse'
+      summary: the last orphan report of a shared pool
+      tags:
+      - StoragePool
+    post:
+      description: asks a host that reaches the pool for its files (GPFS) or RBD images
+        (Ceph); clapi then reports those it has no record of (shared-storage-design.md
+        §16 S5). Nothing is removed. A request still waiting is not sent again; read
+        the result with GET
+      parameters:
+      - description: Pool UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StoragePoolReconcileResponse'
+      summary: list the orphans of a shared pool
+      tags:
+      - StoragePool
   /storage_tasks:
     get:
       description: cluster_id is the UUID of a cluster; 0 lists the tasks not tied
@@ -10023,6 +10446,45 @@ paths:
           schema:
             $ref: '#/definitions/apis.StorageTaskResponse'
       summary: retry a failed storage task
+      tags:
+      - StorageCluster
+  /storage_tasks/{id}/runs/{run}/log:
+    get:
+      description: The callback of a run only brings the last 64 KiB of its log. The
+        first call asks the host for the whole log and answers 202; call again until
+        the answer is 200 with the log (its last 16 MiB). A run that is still running
+        is fetched again when the copy is older than 30 s.
+      parameters:
+      - description: Task UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Run ID
+        in: path
+        name: run
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StorageRunLogResponse'
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageRunLogResponse'
+        "404":
+          description: No such task or run
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "409":
+          description: The host is offline, or the hosts can not upload
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: whole log of a storage task run
       tags:
       - StorageCluster
   /storage_tasks/selftest:

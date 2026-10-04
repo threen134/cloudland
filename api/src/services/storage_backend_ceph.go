@@ -10,6 +10,7 @@ package services
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"regexp"
 	"strings"
@@ -195,7 +196,8 @@ func cephOsdMemoryMiB(p *cephParams) int {
 
 // Ceph rebalances by itself when OSDs come and go (§8.5): there is no rebalance to start, and no file system layer
 func (cephBackend) Capabilities() *StorageCapabilities {
-	return &StorageCapabilities{Managed: true, External: true, Pools: true, AddNodes: true, RemoveNode: true, AddDisks: true, RemoveDisk: true}
+	return &StorageCapabilities{Managed: true, External: true, Pools: true, AddNodes: true, RemoveNode: true, AddDisks: true, RemoveDisk: true,
+		ReplaceDisk: true, ChangeRoles: true}
 }
 
 func (cephBackend) PoolDriver() string { return model.StorageDriverCephRBD }
@@ -308,6 +310,13 @@ func cephInfoOf(cluster *model.StorageCluster) *cephClusterInfo {
 	return info
 }
 
+// HealthInput: a managed cluster is checked as client.admin on one of its admin hosts, an imported one as its client
+// user (shared-storage-design.md §14.1)
+func (cephBackend) HealthInput(cluster *model.StorageCluster) map[string]interface{} {
+	info := cephInfoOf(cluster)
+	return map[string]interface{}{"fsid": info.Fsid, "client_user": info.ClientUser, "conf": cephConfPath(cluster)}
+}
+
 // cephConfPath is the client configuration of a cluster on every host
 func cephConfPath(cluster *model.StorageCluster) string {
 	return cephConfDir + "/" + cluster.UUID + ".conf"
@@ -409,4 +418,43 @@ func (b cephBackend) PoolSetup(tx *gorm.DB, cluster *model.StorageCluster, pool 
 	pool.DriverParams = string(b2)
 	pool.MountPath = ""
 	return nil
+}
+
+// cephMgrMetricsPort is where the prometheus module of a Ceph mgr listens (only the active mgr gives data)
+const cephMgrMetricsPort = 9283
+
+// ScrapeTargets are the mgr hosts of a managed Ceph cluster: their prometheus module is switched on by the deployment
+// and the health watchdog (§14.3). The mgrs of an imported cluster are not known to CloudLand
+func (cephBackend) ScrapeTargets(cluster *model.StorageCluster, nodes []*model.StorageClusterNode, hosts map[int32]*model.Hyper) []SDTarget {
+	targets := []SDTarget{}
+	if cluster.Mode != model.StorageModeManaged {
+		return targets
+	}
+	for _, n := range nodes {
+		h := hosts[n.Hostid]
+		if h == nil || h.HostIP == "" || !n.HasRole(model.StorageRoleMgr) || n.Status == model.StorageNodeJoining {
+			continue
+		}
+		targets = append(targets, SDTarget{Targets: []string{hostPort(h, cephMgrMetricsPort)}, Labels: map[string]string{"hostname": h.Hostname}})
+	}
+	return targets
+}
+
+// MetricQueries are the curves of a Ceph cluster from its mgr prometheus module (appendix E.2), labelled with the
+// cluster by the scrape target. Only the active mgr exports, so the sums and maxima are over one of them
+func (cephBackend) MetricQueries(cluster *model.StorageCluster, window int64) []StorageMetricQuery {
+	c := "storage_cluster=" + promLabel(cluster.UUID)
+	rate := func(metric string) string {
+		return fmt.Sprintf(`sum(rate(%s{%s}[%ds]))`, metric, c, window)
+	}
+	return []StorageMetricQuery{
+		{Chart: StorageChartCapacity, Series: "used", Query: fmt.Sprintf(`max(ceph_cluster_total_used_bytes{%s})`, c)},
+		{Chart: StorageChartCapacity, Series: "total", Query: fmt.Sprintf(`max(ceph_cluster_total_bytes{%s})`, c)},
+		{Chart: StorageChartThroughput, Series: "read", Query: rate("ceph_pool_rd_bytes")},
+		{Chart: StorageChartThroughput, Series: "write", Query: rate("ceph_pool_wr_bytes")},
+		{Chart: StorageChartIOPS, Series: "read", Query: rate("ceph_pool_rd")},
+		{Chart: StorageChartIOPS, Series: "write", Query: rate("ceph_pool_wr")},
+		{Chart: StorageChartOSDs, Series: "up", Query: fmt.Sprintf(`sum(ceph_osd_up{%s})`, c)},
+		{Chart: StorageChartOSDs, Series: "in", Query: fmt.Sprintf(`sum(ceph_osd_in{%s})`, c)},
+	}
 }

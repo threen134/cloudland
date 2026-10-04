@@ -15,7 +15,7 @@ var prometheusSDAPI = &PrometheusSDAPI{}
 
 // GetTargets returns Prometheus http_sd compatible target list.
 // GET /api/v1/prometheus/sd/:exporter
-// :exporter = "libvirt_exporter" | "node_exporter"
+// :exporter = "libvirt_exporter" | "node_exporter" | "storage"
 func (api *PrometheusSDAPI) GetTargets(c *gin.Context) {
 	exporter := c.Param("exporter")
 	targets, err := services.GetPrometheusTargets(exporter)

@@ -20,6 +20,7 @@ func init() {
 	Add("shared_pool_status", SharedPoolStatus)
 	Add("create_volume_shared", CreateVolumeShared)
 	Add("attach_volume_shared", AttachVolumeShared)
+	Add("shared_pool_objects", SharedPoolObjects)
 }
 
 // SharedPoolStatus takes how a host sees the shared pools of its clusters, sent by the heartbeat:
@@ -95,6 +96,32 @@ func AttachVolumeShared(ctx context.Context, args []string) (status string, err 
 	hostid, _ := ctx.Value("hostid").(int32)
 	if err = services.HandleSharedVolumeAttached(ctx, hostid, instanceID, volID, args[3], reason); err != nil {
 		logger.Ctx(ctx).Error("Failed to finish attaching the volume", err)
+	}
+	return
+}
+
+// SharedPoolObjects takes what a host found in a shared pool for its orphan report (stc_pool_objects.sh, §16 S5):
+//
+//	|:-COMMAND-:| shared_pool_objects '<pool UUID>' '<base64 of the gzipped JSON {objects, truncated, error}>'
+func SharedPoolObjects(ctx context.Context, args []string) (status string, err error) {
+	if len(args) < 3 {
+		err = fmt.Errorf("Wrong params")
+		logger.Ctx(ctx).Error("Invalid args", err)
+		return
+	}
+	hostid, ok := ctx.Value("hostid").(int32)
+	if !ok {
+		err = fmt.Errorf("no host in the objects of pool %s", args[1])
+		logger.Ctx(ctx).Error(err)
+		return
+	}
+	report, err := services.DecodeStoragePoolObjects(args[2])
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Invalid objects of pool %s from host %d: %v", args[1], hostid, err)
+		return
+	}
+	if err = services.HandleStoragePoolObjects(ctx, hostid, args[1], report); err != nil {
+		logger.Ctx(ctx).Errorf("Failed to take the objects of pool %s: %v", args[1], err)
 	}
 	return
 }

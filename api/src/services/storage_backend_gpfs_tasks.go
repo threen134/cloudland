@@ -12,6 +12,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -137,7 +138,8 @@ func (gpfsBackend) TaskPlan(task string, cluster *model.StorageCluster, scope *S
 			return nil, planError("The cluster has no admin host")
 		}
 		return gpfsPoolTaskPlan(task, cluster, all, admins)
-	case StorageTaskAddNodes, StorageTaskAddDisks, StorageTaskRemoveDisk, StorageTaskRemoveNode, StorageTaskRebalance:
+	case StorageTaskAddNodes, StorageTaskAddDisks, StorageTaskRemoveDisk, StorageTaskRemoveNode, StorageTaskRebalance, StorageTaskReplaceDisk,
+		StorageTaskChangeRoles:
 		return gpfsChangeTaskPlan(task, scope)
 	}
 	return nil, planError("GPFS clusters have no task %s", task)
@@ -275,11 +277,15 @@ func gpfsInstallInput(ctx context.Context, db *gorm.DB, task *model.StorageTask,
 
 // gpfsPrecheckFacts reads the facts every host reported in the precheck: its SSH host key above all
 func gpfsPrecheckFacts(db *gorm.DB, task *model.StorageTask) (map[int32]map[string]interface{}, error) {
+	facts := map[int32]map[string]interface{}{}
 	results, err := storageStepResults(db, task.ID, "precheck")
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// A task without a precheck (a change of roles): the members are remembered
+		return facts, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	facts := map[int32]map[string]interface{}{}
 	for h, raw := range results {
 		r := &StoragePrecheckResult{}
 		if err := json.Unmarshal(raw, r); err == nil {
@@ -413,7 +419,8 @@ func gpfsResolveInput(ctx context.Context, db *gorm.DB, task *model.StorageTask,
 	}
 	ids := []*storageDiskIdentity{}
 	for _, d := range disks {
-		if d.Hostid == hostid {
+		// A disk on its way out is not looked for: the failed disk of a replacement can not be read
+		if d.Hostid == hostid && d.Status != model.StorageDiskRemoving {
 			ids = append(ids, storageClusterDiskIdentity(d, wipe[storageDiskKey(d.Hostid, d.DiskID)]))
 		}
 	}

@@ -84,8 +84,27 @@ type StorageTaskRun struct {
 	PolledAt *time.Time
 }
 
+// StorageRunLog is the whole log of a run, fetched from its host on request (shared-storage-design.md §6.2.6): the
+// callback of a run only carries the last 64 KiB
+type StorageRunLog struct {
+	ID          int64  `gorm:"primaryKey"`
+	RunID       int64  `gorm:"uniqueIndex"`
+	Status      string `gorm:"type:varchar(16)"` // requested | ready | error
+	Message     string `gorm:"type:varchar(512)"`
+	Content     string `gorm:"type:text"`
+	Size        int64  // size of the log on the host; larger than the content when only its end was kept
+	RequestedAt time.Time
+	UpdatedAt   time.Time
+}
+
+const (
+	StorageRunLogRequested = "requested"
+	StorageRunLogReady     = "ready"
+	StorageRunLogError     = "error"
+)
+
 func init() {
-	dbs.AutoMigrate(&StorageTask{}, &StorageTaskStep{}, &StorageTaskRun{})
+	dbs.AutoMigrate(&StorageTask{}, &StorageTaskStep{}, &StorageTaskRun{}, &StorageRunLog{})
 	dbs.AutoUpgrade("storage_task_unique_indexes_v1", func(db *gorm.DB) error {
 		for _, stmt := range []string{
 			"CREATE UNIQUE INDEX IF NOT EXISTS uq_storage_task_step ON storage_task_steps (task_id, seq)",

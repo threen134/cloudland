@@ -31,7 +31,7 @@ const (
 
 func (gpfsBackend) Capabilities() *StorageCapabilities {
 	return &StorageCapabilities{Managed: true, External: true, Filesystems: true, Pools: true, AddNodes: true, RemoveNode: true, AddDisks: true,
-		RemoveDisk: true, Rebalance: true}
+		RemoveDisk: true, Rebalance: true, ReplaceDisk: true, ChangeRoles: true}
 }
 
 func (gpfsBackend) PoolDriver() string { return model.StorageDriverGPFS }

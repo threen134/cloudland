@@ -126,6 +126,41 @@ func (cephBackend) TaskPlan(task string, cluster *model.StorageCluster, scope *S
 		}
 		// Ceph moves the data of an OSD before it goes (ceph orch osd rm), which takes as long as it takes
 		return []*StorageStepPlan{step("remove_osds", a, admins, 7*24*time.Hour), step("release_disks", n, hosts, 30*time.Minute)}, nil
+	case StorageTaskReplaceDisk:
+		old := gpfsDiskHosts(scope.Disks, model.StorageDiskRemoving)
+		if len(osdHosts) != 1 || len(old) != 1 || osdHosts[0] != old[0] {
+			return nil, planError("One disk replaces one disk of the same host")
+		}
+		// The OSD of the failed disk is destroyed keeping its id, the new disk takes it; the failed disk is not wiped
+		return []*StorageStepPlan{
+			step("resolve_disks", n, osdHosts, 5*time.Minute),
+			step("replace_osd", a, admins, 60*time.Minute),
+			step("release_disks", n, old, 10*time.Minute),
+		}, nil
+	case StorageTaskChangeRoles:
+		run := changeRolesAdmins(admins, scope)
+		if len(run) == 0 {
+			return nil, planError("No admin host besides the one that changes is left to run the change")
+		}
+		plan := []*StorageStepPlan{}
+		// A client installed for the client only gets what a cephadm host needs first (cephadm, the image, the user
+		// of the daemons, the order of the units at shutdown) when it gets its first daemon role
+		var changed *model.StorageClusterNode
+		for _, nd := range nodes {
+			if nd.Hostid == scope.Changed {
+				changed = nd
+			}
+		}
+		before := &model.StorageClusterNode{Roles: strings.Join(scope.ChangedFrom, ",")}
+		if changed != nil && len(cephOrchLabels(before)) == 0 && len(cephOrchLabels(changed)) > 0 {
+			plan = append(plan, step("install", n, []int32{scope.Changed}, 45*time.Minute))
+		}
+		// The mgr and admin hosts may log in to every host (ssh_trust on every member), then the labels change and
+		// cephadm places the mons and mgrs by them
+		return append(plan,
+			step("ssh_trust", n, all, 5*time.Minute),
+			step("set_labels", a, run, 30*time.Minute),
+			step("finish", n, []int32{scope.Changed}, 5*time.Minute)), nil
 	case StorageTaskRemoveNode:
 		leaving := gpfsHostsBy(nodes, model.StorageNodeLeaving, "")
 		if len(leaving) != 1 {
@@ -178,6 +213,19 @@ func init() {
 		Steps: map[string]*storageStepDef{
 			"remove_osds":   {Script: "ceph_cluster.sh", Input: cephRemoveOsdsInput},
 			"release_disks": {Script: "stc_release_disks.sh", Input: gpfsReleaseDisksInput},
+		}})
+	registerStorageTaskKind("ceph:"+StorageTaskReplaceDisk, &storageTaskKind{Slot: storageSlotStructural, Finish: storageReplaceFinish(cephExpandFinish),
+		Steps: map[string]*storageStepDef{
+			"resolve_disks": {Script: "stc_resolve_disks.sh", Input: gpfsResolveInput},
+			"replace_osd":   {Script: "ceph_cluster.sh", Input: cephReplaceOsdInput, Done: cephCreateOsdsDone, RetryFrom: "resolve_disks"},
+			"release_disks": {Script: "stc_release_disks.sh", Input: storageReplaceReleaseInput},
+		}})
+	registerStorageTaskKind("ceph:"+StorageTaskChangeRoles, &storageTaskKind{Slot: storageSlotStructural, Finish: storageChangeRolesFinish,
+		Steps: map[string]*storageStepDef{
+			"ssh_trust":  {Script: "stc_ssh_trust.sh", Input: storageTrustInputFrom(model.StorageRoleAdmin, model.StorageRoleMgr)},
+			"install":    {Script: "ceph_install.sh", Input: cephInstallInput, Done: cephInstallDone},
+			"set_labels": {Script: "ceph_cluster.sh", Input: cephSetLabelsInput, RetryFrom: "ssh_trust"},
+			"finish":     {Script: "stc_finish.sh", Input: gpfsFinishInput},
 		}})
 	registerStorageTaskKind("ceph:"+StorageTaskRemoveNode, &storageTaskKind{Slot: storageSlotStructural, Finish: gpfsRemoveNodeFinish,
 		Steps: map[string]*storageStepDef{
@@ -594,6 +642,60 @@ func cephRemoveOsdsInput(ctx context.Context, db *gorm.DB, task *model.StorageTa
 	}
 	return map[string]interface{}{"action": "remove_osds", "cluster_uuid": cluster.UUID, "fsid": cephInfoOf(cluster).Fsid, "osd_ids": ids,
 		"offline": storageTaskBool(task, "offline")}, nil
+}
+
+// cephReplaceOsdInput: the OSD of the failed disk and the new disk of the same host that takes its id
+func cephReplaceOsdInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
+	in, err := cephCreateOsdsInput(ctx, db, task, step, hostid)
+	if err != nil {
+		return nil, err
+	}
+	_, _, disks, err := storageClusterOfTask(db, task)
+	if err != nil {
+		return nil, err
+	}
+	old := -1
+	for _, d := range disks {
+		if d.Status == model.StorageDiskRemoving {
+			old = cephOsdID(d)
+		}
+	}
+	if old < 0 {
+		return nil, fmt.Errorf("the failed disk has no OSD id")
+	}
+	m := in.(map[string]interface{})
+	m["action"] = "replace_osd"
+	m["old_id"] = old
+	return m, nil
+}
+
+// cephSetLabelsInput: the labels the host gets for its roles as they will be (mon, mgr, osd, _admin), and how many
+// mons the cluster then has
+func cephSetLabelsInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
+	cluster, nodes, _, err := storageClusterOfTask(db, task)
+	if err != nil {
+		return nil, err
+	}
+	changed := int32(storageTaskInt(task, "hostid"))
+	ips, names, err := cephHostFacts(db, task, nodes)
+	if err != nil {
+		return nil, err
+	}
+	labels := []string{}
+	mons := 0
+	for _, n := range nodes {
+		if n.HasRole(model.StorageRoleMon) {
+			mons++
+		}
+		if n.Hostid == changed {
+			labels = cephOrchLabels(n)
+		}
+	}
+	if names[changed] == "" {
+		return nil, fmt.Errorf("host %d has no cephadm host name", changed)
+	}
+	return map[string]interface{}{"action": "set_labels", "cluster_uuid": cluster.UUID, "fsid": cephInfoOf(cluster).Fsid,
+		"hostname": names[changed], "ip": ips[changed], "labels": labels, "mons": mons}, nil
 }
 
 // cephRemoveHostInput: the host leaving is drained by cephadm (its daemons and OSDs go, their data moves first) and

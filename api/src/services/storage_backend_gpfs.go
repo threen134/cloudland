@@ -10,6 +10,7 @@ package services
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"api/src/model"
@@ -142,4 +143,26 @@ func (gpfsBackend) ReserveMB(roles []string, disks int, params interface{}) int3
 		pagepool = 1024
 	}
 	return int32(pagepool + 1024)
+}
+
+// MetricQueries are the curves of a GPFS cluster (shared-storage-design.md §14.3, appendix E), from what every member
+// writes for node_exporter (backend_metrics in scripts/kvm/storage/backends/gpfs.sh): the capacity of each file system
+// (every member that mounts it sees the same), the I/O of all members added up, and how many hosts run GPFS and mount
+// each file system
+func (gpfsBackend) MetricQueries(cluster *model.StorageCluster, window int64) []StorageMetricQuery {
+	c := "cluster=" + promLabel(cluster.UUID)
+	rate := func(metric string) string {
+		return fmt.Sprintf(`sum(rate(%s{%s}[%ds]))`, metric, c, window)
+	}
+	return []StorageMetricQuery{
+		{Chart: StorageChartCapacity, Series: "used", Split: "fs",
+			Query: fmt.Sprintf(`max by (fs) (cloudland_gpfs_filesystem_total_bytes{%s} - cloudland_gpfs_filesystem_free_bytes{%s})`, c, c)},
+		{Chart: StorageChartCapacity, Series: "total", Split: "fs", Query: fmt.Sprintf(`max by (fs) (cloudland_gpfs_filesystem_total_bytes{%s})`, c)},
+		{Chart: StorageChartThroughput, Series: "read", Query: rate("cloudland_gpfs_read_bytes_total")},
+		{Chart: StorageChartThroughput, Series: "write", Query: rate("cloudland_gpfs_write_bytes_total")},
+		{Chart: StorageChartIOPS, Series: "read", Query: rate("cloudland_gpfs_reads_total")},
+		{Chart: StorageChartIOPS, Series: "write", Query: rate("cloudland_gpfs_writes_total")},
+		{Chart: StorageChartNodes, Series: "active", Query: fmt.Sprintf(`sum(cloudland_gpfs_node_active{%s})`, c)},
+		{Chart: StorageChartNodes, Series: "mounted", Split: "fs", Query: fmt.Sprintf(`sum by (fs) (cloudland_gpfs_filesystem_mounted{%s})`, c)},
+	}
 }

@@ -86,6 +86,23 @@ func planMessage(err error) string {
 
 // checkStoragePlan validates the hosts and disks of a plan against the database: hosts exist and are online, are
 // not taken by another cluster where that is not allowed (§4.1), disks are in a fresh scan, free and not claimed
+// storageHostConflict tells why a host may not hold roles in a cluster while it is in another cluster of the same
+// kind; whether it may is up to the backend (§4.1). Empty when it may
+func storageHostConflict(db *gorm.DB, backend StorageBackend, kind string, clusterID int64, hostid int32, roles []string) (string, error) {
+	others := []*model.StorageClusterNode{}
+	err := db.Joins("JOIN storage_clusters c ON c.id = storage_cluster_nodes.cluster_id AND c.deleted_at IS NULL").
+		Where("storage_cluster_nodes.hostid = ? AND c.kind = ? AND storage_cluster_nodes.cluster_id <> ?", hostid, kind, clusterID).Find(&others).Error
+	if err != nil {
+		return "", NewCLError(ErrSQLSyntaxError, "Failed to query the storage clusters of the hosts", err)
+	}
+	for _, o := range others {
+		if why := backend.HostConflict(roles, strings.Split(o.Roles, ",")); why != "" {
+			return why, nil
+		}
+	}
+	return "", nil
+}
+
 func checkStoragePlan(db *gorm.DB, plan *StoragePlan) (hypers map[int32]*model.Hyper, disks map[string]*model.HyperDisk, err error) {
 	backend, err := storageBackendOf(plan.Kind)
 	if err != nil {
@@ -122,17 +139,12 @@ func checkStoragePlan(db *gorm.DB, plan *StoragePlan) (hypers map[int32]*model.H
 		}
 		hypers[node.Hostid] = hyper
 		roles[node.Hostid] = node.Roles
-		// Whether a host may also be in another cluster of the kind is up to the backend (§4.1)
-		others := []*model.StorageClusterNode{}
-		q := db.Joins("JOIN storage_clusters c ON c.id = storage_cluster_nodes.cluster_id AND c.deleted_at IS NULL").
-			Where("storage_cluster_nodes.hostid = ? AND c.kind = ? AND storage_cluster_nodes.cluster_id <> ?", node.Hostid, plan.Kind, plan.ClusterID)
-		if err = q.Find(&others).Error; err != nil {
-			return nil, nil, NewCLError(ErrSQLSyntaxError, "Failed to query the storage clusters of the hosts", err)
+		why, err := storageHostConflict(db, backend, plan.Kind, plan.ClusterID, node.Hostid, node.Roles)
+		if err != nil {
+			return nil, nil, err
 		}
-		for _, o := range others {
-			if why := backend.HostConflict(node.Roles, strings.Split(o.Roles, ",")); why != "" {
-				return nil, nil, planError("%s %s", hyper.Hostname, why)
-			}
+		if why != "" {
+			return nil, nil, planError("%s %s", hyper.Hostname, why)
 		}
 	}
 	if plan.ClusterID == 0 && !plan.SkipLayout {

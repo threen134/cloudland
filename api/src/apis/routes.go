@@ -137,6 +137,8 @@ func Register() (r *gin.Engine) {
 	// capture 镜像上传 (compute → clapi → MinIO)
 	// 鉴权由 handler 内的 HMAC token 校验承担；compute 节点无 JWT，故不进 authGroup
 	v1.POST("/internal/images/:id/upload", imageAPI.UploadCapture)
+	// The whole log of a storage task run (host -> clapi), with a token for that run only
+	v1.POST("/internal/storage_runs/:id/log", storageClusterAPI.UploadRunLog)
 
 	// Audit 必须排在 Authorize 之后：操作者身份取自 MemberShip
 	authGroup := v1.Group("").Use(Authorize(), Audit())
@@ -179,6 +181,8 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/storage_pools/:id", storagePoolAPI.Delete)
 		authGroup.GET("/storage_pools/:id/hypers", storagePoolAPI.ListHosts)
 		authGroup.POST("/storage_pools/:id/orphans/abandon", storagePoolAPI.AbandonOrphans)
+		authGroup.POST("/storage_pools/:id/reconcile", storagePoolAPI.Reconcile)
+		authGroup.GET("/storage_pools/:id/reconcile", storagePoolAPI.GetReconcile)
 
 		authGroup.GET("/storage_backends", storageClusterAPI.ListBackends)
 		authGroup.GET("/storage_packages", storagePackageAPI.List)
@@ -194,6 +198,10 @@ func Register() (r *gin.Engine) {
 		authGroup.POST("/storage_clusters/import", storageClusterAPI.Import)
 		authGroup.DELETE("/storage_clusters/:id", storageClusterAPI.Delete)
 		authGroup.GET("/storage_clusters/:id", storageClusterAPI.Get)
+		authGroup.GET("/storage_clusters/:id/metrics", storageClusterAPI.Metrics)
+		authGroup.PATCH("/storage_clusters/:id", storageClusterAPI.Patch)
+		authGroup.PATCH("/storage_clusters/:id/nodes/:hypervisor", storageClusterAPI.ChangeRoles)
+		authGroup.POST("/storage_clusters/:id/disks/:disk_id/replace", storageClusterAPI.ReplaceDisk)
 		authGroup.POST("/storage_clusters/:id/nodes", storageClusterAPI.AddNodes)
 		authGroup.DELETE("/storage_clusters/:id/nodes/:hypervisor", storageClusterAPI.RemoveNode)
 		authGroup.POST("/storage_clusters/:id/disks", storageClusterAPI.AddDisks)
@@ -204,6 +212,7 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/storage_tasks/:id", storageClusterAPI.GetTask)
 		authGroup.POST("/storage_tasks/:id/retry", storageClusterAPI.RetryTask)
 		authGroup.POST("/storage_tasks/:id/abort", storageClusterAPI.AbortTask)
+		authGroup.GET("/storage_tasks/:id/runs/:run/log", storageClusterAPI.RunLog)
 
 		authGroup.GET("/migrations", migrationAPI.List)
 		authGroup.POST("/migrations", migrationAPI.Create)

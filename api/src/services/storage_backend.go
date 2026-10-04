@@ -76,6 +76,9 @@ type StorageTaskScope struct {
 	Disks []*model.StorageClusterDisk
 	// The host leaving is gone for good: nothing runs on it, its disks are dropped without moving their data
 	Offline bool
+	// The host whose roles change (change_roles) and its roles before; the roles in Nodes are the new ones
+	Changed     int32
+	ChangedFrom []string
 }
 
 // StorageCapabilities are the operations a kind supports beyond its precheck (§4.5.1)
@@ -92,8 +95,9 @@ type StorageCapabilities struct {
 	AddDisks   bool `json:"add_disks"`
 	RemoveDisk bool `json:"remove_disk"`
 	Rebalance  bool `json:"rebalance"`
-	// Clients: hosts join as clients on their own (ceph); a gpfs client is a member like any other
-	Clients bool `json:"clients"`
+	// ReplaceDisk swaps a failed disk for a new disk of the same host; ChangeRoles changes the roles of a member
+	ReplaceDisk bool `json:"replace_disk"`
+	ChangeRoles bool `json:"change_roles"`
 }
 
 // StorageRequirements are what a kind needs on its hosts
@@ -197,24 +201,26 @@ type storageClusterMaintainer interface {
 	Maintain(ctx context.Context, cluster *model.StorageCluster, nodes []*model.StorageClusterNode)
 }
 
-// maintainStorageClusters gives every ready cluster of a kind that has such work its round
+// maintainStorageClusters gives every ready cluster its round: the health watchdog (§14.1), the hosts joining as
+// clients on their own (§6.3), and the work of a kind that has some
 func maintainStorageClusters(ctx context.Context) {
 	db := dbs.DBContext(ctx)
 	clusters := []*model.StorageCluster{}
-	if err := db.Where("status = ?", model.StorageClusterReady).Find(&clusters).Error; err != nil {
+	if err := db.Where("status IN ?", []string{model.StorageClusterReady, model.StorageClusterDegraded}).Find(&clusters).Error; err != nil {
 		return
 	}
 	for _, c := range clusters {
+		nodes := []*model.StorageClusterNode{}
+		db.Where("cluster_id = ?", c.ID).Order("hostid").Find(&nodes)
+		maintainStorageHealth(ctx, c, nodes)
+		maintainAutoJoin(ctx, c)
 		backend, err := storageBackendOf(c.Kind)
 		if err != nil {
 			continue
 		}
-		m, ok := backend.(storageClusterMaintainer)
-		if !ok {
-			continue
+		// Not while a structural task changes the cluster: the GPFS round would start the disk a replacement drops
+		if m, ok := backend.(storageClusterMaintainer); ok && c.Status == model.StorageClusterReady && c.ActiveTask == 0 {
+			m.Maintain(ctx, c, nodes)
 		}
-		nodes := []*model.StorageClusterNode{}
-		db.Where("cluster_id = ?", c.ID).Order("hostid").Find(&nodes)
-		m.Maintain(ctx, c, nodes)
 	}
 }

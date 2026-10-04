@@ -213,6 +213,12 @@ func (a *StorageClusterAdmin) Delete(ctx context.Context, uuid string, req *Stor
 	if err != nil {
 		return
 	}
+	// The watchdog leaves a cluster being deleted alone: nothing would resolve its alarms
+	defer func() {
+		if err == nil {
+			resolveStorageAlarms(ctx, cluster)
+		}
+	}()
 	return startStorageTask(ctx, &storageTaskSpec{ClusterID: cluster.ID, Backend: cluster.Kind, Kind: StorageTaskDeleteCluster, Plan: steps,
 		Params: map[string]interface{}{"purge_packages": req.PurgePackages},
 		Prepare: func(tx *gorm.DB) (int64, error) {
