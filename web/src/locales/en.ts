@@ -2968,6 +2968,8 @@ export default {
         sharedNoCopy: 'In shared pool {pool}: not copied',
         sharedUnreachable: 'Shared pool {pool} is not usable on this host',
         sharedNoCopyShort: 'Shared, not copied',
+        allSharedMigration:
+            'Every disk is in a shared pool: a running instance moves its memory only, a shut off one only its definition, whatever the size of its disks.',
         wizard: {
             create: 'New cluster',
             title: 'New storage cluster',
@@ -3661,6 +3663,8 @@ export default {
         bootPool: 'Boot disk storage pool',
         bootPoolDefault: 'Default pool',
         bootPoolHint: 'With a local pool, the host having it with the most free space is chosen.',
+        bootPoolSharedHint:
+            'A boot disk in a shared pool is cloned from the copy of its image in the pool: the instance can run on any host that reaches the pool, and a migration copies no disk. The first time an image is used in the pool it is copied into it first, the instance stays provisioning meanwhile.',
         diskTargets: 'Target pool of each disk',
         stayInPool: 'Stay in {pool}',
         autoChosen: 'Chosen automatically',

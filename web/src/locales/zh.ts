@@ -2867,6 +2867,7 @@ export default {
         sharedNoCopy: '在共享池 {pool} 中，不复制',
         sharedUnreachable: '共享池 {pool} 在这台机器上不可用',
         sharedNoCopyShort: '共享，不复制',
+        allSharedMigration: '磁盘都在共享池里：开机时只迁移内存，关机时只转移云服务器的定义，用时与磁盘大小无关。',
         wizard: {
             create: '新建集群',
             title: '新建存储集群',
@@ -3525,6 +3526,8 @@ export default {
         bootPool: '系统盘存储池',
         bootPoolDefault: '默认存储池',
         bootPoolHint: '选择本地存储池时，由系统挑选有这个池且空间最多的机器。',
+        bootPoolSharedHint:
+            '共享存储池里的系统盘由池里的镜像副本克隆而来，云服务器可以放在任何能访问这个池的机器上，迁移时不复制磁盘。某个镜像第一次在这个池里使用时，要先把镜像复制进池，期间云服务器停在创建中。',
         diskTargets: '各磁盘的目标存储池',
         stayInPool: '留在 {pool}',
         autoChosen: '自动选择',

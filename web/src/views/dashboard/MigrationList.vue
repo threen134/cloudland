@@ -610,6 +610,9 @@ onUnmounted(() => {
                             </option>
                         </select>
                     </div>
+                    <small v-if="selectedTarget.disks.every((d) => d.shared)" class="text-secondary">{{
+                        $t('storage.allSharedMigration')
+                    }}</small>
                 </div>
                 <div v-if="targetsLoading" class="text-secondary">{{ $t('messages.loading') }}</div>
                 <div class="form-group row-gap">

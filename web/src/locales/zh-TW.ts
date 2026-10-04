@@ -2868,6 +2868,7 @@ export default {
         sharedNoCopy: '在共享池 {pool} 中，不複製',
         sharedUnreachable: '共享池 {pool} 在這台機器上不可用',
         sharedNoCopyShort: '共享，不複製',
+        allSharedMigration: '磁碟都在共享池裡：開機時只遷移記憶體，關機時只轉移雲伺服器的定義，用時與磁碟大小無關。',
         wizard: {
             create: '新增叢集',
             title: '新增儲存叢集',
@@ -3527,6 +3528,8 @@ export default {
         bootPool: '系統磁碟儲存池',
         bootPoolDefault: '預設儲存池',
         bootPoolHint: '選擇本機儲存池時，由系統挑選有這個池且空間最多的機器。',
+        bootPoolSharedHint:
+            '共享儲存池裡的系統磁碟由池裡的映像副本複製而來，雲伺服器可以放在任何能存取這個池的機器上，遷移時不複製磁碟。某個映像第一次在這個池裡使用時，要先把映像複製進池，期間雲伺服器停在建立中。',
         diskTargets: '各磁碟的目標儲存池',
         stayInPool: '留在 {pool}',
         autoChosen: '自動選擇',

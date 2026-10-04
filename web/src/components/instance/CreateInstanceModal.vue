@@ -32,6 +32,7 @@ import { isValidHostname, hostnameMaxLength } from '../../utils/validation'
 import { quotaErrorMessage } from '../../utils/quotaError'
 import { errorMessage } from '../../utils/error'
 import { formatMemory } from '../../utils/format'
+import { storageKindShort } from '../../utils/storageCluster'
 import { useToast } from '../../composables/useToast'
 import { useAuthStore } from '../../stores/auth'
 import { useTenantStore } from '../../stores/tenant'
@@ -55,6 +56,13 @@ const poolsForHost = computed(() => {
         (hyper.storage_pools || []).filter((p) => ['ready', 'degraded'].includes(p.status)).map((p) => p.uuid)
     )
     return availablePools.value.filter((p) => onHost.has(p.id))
+})
+
+// A boot disk in a shared pool is made from the copy of the image in the pool, imported the first time the image is used
+const selectedBootPoolShared = computed(() => {
+    const id = newInstanceForm.value.storage_pool
+    const pool = id ? availablePools.value.find((p) => p.id === id) : availablePools.value.find((p) => p.is_default)
+    return !!pool?.shared
 })
 
 const creatingInstance = ref(false)
@@ -316,9 +324,8 @@ const fetchResources = async () => {
         }
 
         try {
-            // Boot disks can not go to a shared pool yet (stage S4 of the shared storage design)
             availablePools.value = (await storagePoolsApi.list({ limit: OPTION_LIST_LIMIT })).storage_pools.filter(
-                (p) => (!p.status || p.status === 'active') && !p.shared
+                (p) => !p.status || p.status === 'active'
             )
         } catch {
             availablePools.value = []
@@ -1430,11 +1437,18 @@ watch(
                         <select v-model="newInstanceForm.storage_pool" class="form-select">
                             <option value="">{{ t('storage.bootPoolDefault') }}</option>
                             <option v-for="p in poolsForHost" :key="p.id" :value="p.id">
-                                {{ p.name }}{{ p.media ? ` · ${p.media.toUpperCase()}` : '' }} ·
+                                {{ p.name
+                                }}{{
+                                    p.shared
+                                        ? ` · ${t('storage.shared')} · ${storageKindShort(t, te, p.cluster_kind || p.driver)}`
+                                        : ''
+                                }}{{ p.media ? ` · ${p.media.toUpperCase()}` : '' }} ·
                                 {{ t('storage.availableHostsCount', { n: p.available_hosts }) }}
                             </option>
                         </select>
-                        <small class="form-hint">{{ t('storage.bootPoolHint') }}</small>
+                        <small class="form-hint">{{
+                            selectedBootPoolShared ? t('storage.bootPoolSharedHint') : t('storage.bootPoolHint')
+                        }}</small>
                     </div>
 
                     <div class="form-group">
