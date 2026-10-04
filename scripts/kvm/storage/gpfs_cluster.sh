@@ -7,6 +7,8 @@
 #   add:      {"cluster_uuid", "nodes": [{"ip", "quorum", "manager"}], "server_license": [ip], "client_license": [ip]}
 #             hosts join a running cluster (§7.5): added, licensed, started and mounting every file system
 #   remove:   {"cluster_uuid", "ip", "offline"}     a host leaves; offline: it is gone for good, nothing runs on it
+#   roles:    {"cluster_uuid", "ip", "quorum", "server"}   a member becomes a quorum (and manager) node or stops being
+#             one (§13.1), online; server: it needs a server license
 # Every action checks first what is there, so it can run again after a failure.
 
 cd $(dirname $0)
@@ -205,6 +207,55 @@ function do_remove()
     stc_result '{"removed": true}'
 }
 
+# designation_of <ip>: the designation of a node (quorumManager, quorum, manager or empty)
+function designation_of()
+{
+    $gpfs_bin/mmlscluster -Y 2>/dev/null | awk -F: -v ip="$1" '
+        $2 == "clusterNode" && $3 == "HEADER" { for (i = 1; i <= NF; i++) { if ($i == "ipAddress") a = i; if ($i == "designation") d = i }; next }
+        $2 == "clusterNode" && a && $a == ip { print $d }'
+}
+
+function do_roles()
+{
+    local input=$1 ip quorum server designation other fs node
+    ip=$(jq -r .ip <<<"$input")
+    quorum=$(jq -r '.quorum // false' <<<"$input")
+    server=$(jq -r '.server // false' <<<"$input")
+    [[ "$ip" =~ ^[0-9.]+$ ]] || stc_fail "invalid address $ip"
+    cluster_summary || stc_fail "this host is in no GPFS cluster"
+    gpfs_node_in $ip || stc_fail "$ip is not a node of the cluster"
+    designation=$(designation_of $ip)
+    if [ "$server" = "true" ]; then
+        $gpfs_bin/mmchlicense server --accept -N $ip || stc_fail "mmchlicense server failed"
+    fi
+    if [ "$quorum" = "true" ] && [[ "$designation" != *quorum* ]]; then
+        stc_progress 30 "making $ip a quorum node"
+        $gpfs_bin/mmchnode --quorum --manager -N $ip || stc_fail "mmchnode --quorum failed"
+    elif [ "$quorum" != "true" ] && [[ "$designation" == *quorum* ]]; then
+        # The cluster manager and the file system managers move to another quorum node first
+        other=$($gpfs_bin/mmlscluster -Y 2>/dev/null | awk -F: -v ip="$ip" '
+            $2 == "clusterNode" && $3 == "HEADER" { for (i = 1; i <= NF; i++) { if ($i == "ipAddress") a = i; if ($i == "designation") d = i }; next }
+            $2 == "clusterNode" && a && $a != ip && $d ~ /quorum/ { print $a; exit }')
+        [ -n "$other" ] || stc_fail "no other quorum node to take over from $ip"
+        if $gpfs_bin/mmlsmgr -c 2>/dev/null | grep -qw "$ip"; then
+            stc_progress 20 "moving the cluster manager to $other"
+            $gpfs_bin/mmchmgr -c $other || stc_fail "mmchmgr -c failed"
+        fi
+        while IFS=$'\t' read -r fs node; do
+            [ -n "$fs" ] && [ "$node" = "$ip" ] || continue
+            stc_progress 30 "moving the manager of $fs to $other"
+            $gpfs_bin/mmchmgr $fs $other || stc_fail "mmchmgr $fs failed"
+        done < <($gpfs_bin/mmlsmgr -Y 2>/dev/null | awk -F: '
+            $2 == "filesystemManager" && $3 == "HEADER" { for (i = 1; i <= NF; i++) { if ($i == "filesystem") f = i; if ($i == "managerIP") m = i }; next }
+            $2 == "filesystemManager" && f { print $f "\t" $m }')
+        stc_progress 60 "taking $ip out of the quorum"
+        $gpfs_bin/mmchnode --nonquorum --client -N $ip || stc_fail "mmchnode --nonquorum failed"
+    else
+        echo "$ip is ${designation:-a client node} already"
+    fi
+    stc_result "$(jq -cn --arg d "$(designation_of $ip)" '{designation: $d}')"
+}
+
 function stc_main()
 {
     local input action
@@ -218,6 +269,7 @@ function stc_main()
         teardown) do_teardown "$input" ;;
         add) do_add "$input" ;;
         remove) do_remove "$input" ;;
+        roles) do_roles "$input" ;;
         *) stc_fail "unknown action $action" ;;
     esac
 }

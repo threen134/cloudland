@@ -355,3 +355,12 @@ function drv_disk_xml()
     printf "<disk type='network' device='disk'>\n   <driver name='qemu' type='raw' cache='%s' discard='unmap' error_policy='%s'/>\n   <source protocol='rbd' name='%s/%s'>\n      <config file='%s'/>\n      <auth username='%s'>\n         <secret type='ceph' uuid='%s'/>\n      </auth>\n   </source>\n   <target dev='%s' bus='virtio'/>\n</disk>\n" \
         "$drv_cache" "$drv_error_policy" "$drv_ceph_pool" "$1" "$drv_conf" "$drv_user" "$drv_secret" "$2"
 }
+
+# drv_list: every RBD image of the pool, "<name>\t<bytes>\t0" per line (RBD keeps no time of change), for the orphan
+# report (shared-storage-design.md §16 S5); snapshots are left out, they belong to their image
+function drv_list()
+{
+    local out
+    out=$(DRV_TIMEOUT=300 drv_rbd ls -l --format json --pool "$drv_ceph_pool" 2>/dev/null) || { guard_error="rbd ls of $drv_ceph_pool failed"; return 1; }
+    jq -r '.[]? | select(.snapshot == null) | "\(.image)\t\(.size // 0)\t0"' <<<"$out"
+}

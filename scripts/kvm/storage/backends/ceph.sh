@@ -189,3 +189,60 @@ function backend_forget()
 {
     ceph_client_remove "$1"
 }
+
+# backend_health <cluster uuid> <input>: the health of the cluster as this host sees it, the JSON of
+# shared-storage-design.md §14.1 on stdout: ceph health detail (HEALTH_OK / WARN / ERR and its checks), the hosts
+# (ceph orch host ls), the OSDs (ceph osd tree), the capacity (ceph df), nearfull when Ceph says an OSD or a pool is
+# near full. A managed cluster is checked as client.admin on an admin host, an imported one as its client user, which
+# may not see the hosts or the OSDs. On a managed cluster the mgr prometheus module is switched on when it is off
+# (§14.3: the metrics come from it).
+function backend_health()
+{
+    local uuid=$1 input=$2 mode fsid user conf detail status health hosts tree df
+    local -a c
+    mode=$(jq -r '.mode // empty' <<<"$input")
+    fsid=$(jq -r '.fsid // empty' <<<"$input")
+    if [ "$mode" = managed ]; then
+        if ! ceph_admin_ready "$fsid"; then
+            jq -cn '{health: "unknown", error: "this host has no working admin configuration of the cluster"}'
+            return
+        fi
+        c=(ceph --conf /var/lib/ceph/$fsid/config/ceph.conf --keyring /var/lib/ceph/$fsid/config/ceph.client.admin.keyring)
+    else
+        user=$(jq -r '.client_user // empty' <<<"$input")
+        conf=$(jq -r '.conf // empty' <<<"$input")
+        [[ "$user" =~ ^[A-Za-z0-9_.-]+$ ]] && [ -f "$conf" ] || {
+            jq -cn '{health: "unknown", error: "this host has no client configuration of the cluster"}'
+            return
+        }
+        c=(ceph --conf "$conf" --id "$user")
+    fi
+    detail=$(timeout 60 "${c[@]}" health detail -f json 2>/dev/null)
+    status=$(jq -r '.status // empty' <<<"$detail" 2>/dev/null)
+    case "$status" in
+        HEALTH_OK) health=healthy ;;
+        HEALTH_WARN) health=warning ;;
+        HEALTH_ERR) health=error ;;
+        *)
+            jq -cn '{health: "unknown", error: "the monitors of the cluster do not answer"}'
+            return
+            ;;
+    esac
+    if [ "$mode" = managed ]; then
+        hosts=$(timeout 60 "${c[@]}" orch host ls -f json 2>/dev/null)
+        if ! timeout 60 "${c[@]}" mgr module ls -f json 2>/dev/null | jq -e '.enabled_modules | index("prometheus")' >/dev/null 2>&1; then
+            timeout 60 "${c[@]}" mgr module enable prometheus >/dev/null 2>&1
+        fi
+    fi
+    tree=$(timeout 60 "${c[@]}" osd tree -f json 2>/dev/null)
+    df=$(timeout 60 "${c[@]}" df -f json 2>/dev/null)
+    jq -n --arg h $health --arg s "$status" --argjson d "$detail" --arg hosts "$hosts" --arg tree "$tree" --arg df "$df" '
+        def parsed($x): ($x | try fromjson catch null);
+        {health: $h, summary: $s,
+         messages: [($d.checks // {}) | to_entries[] | "\(.key): \(.value.summary.message // "")"],
+         flags: (if ($d.checks // {}) | keys | any(. == "OSD_NEARFULL" or . == "POOL_NEARFULL" or . == "OSD_FULL" or . == "POOL_FULL"
+                     or . == "OSD_BACKFILLFULL" or . == "POOL_BACKFILLFULL") then ["nearfull"] else [] end),
+         nodes: [(parsed($hosts) // [])[] | {name: .hostname, state: (if (.status // "") == "" then "active" else (.status | ascii_downcase) end)}],
+         disks: [((parsed($tree) // {}).nodes // [])[] | select(.type == "osd") | {name: .name, state: (.status // "unknown")}],
+         capacity: ((parsed($df) // {}).stats // null | if . then {total: .total_bytes, free: .total_avail_bytes} else null end)}'
+}

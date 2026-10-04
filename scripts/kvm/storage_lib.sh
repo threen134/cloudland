@@ -619,10 +619,19 @@ function shared_pools_all()
     done | jq -cs '.'
 }
 
+# node_textfile_dir: the directory node_exporter reads its textfile metrics from; nothing when there is none
+function node_textfile_dir()
+{
+    local dir
+    dir=$(ps -eo args= 2>/dev/null | grep -o -- '--collector.textfile.directory[= ][^ ]*' | head -1 | sed 's/^--collector.textfile.directory[= ]//')
+    [ -z "$dir" ] && dir=/var/lib/prometheus/node-exporter
+    [ -d "$dir" ] && echo "$dir"
+}
+
 # shared_pools_prune: stop the probe of every shared pool no list holds any more and drop its state
 function shared_pools_prune()
 {
-    local keep f pool pid
+    local keep f pool pid dir
     keep=$(shared_pools_all | jq -r '.[].pool')
     for f in $pool_state_dir/*.shared; do
         [ -f "$f" ] || continue
@@ -631,6 +640,7 @@ function shared_pools_prune()
         pid=$(cat $pool_state_dir/$pool.pid 2>/dev/null)
         probe_alive "$pid" $pool && kill $pid 2>/dev/null
         rm -f $pool_state_dir/$pool.state $pool_state_dir/$pool.pid $pool_state_dir/$pool.reported "$f"
+        dir=$(node_textfile_dir) && rm -f $dir/cloudland_shared_pool_$pool.prom
     done
     return 0
 }

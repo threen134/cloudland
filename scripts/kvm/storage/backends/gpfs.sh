@@ -93,3 +93,126 @@ function gpfs_y()
         $2 == sec && $3 == "HEADER" { for (i = 1; i <= NF; i++) if ($i == fld) col = i; next }
         $2 == sec && col { print $col }'
 }
+
+# backend_health <cluster uuid> <input>: the health of the cluster as this host sees it, the JSON of
+# shared-storage-design.md §14.1 on stdout. The nodes come from mmgetstate, the disks of each file system from
+# mmlsdisk (availability), the file systems from this host's mount and df, the summary of the components from
+# mmhealth cluster show (failed: error, degraded: warning; tips are fine). A file system not mounted here or GPFS not
+# answering is an error, a node not active or a disk not up a warning.
+function backend_health()
+{
+    local uuid=$1 input=$2 nodes disks="" fs mnt health=healthy msgs="" fsj="" mounted total free lines name state
+    local failed degraded comp nodes_total nodes_active disks_total disks_up
+    if [ ! -x $gpfs_bin/mmgetstate ]; then
+        jq -cn '{health: "unknown", error: "GPFS is not installed on this host"}'
+        return
+    fi
+    nodes=$(timeout 60 $gpfs_bin/mmgetstate -a -Y 2>/dev/null | awk -F: '
+        $3 == "HEADER" { for (i = 1; i <= NF; i++) { if ($i == "nodeName") n = i; if ($i == "state") s = i }; next }
+        n && s && $n != "" { print $n "\t" $s }')
+    if [ -z "$nodes" ]; then
+        jq -cn '{health: "unknown", error: "mmgetstate gave no answer on this host"}'
+        return
+    fi
+    while IFS=$'\t' read -r name state; do
+        [ "$state" = active ] && continue
+        msgs+="node $name is $state"$'\n'
+        [ $health = healthy ] && health=warning
+    done <<<"$nodes"
+    while IFS=$'\t' read -r fs mnt; do
+        [[ "$fs" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] || continue
+        lines=$(timeout 60 $gpfs_bin/mmlsdisk $fs -Y 2>/dev/null | awk -F: '
+            $3 == "HEADER" { for (i = 1; i <= NF; i++) { if ($i == "nsdName") n = i; if ($i == "availability") a = i }; next }
+            n && a && $n != "" { print $n "\t" $a }')
+        disks+="$lines"$'\n'
+        while IFS=$'\t' read -r name state; do
+            [ -z "$name" ] || [ "$state" = up ] && continue
+            msgs+="disk $name of $fs is $state"$'\n'
+            [ $health = healthy ] && health=warning
+        done <<<"$lines"
+        mounted=false total=0 free=0
+        if [ -n "$mnt" ] && [ "$(timeout 10 stat -f -c %T "$mnt" 2>/dev/null)" = gpfs ]; then
+            mounted=true
+            read -r total free < <(timeout 10 df -B1 --output=size,avail "$mnt" 2>/dev/null | awk 'NR == 2 {print $1, $2}')
+        else
+            msgs+="$fs is not mounted on $(hostname -s)"$'\n'
+            health=error
+        fi
+        fsj+=$(jq -cn --arg n "$fs" --argjson m $mounted --argjson t "${total:-0}" --argjson f "${free:-0}" \
+            '{name: $n, mounted: $m, total: $t, free: $f}')$'\n'
+    done < <(jq -r '.filesystems[]? | [.name, .mount] | @tsv' <<<"$input")
+    # The summary of mmhealth: a component with failed entities is an error, with degraded ones a warning
+    while IFS=$'\t' read -r comp failed degraded; do
+        [ -z "$comp" ] && continue
+        if [ "${failed:-0}" -gt 0 ]; then
+            msgs+="mmhealth: $comp has $failed failed"$'\n'
+            health=error
+        elif [ "${degraded:-0}" -gt 0 ]; then
+            msgs+="mmhealth: $comp has $degraded degraded"$'\n'
+            [ $health = healthy ] && health=warning
+        fi
+    done < <(timeout 60 $gpfs_bin/mmhealth cluster show -Y 2>/dev/null | awk -F: '
+        $2 == "Summary" && $3 == "HEADER" { for (i = 1; i <= NF; i++) { if ($i == "component") c = i; if ($i == "failed") f = i; if ($i == "degraded") d = i }; next }
+        $2 == "Summary" && c { print $c "\t" $f "\t" $d }')
+    nodes_total=$(grep -c . <<<"$nodes"); nodes_active=$(awk -F'\t' '$2 == "active"' <<<"$nodes" | grep -c .)
+    disks_total=$(grep -c . <<<"$disks"); disks_up=$(awk -F'\t' '$2 == "up"' <<<"$disks" | grep -c .)
+    jq -n --arg h $health --arg s "$nodes_active/$nodes_total nodes active, $disks_up/$disks_total disks up" \
+        --arg msgs "$msgs" --arg nodes "$nodes" --arg disks "$disks" --arg fs "$fsj" '{
+        health: $h, summary: $s,
+        messages: ($msgs | split("\n") | map(select(. != ""))),
+        nodes: ($nodes | split("\n") | map(select(. != "") | split("\t") | {name: .[0], state: .[1]})),
+        disks: ($disks | split("\n") | map(select(. != "") | split("\t") | {name: .[0], state: .[1]})),
+        filesystems: ($fs | split("\n") | map(select(. != "") | fromjson))}'
+}
+
+# Metrics of this host for the node_exporter textfile collector, printed by stc_metrics.sh (shared-storage-design.md
+# §14.3, appendix E): whether GPFS is active here, each file system of the cluster mounted here or not with its
+# capacity, the I/O counters of this host (mmpmon fs_io_s; they start again from 0 when GPFS restarts, so they are
+# only read as rates) and the state of each mmhealth component of this host. The file systems come from mmlsfs and
+# are kept in gpfs_mounts for the times GPFS does not answer: a file system that is not mounted is not in
+# /proc/mounts at all.
+function backend_metrics()
+{
+    local l="cluster=\"$1\"" dir=$run_dir/storage/$1 state list fs mnt mounted
+    [ -x $gpfs_bin/mmgetstate ] || return 0
+    state=$(timeout 20 $gpfs_bin/mmgetstate -Y 2>/dev/null | awk -F: '
+        $3 == "HEADER" { for (i = 1; i <= NF; i++) if ($i == "state") s = i; next }
+        s { print $s; exit }')
+    echo "cloudland_gpfs_node_active{$l} $([ "$state" = active ] && echo 1 || echo 0)"
+    list=$(timeout 20 $gpfs_bin/mmlsfs all -T -Y 2>/dev/null | awk -F: '
+        $3 == "HEADER" { for (i = 1; i <= NF; i++) { if ($i == "deviceName") d = i; if ($i == "data") v = i }; next }
+        d && v && $d != "" { print $d "\t" $v }')
+    if [ -n "$list" ]; then
+        # The mount point comes percent encoded (%2Fgpfs%2Ffs1)
+        list=$(while IFS=$'\t' read -r fs mnt; do printf '%s\t%b\n' "$fs" "$(sed 's/%/\\x/g' <<<"$mnt")"; done <<<"$list")
+        printf '%s\n' "$list" >$dir/gpfs_mounts.tmp && mv -f $dir/gpfs_mounts.tmp $dir/gpfs_mounts
+    else
+        list=$(cat $dir/gpfs_mounts 2>/dev/null)
+    fi
+    while IFS=$'\t' read -r fs mnt; do
+        [[ "$fs" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] && [[ "$mnt" == /* ]] || continue
+        mounted=0
+        [ "$(timeout 10 stat -f -c %T "$mnt" 2>/dev/null)" = gpfs ] && mounted=1
+        echo "cloudland_gpfs_filesystem_mounted{$l,fs=\"$fs\"} $mounted"
+        [ $mounted = 1 ] || continue
+        timeout 10 df -B1 --output=size,avail "$mnt" 2>/dev/null | awk -v l="$l,fs=\"$fs\"" 'NR == 2 {
+            print "cloudland_gpfs_filesystem_total_bytes{" l "} " $1
+            print "cloudland_gpfs_filesystem_free_bytes{" l "} " $2 }'
+    done <<<"$list"
+    [ "$state" = active ] || return 0
+    # Pairs of _name_ value: _fs_ the file system, _br_ / _bw_ bytes read / written, _rdc_ / _wc_ read / write calls
+    timeout 20 $gpfs_bin/mmpmon -p -s <<<"fs_io_s" 2>/dev/null | awk -v l="$l" '$1 == "_fs_io_s_" {
+        delete v
+        for (i = 2; i < NF; i += 2) v[$i] = $(i + 1)
+        if (v["_rc_"] != "0" || v["_fs_"] !~ /^[A-Za-z][A-Za-z0-9_]*$/) next
+        f = l ",fs=\"" v["_fs_"] "\""
+        print "cloudland_gpfs_read_bytes_total{" f "} " v["_br_"] + 0
+        print "cloudland_gpfs_write_bytes_total{" f "} " v["_bw_"] + 0
+        print "cloudland_gpfs_reads_total{" f "} " v["_rdc_"] + 0
+        print "cloudland_gpfs_writes_total{" f "} " v["_wc_"] + 0 }'
+    # One row per component of this host (entity type NODE); tips are fine
+    timeout 30 $gpfs_bin/mmhealth node show -Y 2>/dev/null | awk -F: -v l="$l" '
+        $2 == "State" && $3 == "HEADER" { for (i = 1; i <= NF; i++) { if ($i == "component") c = i; if ($i == "entitytype") e = i; if ($i == "status") s = i }; next }
+        $2 == "State" && c && $e == "NODE" && $c ~ /^[A-Z_]+$/ {
+            print "cloudland_gpfs_component_healthy{" l ",component=\"" tolower($c) "\"} " (($s == "HEALTHY" || $s == "TIPS") ? 1 : 0) }'
+}

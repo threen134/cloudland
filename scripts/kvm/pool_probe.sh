@@ -30,9 +30,7 @@ function write_state()
 function write_metrics()
 {
     local status=$1 extra=$2 dir code ratio
-    dir=$(ps -eo args= 2>/dev/null | grep -o -- '--collector.textfile.directory[= ][^ ]*' | head -1 | sed 's/^--collector.textfile.directory[= ]//')
-    [ -z "$dir" ] && dir=/var/lib/prometheus/node-exporter
-    [ -d "$dir" ] || return
+    dir=$(node_textfile_dir) || return
     case $status in
         ready) code=0 ;;
         degraded) code=1 ;;

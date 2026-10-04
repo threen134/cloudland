@@ -466,6 +466,16 @@ function shared_pool_report()
     fi
 }
 
+# Refresh the metrics of the storage clusters of this host once a minute, in the background (storage/stc_metrics.sh:
+# a storage command can hang for good on a dead mount)
+function storage_metrics()
+{
+    local stamp=$shared_storage_dir/metrics.started now=$(date +%s)
+    [ $((now - $(stat -c %Y $stamp 2>/dev/null || echo 0))) -ge 60 ] || return 0
+    mkdir -p $shared_storage_dir && touch $stamp
+    setsid $script_dir/storage/stc_metrics.sh </dev/null >/dev/null 2>&1 &
+}
+
 function sync_delayed_job()
 {
     for f in $(ls $async_job_dir/*.done); do
@@ -540,6 +550,7 @@ function calc_resource()
 calc_resource
 pool_report
 shared_pool_report
+storage_metrics
 sync_instance
 pending_start
 recover_loadbalancer

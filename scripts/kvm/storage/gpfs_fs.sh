@@ -8,6 +8,8 @@
 #   remove:    {"cluster_uuid", "fs_name", "nsds": [name], "damaged"}   take NSDs out (their data moves to the other
 #              disks first; damaged: the disks are gone, the other copies stay) and delete them
 #   rebalance: {"cluster_uuid", "fs_name"}   spread the data over all disks (mmrestripefs -b), long and I/O heavy
+#   restore:   {"cluster_uuid", "fs_name"}   give the files that lost a copy with a failed disk their copies back
+#              (mmrestripefs -r), after the disk was replaced
 
 cd $(dirname $0)
 source ../../cloudrc
@@ -51,13 +53,28 @@ function do_add()
 
 function do_remove()
 {
-    local input=$1 fs=$2 have list="" name damaged opts=""
+    local input=$1 fs=$2 have list="" name damaged opts="" require_down avail left
     damaged=$(jq -r '.damaged // false' <<<"$input")
+    require_down=$(jq -r '.require_down // false' <<<"$input")
     have=$(fs_disks $fs)
     for name in $(jq -r '.nsds[]' <<<"$input"); do
         [[ "$name" =~ ^[A-Za-z0-9_]+$ ]] || stc_fail "invalid NSD name $name"
         grep -qx "$name" <<<"$have" && list="${list:+$list;}$name"
     done
+    # A disk replaced as failed: GPFS must have it down now, whatever the last health check saw (-p does not move
+    # its data, so a disk that works would lose its copies for nothing). A disk recovering is being brought back
+    if [ "$require_down" = "true" ] && [ -n "$list" ]; then
+        for name in ${list//;/ }; do
+            avail=$(timeout 60 $gpfs_bin/mmlsdisk $fs -Y 2>/dev/null | awk -F: -v n="$name" '
+                $3 == "HEADER" { for (i = 1; i <= NF; i++) { if ($i == "nsdName") a = i; if ($i == "availability") b = i }; next }
+                a && b && $a == n { print $b }')
+            case "$avail" in
+            down | unrecovered) echo "$name is $avail" ;;
+            "") stc_fail "the availability of $name could not be read: it is not dropped as failed" ;;
+            *) stc_fail "$name is $avail: a disk that works is removed the normal way, not dropped as failed" ;;
+            esac
+        done
+    fi
     if [ -n "$list" ]; then
         # -p: the disks can not be read any more; their data is not moved, the other copies stay
         [ "$damaged" = "true" ] && opts="-p"
@@ -70,10 +87,15 @@ function do_remove()
     done
     if [ -n "$list" ]; then
         stc_progress 80 "deleting the NSDs $list"
-        if [ "$damaged" = "true" ]; then
-            $gpfs_bin/mmdelnsd -p "$list" || stc_fail "mmdelnsd failed"
-        else
-            $gpfs_bin/mmdelnsd "$list" || stc_fail "mmdelnsd failed"
+        if ! $gpfs_bin/mmdelnsd "$list"; then
+            # A failed disk keeps the NSD id on its platter, which can not be cleared: what counts is that the cluster
+            # has no such NSD any more
+            left=""
+            for name in ${list//;/ }; do
+                gpfs_nsd_exists $name && left="$left $name"
+            done
+            [ -z "$left" ] || stc_fail "mmdelnsd failed for$left"
+            echo "mmdelnsd could not clear the disks, their NSDs are gone from the cluster"
         fi
     fi
     stc_result '{"removed": true}'
@@ -85,6 +107,14 @@ function do_rebalance()
     stc_progress 5 "rebalancing $fs"
     $gpfs_bin/mmrestripefs $fs -b || stc_fail "mmrestripefs failed"
     stc_result '{"rebalanced": true}'
+}
+
+function do_restore()
+{
+    local fs=$2
+    stc_progress 5 "restoring the replication of $fs"
+    $gpfs_bin/mmrestripefs $fs -r || stc_fail "mmrestripefs -r failed"
+    stc_result '{"restored": true}'
 }
 
 function stc_main()
@@ -102,7 +132,7 @@ function stc_main()
     [[ "$fs" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] || stc_fail "invalid file system name"
     case $action in
         create) ;;
-        add|remove|rebalance)
+        add|remove|rebalance|restore)
             stc_lock "gpfs-$uuid"
             $gpfs_bin/mmlsfs $fs >/dev/null 2>&1 || stc_fail "file system $fs not found"
             do_$action "$input" $fs

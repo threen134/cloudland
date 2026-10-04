@@ -9,6 +9,10 @@
 #   create_osds: {"osds": [{"key", "hostname", "device", "kname", "media"}]}           result: {"osds": [{"key", "osd_id"}]}
 #   remove_osds: {"osd_ids", "offline"}    their data moves to the other OSDs first, unless their host is gone
 #   remove_host: {"hostname", "orch_host", "osd_ids", "offline"}   drained and removed, or removed at once when gone
+#   replace_osd: {"old_id", "osds": [{"key", "hostname", "device", "kname", "media"}]}   the OSD of a failed disk is
+#                destroyed keeping its id and the new disk of the same host takes it   result: {"osds": [{"key", "osd_id"}]}
+#   set_labels:  {"hostname", "ip", "labels", "mons"}   the mon, mgr and _admin labels of a host as its roles say;
+#                cephadm places the daemons by them. Waits for the mons and an active mgr
 #   teardown:    the orchestrator stops, so it does not redeploy what the hosts remove next (stc_leave.sh)
 # Every action checks first what is there, so it can run again after a failure.
 
@@ -107,6 +111,9 @@ function do_add_hosts()
     ceph_admin $fsid orch apply mon --placement=label:mon >/dev/null || stc_fail "placing the mons failed"
     ceph_admin $fsid orch apply mgr --placement=label:mgr >/dev/null || stc_fail "placing the mgrs failed"
     ceph_admin $fsid orch apply crash --placement='*' >/dev/null || stc_fail "placing the crash collectors failed"
+    # The metrics of the cluster come from the active mgr (shared-storage-design.md §14.3, port 9283); the health
+    # watchdog switches the module on again when it is off
+    ceph_admin $fsid mgr module enable prometheus >/dev/null 2>&1 || echo "the mgr prometheus module could not be enabled"
     known=$(ceph_admin $fsid orch host ls --format json) || stc_fail "listing the hosts failed"
     total=$(jq '.hosts | length' <<<"$input")
     for row in $(jq -c '.hosts[]' <<<"$input"); do
@@ -183,9 +190,48 @@ function osd_up()
     ceph_admin $fsid osd dump -f json 2>/dev/null | jq -e --argjson i "$1" '.osds[] | select(.osd == $i and .up == 1)' >/dev/null
 }
 
+# make_osd <hostname> <device> <kernel name> <media>: an OSD on the device (one there already counts), up and with
+# the device class of its media; sets osd_id
+function make_osd()
+{
+    local name=$1 dev=$2 kname=$3 media=$4 id res
+    id=$(osd_of "$name" "$kname")
+    if [ -n "$id" ]; then
+        echo "osd.$id is on $name:$dev already"
+    else
+        res=$(CEPH_TIMEOUT=900 ceph_admin $fsid orch daemon add osd "$name:$dev" 2>&1)
+        if grep -qE "is not found on host|No devices found for host" <<<"$res"; then
+            res=$(CEPH_TIMEOUT=900 ceph_admin $fsid orch daemon add osd "$name:$dev" --skip-validation 2>&1)
+        fi
+        echo "$res"
+        grep -qi "^Error" <<<"$res" && stc_fail "making an OSD on $name:$dev failed: $(grep -i '^Error' <<<"$res" | head -1)"
+        wait_for 600 "the OSD on $name:$dev" eval '[ -n "$(osd_of "$name" "$kname")" ]' || stc_fail "no OSD showed up on $name:$dev"
+        id=$(osd_of "$name" "$kname")
+    fi
+    wait_for 600 "osd.$id up" osd_up $id || stc_fail "osd.$id did not come up"
+    if [ -n "$media" ]; then
+        ceph_admin $fsid osd crush rm-device-class osd.$id >/dev/null 2>&1
+        ceph_admin $fsid osd crush set-device-class $media osd.$id >/dev/null || stc_fail "setting the class of osd.$id to $media failed"
+    fi
+    osd_id=$id
+}
+
+# osd_row <json row>: reads and checks an OSD to make (key, name, dev, kname, media)
+function osd_row()
+{
+    key=$(jq -r .key <<<"$1")
+    name=$(jq -r .hostname <<<"$1")
+    dev=$(jq -r .device <<<"$1")
+    kname=$(jq -r .kname <<<"$1")
+    media=$(jq -r '.media // ""' <<<"$1")
+    valid_name "$name" || stc_fail "invalid host name $name"
+    [[ "$dev" =~ ^/dev/[A-Za-z0-9/_.-]+$ ]] && [[ "$kname" =~ ^[A-Za-z0-9_.-]+$ ]] || stc_fail "invalid device $dev ($kname)"
+    [ -z "$media" ] || [[ "$media" =~ ^(hdd|ssd|nvme)$ ]] || stc_fail "invalid media $media"
+}
+
 function do_create_osds()
 {
-    local row key name dev kname media id out="[]" n=0 total res
+    local row key name dev kname media osd_id out="[]" n=0 total
     ceph_admin_ready $fsid || stc_fail "this host has no working admin configuration of cluster $fsid"
     total=$(jq '.osds | length' <<<"$input")
     # 20.2 checks the device against the inventory of the host, which a host added a moment ago does not have yet and
@@ -194,35 +240,11 @@ function do_create_osds()
     # check is skipped when it gets in the way
     ceph_admin $fsid orch device ls --refresh >/dev/null 2>&1
     for row in $(jq -c '.osds[]' <<<"$input"); do
-        key=$(jq -r .key <<<"$row")
-        name=$(jq -r .hostname <<<"$row")
-        dev=$(jq -r .device <<<"$row")
-        kname=$(jq -r .kname <<<"$row")
-        media=$(jq -r '.media // ""' <<<"$row")
-        valid_name "$name" || stc_fail "invalid host name $name"
-        [[ "$dev" =~ ^/dev/[A-Za-z0-9/_.-]+$ ]] && [[ "$kname" =~ ^[A-Za-z0-9_.-]+$ ]] || stc_fail "invalid device $dev ($kname)"
-        [ -z "$media" ] || [[ "$media" =~ ^(hdd|ssd|nvme)$ ]] || stc_fail "invalid media $media"
+        osd_row "$row"
         n=$((n + 1))
         stc_progress $((5 + 85 * (n - 1) / total)) "making an OSD on $name:$dev"
-        id=$(osd_of "$name" "$kname")
-        if [ -n "$id" ]; then
-            echo "osd.$id is on $name:$dev already"
-        else
-            res=$(CEPH_TIMEOUT=900 ceph_admin $fsid orch daemon add osd "$name:$dev" 2>&1)
-            if grep -qE "is not found on host|No devices found for host" <<<"$res"; then
-                res=$(CEPH_TIMEOUT=900 ceph_admin $fsid orch daemon add osd "$name:$dev" --skip-validation 2>&1)
-            fi
-            echo "$res"
-            grep -qi "^Error" <<<"$res" && stc_fail "making an OSD on $name:$dev failed: $(grep -i '^Error' <<<"$res" | head -1)"
-            wait_for 600 "the OSD on $name:$dev" eval '[ -n "$(osd_of "$name" "$kname")" ]' || stc_fail "no OSD showed up on $name:$dev"
-            id=$(osd_of "$name" "$kname")
-        fi
-        wait_for 600 "osd.$id up" osd_up $id || stc_fail "osd.$id did not come up"
-        if [ -n "$media" ]; then
-            ceph_admin $fsid osd crush rm-device-class osd.$id >/dev/null 2>&1
-            ceph_admin $fsid osd crush set-device-class $media osd.$id >/dev/null || stc_fail "setting the class of osd.$id to $media failed"
-        fi
-        out=$(jq -c --arg k "$key" --argjson i "$id" '. + [{key: $k, osd_id: $i}]' <<<"$out")
+        make_osd "$name" "$dev" "$kname" "$media"
+        out=$(jq -c --arg k "$key" --argjson i "$osd_id" '. + [{key: $k, osd_id: $i}]' <<<"$out")
     done
     # 20.2 saves every "orch daemon add osd" as a managed spec osd.default for that host and disk, which would make a
     # new OSD on the disk again once it is removed and zapped. 19.2 has no such spec: the command fails, harmlessly
@@ -276,6 +298,93 @@ function do_remove_osds()
         wait_removed "$ids"
     fi
     stc_result "$(jq -cn --argjson i "$ids" '{removed: ($i | length)}')"
+}
+
+# osd_status <id>: up, down or destroyed as the OSD map has it; nothing when the OSD is not in it
+function osd_status()
+{
+    ceph_admin $fsid osd tree -f json 2>/dev/null | jq -r --argjson i "$1" '.nodes[]? | select(.id == $i) | .status' | head -1
+}
+
+# The disk of an OSD failed: the OSD is destroyed and keeps its id, and the new disk of the same host takes the id
+# (cephadm hands the destroyed ids of a host to its next OSDs). Not orch osd rm --replace: cephadm waits for
+# safe-to-destroy even with --force, and with as many OSD hosts as replicas the degraded data has nowhere to go, so a
+# failed OSD never is. Its daemon is removed and it is destroyed directly; the data comes back from the other copies
+function do_replace_osd()
+{
+    local old row key name dev kname media osd_id status
+    old=$(jq -r '.old_id' <<<"$input")
+    [[ "$old" =~ ^[0-9]+$ ]] || stc_fail "invalid OSD id $old"
+    ceph_admin_ready $fsid || stc_fail "this host has no working admin configuration of cluster $fsid"
+    [ "$(jq '.osds | length' <<<"$input")" = 1 ] || stc_fail "one disk replaces one OSD"
+    row=$(jq -c '.osds[0]' <<<"$input")
+    osd_row "$row"
+    if [ "$(osd_of "$name" "$kname")" = "$old" ]; then
+        echo "osd.$old is on $name:$dev already"
+    else
+        status=$(osd_status $old)
+        case "$status" in
+            destroyed) echo "osd.$old is destroyed already" ;;
+            up) stc_fail "osd.$old is up: its disk works, remove it the normal way" ;;
+            "") stc_fail "osd.$old is not in the cluster" ;;
+            *)
+                stc_progress 10 "destroying osd.$old, keeping its id"
+                # A removal queued by hand or by an earlier version would destroy or purge it under us
+                ceph_admin $fsid orch osd rm stop $old >/dev/null 2>&1
+                ceph_admin $fsid osd out $old || stc_fail "marking osd.$old out failed"
+                if ceph_admin $fsid orch ps --daemon_type osd -f json 2>/dev/null | jq -e --arg n "osd.$old" 'any(.[]; .daemon_name == $n)' >/dev/null; then
+                    ceph_admin $fsid orch daemon rm osd.$old --force || stc_fail "removing the daemon of osd.$old failed"
+                fi
+                ceph_admin $fsid osd destroy $old --force --yes-i-really-mean-it || stc_fail "destroying osd.$old failed"
+                wait_for 120 "osd.$old destroyed" eval '[ "$(osd_status $old)" = destroyed ]' || stc_fail "osd.$old was not destroyed"
+                ;;
+        esac
+        stc_progress 40 "making the new OSD on $name:$dev"
+    fi
+    make_osd "$name" "$dev" "$kname" "$media"
+    [ "$osd_id" = "$old" ] || echo "the new disk became osd.$osd_id, not osd.$old"
+    # The old one was marked out: the new one takes the data back
+    ceph_admin $fsid osd in $osd_id >/dev/null 2>&1
+    ceph_admin $fsid orch set-unmanaged osd.default >/dev/null 2>&1
+    stc_result "$(jq -cn --arg k "$key" --argjson i "$osd_id" '{osds: [{key: $k, osd_id: $i}]}')"
+}
+
+# The labels of a host follow its roles: mon, mgr and _admin are added and taken away, osd only added (it follows the
+# disks, which their own tasks move); a client that gets its first label becomes a cephadm host
+function do_set_labels()
+{
+    local name ip want have mons l
+    name=$(jq -r .hostname <<<"$input")
+    ip=$(jq -r '.ip // ""' <<<"$input")
+    mons=$(jq -r '.mons // 1' <<<"$input")
+    want=$(jq -r '.labels | join(" ")' <<<"$input")
+    valid_name "$name" || stc_fail "invalid host name $name"
+    [[ "$mons" =~ ^[1-9]$ ]] || stc_fail "invalid mon count $mons"
+    ceph_admin_ready $fsid || stc_fail "this host has no working admin configuration of cluster $fsid"
+    have=$(ceph_admin $fsid orch host ls --format json | jq -r --arg h "$name" '.[] | select(.hostname == $h) | (.labels // []) | join(" ")')
+    if ! ceph_admin $fsid orch host ls --format json | jq -e --arg h "$name" '.[] | select(.hostname == $h)' >/dev/null; then
+        [ -n "$want" ] || { stc_result '{"labels": []}'; return 0; }
+        valid_ip "$ip" || stc_fail "invalid address $ip"
+        ceph_admin $fsid orch host add "$name" "$ip" --labels "${want// /,}" || stc_fail "adding $name ($ip) failed: can the mgr log in to it?"
+    else
+        for l in $want; do
+            [[ " $have " == *" $l "* ]] && continue
+            stc_progress 20 "labelling $name $l"
+            ceph_admin $fsid orch host label add "$name" "$l" >/dev/null || stc_fail "labelling $name $l failed"
+        done
+        for l in $have; do
+            case "$l" in mon|mgr|_admin) ;; *) continue ;; esac
+            [[ " $want " == *" $l "* ]] && continue
+            stc_progress 40 "taking label $l from $name"
+            ceph_admin $fsid orch host label rm "$name" "$l" >/dev/null || stc_fail "taking label $l from $name failed"
+        done
+    fi
+    stc_progress 60 "waiting for $mons monitors in quorum"
+    wait_for 900 "monitors in quorum" eval '[ "$(ceph_admin $fsid quorum_status -f json 2>/dev/null | jq ".quorum_names | length")" = "$mons" ]' ||
+        stc_fail "the monitors did not settle at $mons in 15 minutes"
+    wait_for 300 "an active mgr" eval 'ceph_admin $fsid mgr stat -f json 2>/dev/null | jq -e .available >/dev/null' ||
+        stc_fail "no mgr became active"
+    stc_result "$(jq -cn --arg l "$want" '{labels: ($l | split(" ") | map(select(. != "")))}')"
 }
 
 function do_remove_host()
@@ -333,6 +442,8 @@ function stc_main()
         create_osds) do_create_osds ;;
         remove_osds) do_remove_osds ;;
         remove_host) do_remove_host ;;
+        replace_osd) do_replace_osd ;;
+        set_labels) do_set_labels ;;
         teardown) do_teardown ;;
         *) stc_fail "unknown action $action" ;;
     esac

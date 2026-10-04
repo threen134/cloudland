@@ -328,3 +328,20 @@ function drv_nvram_check()
     fi
     return 0
 }
+
+# drv_list: every file of the pool, "<path under the root>\t<bytes>\t<modified, unix seconds>" per line, for the orphan
+# report (shared-storage-design.md §16 S5); the pool has volumes/, images/, nvram/ and tmp/ under its root
+function drv_list()
+{
+    local rc
+    drv_guard || return 1
+    timeout ${DRV_TIMEOUT:-300} find "$drv_root" -mindepth 1 -maxdepth 3 -type f -printf '%P\t%s\t%T@\n' 2>/dev/null |
+        awk -F'\t' '{ printf "%s\t%s\t%d\n", $1, $2, $3 }'
+    rc=${PIPESTATUS[0]}
+    # find exits 1 when a file went away while it walked the pool (temporary files come and go): the rest is listed.
+    # Only a timeout (124 and up) means the pool did not answer
+    if [ "$rc" -ge 124 ]; then
+        guard_error="listing $drv_root failed (find: $rc)"
+        return 1
+    fi
+}
