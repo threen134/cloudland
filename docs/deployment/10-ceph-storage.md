@@ -142,8 +142,12 @@ ceph auth get-or-create client.cloudland mon 'profile rbd' osd 'profile rbd pool
 | 改角色 | 改 `mon` / `mgr` / `_admin` 标签，cephadm 按标签增减守护进程；mon 要保持奇数，mgr 1–2 台，管理节点必须是 mon。客户端节点第一次得到标签时先加为 cephadm 主机 |
 | 自动加为客户端 | 同 GPFS（[共享存储](./09-shared-storage.md#运维)）：所选可用区里的节点逐台以客户端加入（装 `ceph-common`、写客户端配置与 libvirt secret） |
 | 删除集群 | 先停掉编排器（`ceph mgr module disable cephadm`），每台节点 `cephadm rm-cluster --zap-osds`，删客户端配置、libvirt secret、`authorized_keys` 那一行，擦盘 |
+| 轮换密钥 | 可选集群 SSH 密钥与客户端密钥。SSH 密钥同 GPFS 的三轮，中间让编排器换钥匙：`config-key set mgr/cephadm/ssh_identity_key` 与 `…_pub` 一起写再 `ceph mgr fail`（mgr 切换一次，几秒），然后 `ceph cephadm check-host` 每台主机。**不要用 `ceph cephadm set-priv-key` / `set-pub-key` 换钥匙**：它们各自拿新的一半去配旧的另一半，校验不过就静默保留旧钥匙（退出码 0）。客户端密钥：`ceph auth get-or-create-pending client.cloudland` 生成新密钥，写到每台节点的 keyring 与 libvirt secret，**第一次被使用时 Ceph 就把它转正**，旧密钥此后不能建立新连接。正在运行的云服务器不受影响（已建立的会话续期不需要密钥），下次启动或迁移时用上新密钥 |
+| 升级 | 各节点装发行版现有的 Ceph 版本（`ceph-common`、`cephadm`，不能比集群旧），cephadm 主机拉对应的官方镜像（集群用自己的镜像时要填新版本的镜像），再 `ceph orch upgrade start --image …` 逐个升级守护进程、跟到 `ceph versions` 只剩新版本。不用迁走云服务器；云服务器用的是节点上的 `librbd`，下次启动或迁移时用上新版本。所有守护进程已是这个版本时直接成功 |
 
 **健康检查、告警、曲线**：做法与 GPFS 相同（[共享存储](./09-shared-storage.md#运维)）。检查用 `ceph health detail`、`ceph orch host ls`、`ceph osd tree`、`ceph df`，Ceph 报 `*_NEARFULL` / `*_FULL` 时立即发「Ceph 容量接近满」告警。曲线来自活动 mgr 的 `prometheus` 模块（端口 9283）：部署时打开，已有集群由健康检查第一次运行时打开；Prometheus 的 `storage_clusters` 任务从 clapi 取 mgr 主机列表（`/api/v1/prometheus/sd/storage`），升级控制面后要用新的 `prometheus.yml` 重建 prometheus 容器。只有活动的 mgr 有数据，备用 mgr 的目标是空的。导入的外部集群没有曲线
+
+**节点宕机后的恢复**：同 GPFS（[共享存储](./09-shared-storage.md#运维)），隔离是另一台管理节点把宕机节点的内网地址加进黑名单：`ceph osd blocklist range add <地址>/32 315360000`（有效期 10 年；不给有效期时默认 1 小时就自动解除，旧的写入者会恢复写盘），`ceph osd blocklist ls` 里是 `cidr:<地址>:0/32`（同时出现的带进程号、1 小时的那一条是新客户端打破旧锁时 Ceph 自己加的）。实测（TC-24 REC-05/06）：被隔离节点上的旧 QEMU 立即暂停在 I/O 错误上，70 分钟后恢复它仍然写不进去。节点回来、对账清掉旧副本后再过 5 分钟才自动删掉这条黑名单（同 GPFS）。RBD 的排他锁挡不住两个写入者，这一步不能省。系统盘在 RBD 上的 UEFI 云服务器，NVRAM 在原节点本地，疏散时从模板重建（启动项丢失，走默认启动路径）。导入的集群由 CloudLand 的客户端身份加黑名单（只能加、不能删），解除要它的管理员 `ceph osd blocklist range rm <地址>/32`，然后在节点详情点「已手工解除」
 
 **只有 3 台 OSD 节点时坏一台补不回副本**：集群一直降级直到节点回来或换上新节点，这期间再坏一台，部分数据的读写会卡住。正式使用建议 OSD 节点不少于 4 台。计划内维护见设计文档 §8.5。
 
