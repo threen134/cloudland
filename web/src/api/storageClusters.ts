@@ -51,6 +51,12 @@ export interface StorageCapabilities {
     /** A failed disk is swapped for a new disk of the same host */
     replace_disk: boolean
     change_roles: boolean
+    /** The SSH key of a managed cluster is renewed; client_key: the kind has a client key renewed too (ceph) */
+    rotate_keys?: boolean
+    client_key?: boolean
+    /** Rolling upgrade of a managed cluster; finalize: a separate, irreversible step afterwards (gpfs) */
+    upgrade?: boolean
+    finalize?: boolean
 }
 
 export interface StorageClusterNode {
@@ -416,6 +422,19 @@ export const storageClustersApi = {
     },
     changeRoles: async (id: string, hypervisor: string, roles: StorageRole[]): Promise<StorageTask> => {
         const response = await client.patch<StorageTask>(`/storage_clusters/${id}/nodes/${hypervisor}`, { roles })
+        return response.data
+    },
+    /** Renew the SSH key and / or the client key (ceph); neither named: both */
+    rotateKeys: async (id: string, payload: { ssh?: boolean; client?: boolean }): Promise<StorageTask> => {
+        const response = await client.post<StorageTask>(`/storage_clusters/${id}/rotate_keys`, payload)
+        return response.data
+    },
+    /** gpfs: package (UUID of the new release) or finalize; ceph: image (empty: the release of the distribution) */
+    upgrade: async (
+        id: string,
+        payload: { package?: string; finalize?: boolean; image?: string }
+    ): Promise<StorageTask> => {
+        const response = await client.post<StorageTask>(`/storage_clusters/${id}/upgrade`, payload)
         return response.data
     },
     rebalance: async (id: string, filesystem = ''): Promise<StorageTask> => {

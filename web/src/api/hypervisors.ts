@@ -30,8 +30,54 @@ export interface Hypervisor {
     // Use of the fullest pool, 0-1: colours the disk bar so one full pool is not hidden by a big empty one
     disk_max_usage_ratio: number
     storage_pools: HostPoolFigures[]
+    // Since when cland has had the host offline (status 10); absent while it is online
+    offline_at?: string
+    // How long it has been offline and the grace before an evacuation, in seconds, counted by clapi (the times of the
+    // API carry no time zone)
+    offline_seconds?: number
+    evacuate_grace_seconds?: number
+    // When the host last confirmed which instances are its own after a boot or a reconnect (§11.4 of the shared
+    // storage plan)
+    reconciled_at?: string
+    // Detail only: the storage clusters that keep the host out while its instances run elsewhere (§11.2)
+    fences?: HostFence[]
     // 仅 POST /hypers 返回（omitempty）
     deploy_command?: string
+}
+
+// A storage cluster keeping a host out (services.HostFence): GPFS expels it, Ceph blocklists its address, or an admin
+// confirmed it is powered off
+export interface HostFence {
+    id: number
+    cluster: string
+    cluster_uuid: string
+    // fencing | fenced | confirmed | failed | unfencing | unfence_failed
+    status: string
+    // expel | blocklist | confirmed
+    method: string
+    target?: string
+    message?: string
+    fenced_at?: string
+    confirmed_by?: string
+}
+
+// POST /hypers/{uuid}/evacuate (apis.HyperEvacuatePayload)
+export interface HyperEvacuatePayload {
+    // Host to start the instances on; -1 or absent: any active host of their zone that reaches their pools
+    target_hyper?: number
+    // The host is powered off: stands in for a fence CloudLand can not run, and the 5 minutes offline are not waited for
+    confirm_fenced?: boolean
+    // Instance UUIDs; every instance of the host when absent
+    instances?: string[]
+}
+
+export interface HyperEvacuateResult {
+    instance: string
+    hostname: string
+    migration?: string
+    // fencing | in_progress | not_doing
+    status: string
+    reason?: string
 }
 
 // One pool of a host in the disk summary (services.HostPoolFigures)
@@ -198,6 +244,16 @@ export const hypervisorsApi = {
     },
 
     // 后端返回 204 No Content
+    async evacuateHypervisor(uuid: string, payload: HyperEvacuatePayload): Promise<HyperEvacuateResult[]> {
+        const response = await client.post<{ instances: HyperEvacuateResult[] }>(`/hypers/${uuid}/evacuate`, payload)
+        return response.data.instances || []
+    },
+
+    // Lift the fences now (forget: they were lifted by hand, only the records go)
+    async unfenceHypervisor(uuid: string, forget = false): Promise<void> {
+        await client.post(`/hypers/${uuid}/unfence`, { forget })
+    },
+
     async deleteHypervisor(uuid: string): Promise<void> {
         await client.delete(`/hypers/${uuid}`)
     },

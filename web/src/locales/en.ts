@@ -2063,6 +2063,7 @@ export default {
             rescuing: 'Rescuing',
         },
         migrationStatus: {
+            fencing: 'Fencing the host',
             in_progress: 'In Progress',
             target_prepared: 'Target Prepared',
             source_prepared: 'Source Prepared',
@@ -2082,6 +2083,7 @@ export default {
             Source_Rollback: 'Source Rollback',
         },
         migrationTypeValue: {
+            evacuate: 'Recovery',
             warm: 'Live',
             cold: 'Offline',
         },
@@ -2410,6 +2412,7 @@ export default {
             starting: 'Starting...',
         },
         hypervisorStatus: {
+            offline: 'Offline',
             disabled: 'Disabled',
             active: 'Active',
             maintaining: 'Maintaining',
@@ -2977,6 +2980,93 @@ export default {
         },
     },
     storage: {
+        recovery: {
+            title: 'Recovery from a host failure',
+            offlineSince: 'Offline since',
+            reconciledAt: 'Last reconciled',
+            notReconciled: 'Not reconciled yet',
+            reconciledHint:
+                'After a boot or a reconnect the host first confirms which instances are still its own, then starts them',
+            fences: 'Storage fences',
+            fenceCluster: 'Storage cluster',
+            fenceTarget: 'Target',
+            fenceStatus: {
+                fencing: 'Fencing',
+                fenced: 'Fenced',
+                confirmed: 'Confirmed powered off',
+                failed: 'Fence failed',
+                unfencing: 'Lifting',
+                unfence_failed: 'Lift failed',
+            },
+            fenceMethod: {
+                expel: 'GPFS expel',
+                blocklist: 'Ceph blocklist',
+                confirmed: 'Confirmed by an admin',
+            },
+            unfence: 'Lift fences',
+            unfenceHint:
+                'Lifted by themselves once the host is back and removed the instances recovered elsewhere; this lifts them now',
+            unfenceConfirm:
+                'Let {host} back into its storage clusters now? The instances recovered elsewhere must be gone from it, or two copies write to the same disks.',
+            forget: 'Lifted by hand',
+            forgetConfirm:
+                'Confirm the fence of {host} was lifted by hand on the storage cluster? Only the records go (the blocklist entry of an imported Ceph cluster can only be removed by its admin).',
+            unfenceStarted: 'Lifting the fences',
+            forgotten: 'Fence records removed',
+            evacuate: 'Evacuate',
+            evacuateTitle: 'Evacuate {host}',
+            evacuateIntro:
+                'Define the instances of this host again on other hosts with the disks they have, and start the ones that ran. Only instances with every disk in a shared storage pool can be recovered. The host is fenced on the storage first (GPFS expels it, Ceph blocklists it) so it can never write to the disks again; when it comes back it reconciles and removes the stale definitions before it is let back in.',
+            evacuateOfflineFor: 'Offline for {min} minutes',
+            evacuateTooSoon: 'Offline for less than {min} minutes: wait, or tick that it is powered off',
+            evacuateAll: 'All',
+            evacuateInstances: 'Instances to recover',
+            evacuateNoInstances: 'No instance on this host',
+            evacuateTarget: 'Target host',
+            evacuateTargetAuto: 'Any host of their zone that reaches their pools',
+            evacuateConfirmFenced: 'I confirmed this host is powered off',
+            evacuateConfirmFencedHint:
+                'Tick only after checking it is off (IPMI, the cloud provider): the 5 minutes offline are not waited for, and recovery goes on when the storage cluster can not fence it (an imported GPFS cluster, the fencing admin host down too). Recorded in the audit log. If the host still runs, two copies write to the same disks and corrupt them.',
+            evacuateSubmit: 'Evacuate',
+            evacuateResults: 'Evacuation',
+            evacuateStatus: {
+                fencing: 'Waiting for the fence',
+                in_progress: 'Starting',
+                not_doing: 'Can not be recovered',
+            },
+        },
+        rotate: {
+            action: 'Rotate keys',
+            title: 'Rotate the keys of {name}',
+            intro: 'Renew the credentials of the storage cluster without a moment when a host or an instance is left without a valid key. Every member must be online.',
+            ssh: 'Cluster SSH key',
+            sshHint:
+                'The key the admin hosts log in to the members with: every host takes both keys first, and the old one goes once the admin hosts use the new one.',
+            client: 'Client key',
+            clientHint:
+                'The client.cloudland key QEMU and the scripts reach Ceph with: the new key goes to every host and becomes the key at its first use; the old one opens no new session afterwards. Running instances keep working and take the new key when they start again or migrate.',
+            nothing: 'Choose at least one',
+            started: 'Rotating the keys',
+        },
+        upgrade: {
+            action: 'Upgrade',
+            title: 'Upgrade {name}',
+            current: 'Current release',
+            gpfsIntro:
+                'One host after the other: the instances that use this cluster move off the host (as maintenance does), GPFS stops, the new release is installed and built, GPFS starts and the disks of the host come back before the next host goes.',
+            package: 'Package of the new release',
+            noPackage:
+                'No package newer than the current release with its license accepted: upload one under Packages first',
+            finalize: 'Finalize (irreversible)',
+            finalizeHint:
+                'Once every host runs the new release, raise the cluster and its file systems to it (mmchconfig release=LATEST, mmchfs -V full). Hosts of an older release can not join afterwards; there is no way back.',
+            cephIntro:
+                'The hosts install the Ceph release of their distribution, then cephadm upgrades the daemons one after the other; no instance moves. Instances take the new client library when they start again or migrate.',
+            image: 'Image of the daemons',
+            imageHint:
+                'Empty: the official image of the release the hosts install; a cluster on a private image needs the image of the new release',
+            started: 'Upgrade started',
+        },
         createLocalPool: 'New local pool',
         sharedNoCopy: 'In shared pool {pool}: not copied',
         sharedUnreachable: 'Shared pool {pool} is not usable on this host',
@@ -3393,6 +3483,10 @@ export default {
             },
             task: 'Task',
             taskKinds: {
+                rotate_keys: 'Rotate keys',
+                upgrade: 'Upgrade',
+                fence: 'Fence a host',
+                unfence: 'Lift a fence',
                 deploy: 'Deploy cluster',
                 delete_cluster: 'Delete cluster',
                 create_pool: 'Create pool',
@@ -3429,6 +3523,20 @@ export default {
                 succeeded: 'Succeeded',
             },
             stepNames: {
+                trust_add: 'Add the new SSH key',
+                ssh_switch: 'Switch to the new SSH key',
+                cephadm_key: 'Switch the orchestrator key',
+                trust_drop: 'Drop the old SSH key',
+                cephadm_check: 'Check the orchestrator logins',
+                client_pending: 'Make a new client key',
+                client_rekey: 'Give the hosts the new client key',
+                client_commit: 'Confirm the new client key',
+                drain: 'Move instances off',
+                upgrade_node: 'Upgrade the host',
+                finalize: 'Raise the cluster release',
+                upgrade: 'Upgrade the daemons',
+                fence: 'Fence the host',
+                unfence: 'Lift the fence',
                 join: 'Join',
                 fetch_package: 'Download package',
                 install: 'Install',
@@ -3795,6 +3903,10 @@ export default {
         reasonStartFailed: 'Failed to start',
         reasonStartFailedHint:
             'Its storage was ready after the host rebooted but libvirt could not start it; retried every 5 minutes, the error is in the host log',
+        reasonReconcile: 'Waiting for reconciliation',
+        reasonReconcileHint:
+            'The host is back from being down: the instance starts once the control plane confirms it was not recovered elsewhere',
+        reasonEvacuationFailed: 'Recovery failed',
         bootPool: 'Boot disk storage pool',
         bootPoolDefault: 'Default pool',
         bootPoolHint: 'With a local pool, the host having it with the most free space is chosen.',

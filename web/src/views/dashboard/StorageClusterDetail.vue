@@ -27,6 +27,8 @@ import {
     Replace,
     UserCog,
     Settings2,
+    KeyRound,
+    CircleArrowUp,
 } from 'lucide-vue-next'
 import {
     storageClustersApi,
@@ -67,6 +69,8 @@ import StorageClusterMetrics from '../../components/storage/StorageClusterMetric
 import StorageReplaceDiskModal from '../../components/storage/StorageReplaceDiskModal.vue'
 import StorageChangeRolesModal from '../../components/storage/StorageChangeRolesModal.vue'
 import StorageAutoJoinModal from '../../components/storage/StorageAutoJoinModal.vue'
+import StorageRotateKeysModal from '../../components/storage/StorageRotateKeysModal.vue'
+import StorageUpgradeModal from '../../components/storage/StorageUpgradeModal.vue'
 
 const { t, te } = useI18n()
 const route = useRoute()
@@ -216,8 +220,14 @@ const retryAutoJoin = async () => {
 const changeStarted = (task: StorageTask) => {
     replacingDisk.value = null
     changingNode.value = null
+    showRotate.value = false
+    showUpgrade.value = false
     started(task)
 }
+
+// ---- rotate the keys, upgrade (S6) ----
+const showRotate = ref(false)
+const showUpgrade = ref(false)
 
 // ---- health ----
 const healthInfo = computed(() => cluster.value?.health_info)
@@ -490,6 +500,22 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
                         @click="expandMode = 'disks'"
                     >
                         <Plus :size="14" /> {{ t('storage.clusterDetail.addDisks') }}
+                    </button>
+                    <button
+                        v-if="caps?.rotate_keys && managed"
+                        class="btn btn-secondary btn-sm"
+                        :disabled="!canChange"
+                        @click="showRotate = true"
+                    >
+                        <KeyRound :size="14" /> {{ t('storage.rotate.action') }}
+                    </button>
+                    <button
+                        v-if="caps?.upgrade && managed"
+                        class="btn btn-secondary btn-sm"
+                        :disabled="!canChange"
+                        @click="showUpgrade = true"
+                    >
+                        <CircleArrowUp :size="14" /> {{ t('storage.upgrade.action') }}
                     </button>
                     <button
                         class="btn btn-sm btn-danger-outline"
@@ -929,6 +955,20 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
             :node="changingNode"
             :backend="backend"
             @close="changingNode = null"
+            @created="changeStarted"
+        />
+        <StorageRotateKeysModal
+            :show="showRotate"
+            :cluster="cluster"
+            :caps="caps"
+            @close="showRotate = false"
+            @created="changeStarted"
+        />
+        <StorageUpgradeModal
+            :show="showUpgrade"
+            :cluster="cluster"
+            :caps="caps"
+            @close="showUpgrade = false"
             @created="changeStarted"
         />
         <StorageAutoJoinModal

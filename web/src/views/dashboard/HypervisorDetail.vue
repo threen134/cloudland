@@ -7,6 +7,7 @@ import {
     type HyperPatchPayload,
     type HyperListResponse,
     type HyperMaintainResponse,
+    type HyperEvacuateResult,
 } from '../../api/hypervisors'
 import { instancesApi, type Instance, type InstanceListResponse } from '../../api/instances'
 import { zonesApi, type Zone, type ZoneListResponse } from '../../api/zones'
@@ -24,9 +25,12 @@ import {
     Activity,
     SquareTerminal,
     HardDrive,
+    LifeBuoy,
 } from 'lucide-vue-next'
 import HostMonitoringCharts from '../../components/monitoring/HostMonitoringCharts.vue'
 import HostStorageTab from '../../components/storage/HostStorageTab.vue'
+import HostRecoveryCard from '../../components/storage/HostRecoveryCard.vue'
+import HostEvacuateModal from '../../components/storage/HostEvacuateModal.vue'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useHostConsole } from '../../composables/useHostConsole'
@@ -72,6 +76,7 @@ const STATUS_MAP: Record<number, { label: string; variant: StatusVariant }> = {
     2: { label: 'dashboard.hypervisorStatus.maintaining', variant: 'warning' },
     4: { label: 'dashboard.hypervisorStatus.deploying', variant: 'pending' },
     5: { label: 'dashboard.hypervisorStatus.deployFailed', variant: 'error' },
+    10: { label: 'dashboard.hypervisorStatus.offline', variant: 'error' },
 }
 
 const form = ref({
@@ -281,6 +286,28 @@ const handleMaintain = async () => {
     }
 }
 
+// Evacuation of a host that is down (§11.3 of the shared storage plan)
+const showEvacuateModal = ref(false)
+const evacuateResults = ref<HyperEvacuateResult[]>([])
+const openEvacuateModal = () => {
+    closeActionMenu()
+    showEvacuateModal.value = true
+}
+const handleEvacuated = async (results: HyperEvacuateResult[]) => {
+    showEvacuateModal.value = false
+    evacuateResults.value = results
+    const skipped = results.filter((r) => r.status === 'not_doing').length
+    if (skipped) toast.warning(t('storage.maintainSkipped', { n: skipped }))
+    else toast.success(t('messages.success'))
+    await fetchHypervisorDetail()
+}
+const evacuateVariant = (s: string): StatusVariant => (s === 'not_doing' ? 'error' : 'pending')
+const evacuateStatus = (s: string) =>
+    te(`storage.recovery.evacuateStatus.${s}`) ? t(`storage.recovery.evacuateStatus.${s}`) : s
+const showRecovery = computed(
+    () => !!hypervisor.value && (!!hypervisor.value.offline_at || !!hypervisor.value.fences?.length)
+)
+
 onMounted(fetchHypervisorDetail)
 </script>
 
@@ -350,6 +377,13 @@ onMounted(fetchHypervisorDetail)
                             <div v-if="showActionMenu" class="dropdown-menu">
                                 <button v-if="hypervisor.status === 1" class="dropdown-item" @click="openMaintainModal">
                                     <Wrench :size="14" /> {{ t('dashboard.hypervisorActions.maintain') }}
+                                </button>
+                                <button
+                                    v-if="hypervisor.status === 10"
+                                    class="dropdown-item"
+                                    @click="openEvacuateModal"
+                                >
+                                    <LifeBuoy :size="14" /> {{ t('storage.recovery.evacuate') }}
                                 </button>
                                 <button class="dropdown-item" @click="toggleEdit">
                                     <Pencil :size="14" /> {{ t('actions.edit') }}
@@ -428,6 +462,17 @@ onMounted(fetchHypervisorDetail)
                                 </button>
                             </InfoRow>
                         </div>
+                    </div>
+                </div>
+
+                <HostRecoveryCard v-if="showRecovery" :hypervisor="hypervisor" @changed="fetchHypervisorDetail" />
+
+                <div v-if="evacuateResults.length" class="info-card card" style="margin-bottom: var(--spacing-5)">
+                    <h3 class="card-section-title">{{ t('storage.recovery.evacuateResults') }}</h3>
+                    <div v-for="r in evacuateResults" :key="r.instance" class="maintain-row">
+                        <span class="maintain-name">{{ r.hostname }}</span>
+                        <StatusBadge :variant="evacuateVariant(r.status)" :label="evacuateStatus(r.status)" />
+                        <span v-if="r.reason" class="text-secondary maintain-reason">{{ r.reason }}</span>
                     </div>
                 </div>
 
@@ -510,6 +555,14 @@ onMounted(fetchHypervisorDetail)
                 <HostMonitoringCharts :hostname="hypervisor.hostname" />
             </div>
         </div>
+
+        <HostEvacuateModal
+            :show="showEvacuateModal"
+            :hypervisor="hypervisor"
+            :instances="hyperInstances"
+            @close="showEvacuateModal = false"
+            @done="handleEvacuated"
+        />
 
         <!-- Edit Overcommit Modal -->
         <BaseModal
