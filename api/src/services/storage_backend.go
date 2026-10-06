@@ -79,6 +79,11 @@ type StorageTaskScope struct {
 	// The host whose roles change (change_roles) and its roles before; the roles in Nodes are the new ones
 	Changed     int32
 	ChangedFrom []string
+	// What a rotation renews (rotate_keys): the SSH key of the cluster, the key of its client user
+	RotateSSH    bool
+	RotateClient bool
+	// What an upgrade goes to (upgrade)
+	Upgrade *storageUpgradeParams
 }
 
 // StorageCapabilities are the operations a kind supports beyond its precheck (§4.5.1)
@@ -98,6 +103,13 @@ type StorageCapabilities struct {
 	// ReplaceDisk swaps a failed disk for a new disk of the same host; ChangeRoles changes the roles of a member
 	ReplaceDisk bool `json:"replace_disk"`
 	ChangeRoles bool `json:"change_roles"`
+	// RotateKeys renews the SSH key of a managed cluster; ClientKey: the kind has a client key CloudLand renews too
+	RotateKeys bool `json:"rotate_keys"`
+	ClientKey  bool `json:"client_key"`
+	// Upgrade: a rolling upgrade of the software of a managed cluster; Finalize: the kind raises the cluster to a new
+	// release in a separate, irreversible step afterwards (gpfs)
+	Upgrade  bool `json:"upgrade"`
+	Finalize bool `json:"finalize"`
 }
 
 // StorageRequirements are what a kind needs on its hosts

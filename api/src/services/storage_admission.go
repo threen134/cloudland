@@ -201,6 +201,8 @@ func ReleaseReservations(ctx context.Context, migrationID, volumeID int64, kind 
 const (
 	InstanceReasonStorageFull    = "storage_full"
 	InstanceReasonStoragePending = "storage_pending"
+	// Shut off after a boot of its host until clapi said it is still that host's (shared-storage-design.md §11.4)
+	InstanceReasonReconcilePending = "reconcile_pending"
 	// The pools of the instance were fine but libvirt could not start it after the host booted; the host retries
 	InstanceReasonStartFailed = "start_failed"
 )

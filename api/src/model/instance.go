@@ -74,12 +74,15 @@ type Instance struct {
 	Vendordata     string `gorm:"type:text"`
 	VendordataType string `gorm:"type:varchar(16);default:'plain'"`
 	LoginPort      int32
-	Hyper          int32 `gorm:"default:-1"`
-	ZoneID         int64
-	Zone           *Zone `gorm:"foreignkey:ZoneID"`
-	RouterID       int64 `gorm:"uniqueIndex:idx_router_instance"`
-	Router         *Router
-	OwnerInfo      *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
+	// Nested virtualization asked for at creation: the definition is made again from the record when the instance is
+	// recovered on another host (shared-storage-design.md §11.3)
+	NestedEnable bool
+	Hyper        int32 `gorm:"default:-1"`
+	ZoneID       int64
+	Zone         *Zone `gorm:"foreignkey:ZoneID"`
+	RouterID     int64 `gorm:"uniqueIndex:idx_router_instance"`
+	Router       *Router
+	OwnerInfo    *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
 	// 0: not in a placement group
 	PlacementGroupID int64           `gorm:"index"`
 	PlacementGroup   *PlacementGroup `gorm:"foreignkey:PlacementGroupID"`

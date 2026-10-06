@@ -139,7 +139,7 @@ func (gpfsBackend) TaskPlan(task string, cluster *model.StorageCluster, scope *S
 		}
 		return gpfsPoolTaskPlan(task, cluster, all, admins)
 	case StorageTaskAddNodes, StorageTaskAddDisks, StorageTaskRemoveDisk, StorageTaskRemoveNode, StorageTaskRebalance, StorageTaskReplaceDisk,
-		StorageTaskChangeRoles:
+		StorageTaskChangeRoles, StorageTaskRotateKeys, StorageTaskUpgrade:
 		return gpfsChangeTaskPlan(task, scope)
 	}
 	return nil, planError("GPFS clusters have no task %s", task)
@@ -230,8 +230,15 @@ func gpfsClusterPackage(db *gorm.DB, task *model.StorageTask) (*model.StorageClu
 	if err != nil {
 		return nil, nil, err
 	}
+	// An upgrade installs the package of the new release; everything else the one of the cluster
+	id := cluster.PackageID
+	if task.Kind == StorageTaskUpgrade {
+		if p := storageUpgradeOf(task); p.PackageID > 0 {
+			id = p.PackageID
+		}
+	}
 	pkg := &model.StoragePackage{}
-	if err := db.Take(pkg, cluster.PackageID).Error; err != nil {
+	if err := db.Take(pkg, id).Error; err != nil {
 		return nil, nil, fmt.Errorf("the package of the cluster is gone")
 	}
 	return cluster, pkg, nil
@@ -309,6 +316,16 @@ func storageTrustInputFrom(roles ...string) storageStepInput {
 }
 
 func storageTrustInput(db *gorm.DB, task *model.StorageTask, hostid int32, roles []string) (interface{}, error) {
+	cluster, _, _, err := storageClusterOfTask(db, task)
+	if err != nil {
+		return nil, err
+	}
+	return storageTrustInputKey(db, task, hostid, roles, cluster.SSHPubKey, cluster.SSHPrivKey)
+}
+
+// storageTrustInputKey is the input of stc_ssh_trust.sh for a given key pair (its private part encrypted): the
+// cluster's, or the new one of a rotation
+func storageTrustInputKey(db *gorm.DB, task *model.StorageTask, hostid int32, roles []string, publicKey, encryptedPrivate string) (map[string]interface{}, error) {
 	cluster, nodes, _, err := storageClusterOfTask(db, task)
 	if err != nil {
 		return nil, err
@@ -330,7 +347,7 @@ func storageTrustInput(db *gorm.DB, task *model.StorageTask, hostid int32, roles
 	for _, h := range nodeHostids(nodes, model.StorageRoleAdmin) {
 		isAdmin = isAdmin || h == hostid
 	}
-	in := map[string]interface{}{"cluster_uuid": cluster.UUID, "kind": cluster.Kind, "public_key": cluster.SSHPubKey, "from": from}
+	in := map[string]interface{}{"cluster_uuid": cluster.UUID, "kind": cluster.Kind, "public_key": publicKey, "from": from}
 	if isAdmin {
 		facts, err := gpfsPrecheckFacts(db, task)
 		if err != nil {
@@ -357,7 +374,7 @@ func storageTrustInput(db *gorm.DB, task *model.StorageTask, hostid int32, roles
 			}
 			known = append(known, strings.Join(names, ",")+" "+key)
 		}
-		priv, err := DecryptSecret(cluster.SSHPrivKey)
+		priv, err := DecryptSecret(encryptedPrivate)
 		if err != nil {
 			return nil, fmt.Errorf("the cluster key can not be decrypted: %v", err)
 		}
@@ -715,7 +732,8 @@ func gpfsDeleteFinish(ctx context.Context, tx *gorm.DB, task *model.StorageTask,
 	if !succeeded {
 		return tx.Model(cluster).Update("status", model.StorageClusterError).Error
 	}
-	for _, m := range []interface{}{&model.StorageFilesystem{}, &model.StorageClusterDisk{}, &model.StorageClusterNode{}} {
+	// The fences go with the cluster: nothing is left to keep a host off
+	for _, m := range []interface{}{&model.StorageFilesystem{}, &model.StorageClusterDisk{}, &model.StorageClusterNode{}, &model.StorageFence{}} {
 		if err := tx.Where("cluster_id = ?", cluster.ID).Delete(m).Error; err != nil {
 			return err
 		}

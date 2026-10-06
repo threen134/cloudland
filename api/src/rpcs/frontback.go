@@ -21,6 +21,7 @@ import (
 
 	. "api/src/common"
 	"api/src/model"
+	"api/src/services"
 	"api/src/utils/tracing"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -54,6 +55,9 @@ func (fb *FrontbackService) CallbackAgent(ctx context.Context, control, command 
 		v.LoadCommand(item)
 		v.Parentid = agent.Hostid
 		v.Duration = int64(duration)
+		if v.Status == model.HyperStatusOffline {
+			services.MarkHyperOffline(ctx, v.Hostid)
+		}
 		if err = a.Updates(ctx, v); err != nil {
 			logger.Ctx(ctx).Error("Update agent error: ", err)
 			return

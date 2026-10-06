@@ -150,6 +150,14 @@ func gpfsChangeTaskPlan(task string, scope *StorageTaskScope) ([]*StorageStepPla
 			step("ssh_trust", n, gpfsHostsBy(nodes, "", ""), 5*time.Minute),
 			step("change_roles", a, run, 30*time.Minute),
 			step("finish", n, gpfsChangedHost(scope), 5*time.Minute))
+	case StorageTaskUpgrade:
+		return gpfsUpgradePlan(scope, admins)
+	case StorageTaskRotateKeys:
+		// GPFS has no client key: the SSH key its admin commands log in with (§6.6)
+		if !scope.RotateSSH {
+			return nil, planError("GPFS clusters have no client key")
+		}
+		plan = storageRotateSSHSteps(gpfsHostsBy(nodes, "", ""))
 	default:
 		return nil, planError("GPFS clusters have no task %s", task)
 	}
@@ -193,6 +201,13 @@ func init() {
 	replace["release_disks"] = &storageStepDef{Script: "stc_release_disks.sh", Input: storageReplaceReleaseInput}
 	registerStorageTaskKind("gpfs:"+StorageTaskReplaceDisk, &storageTaskKind{Slot: storageSlotStructural, Steps: replace,
 		Finish: storageReplaceFinish(gpfsExpandFinish)})
+	registerStorageTaskKind("gpfs:"+StorageTaskRotateKeys, &storageTaskKind{Slot: storageSlotStructural, Finish: storageRotateFinish,
+		Steps: map[string]*storageStepDef{
+			"trust_add": {Script: "stc_ssh_trust.sh", Input: storageRotateTrustInput("add", model.StorageRoleAdmin)},
+			// The admin commands log in with the key file the switch writes: the record follows there
+			"ssh_switch": {Script: "stc_ssh_trust.sh", Input: storageRotateTrustInput("switch", model.StorageRoleAdmin), Done: storageRotateRecordKey},
+			"trust_drop": {Script: "stc_ssh_trust.sh", Input: storageRotateTrustInput("drop", model.StorageRoleAdmin)},
+		}})
 	registerStorageTaskKind("gpfs:"+StorageTaskChangeRoles, &storageTaskKind{Slot: storageSlotStructural, Finish: storageChangeRolesFinish,
 		Steps: map[string]*storageStepDef{
 			"ssh_trust":    {Script: "stc_ssh_trust.sh", Input: gpfsTrustInput},
@@ -507,6 +522,11 @@ func gpfsRemoveNodeFinish(ctx context.Context, tx *gorm.DB, task *model.StorageT
 			scanStorageHosts(ctx, []int32{id})
 		}(context.WithoutCancel(ctx), hostid)
 	}
+	// Its fences on the cluster go: once this transaction is committed, the node rows are gone
+	go func(ctx context.Context, cid int64, id int32) {
+		time.Sleep(3 * time.Second)
+		liftRemovedHostFences(ctx, cid, id)
+	}(context.WithoutCancel(ctx), cluster.ID, hostid)
 	return nil
 }
 

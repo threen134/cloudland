@@ -137,6 +137,12 @@ func (cephBackend) TaskPlan(task string, cluster *model.StorageCluster, scope *S
 			step("replace_osd", a, admins, 60*time.Minute),
 			step("release_disks", n, old, 10*time.Minute),
 		}, nil
+	case StorageTaskRotateKeys:
+		return cephRotatePlan(scope, all, admins), nil
+	case StorageTaskUpgrade:
+		// The hosts install the new release of their distribution (librbd too, which QEMU loads when it starts),
+		// then cephadm upgrades the daemons one after the other; no instance has to move
+		return []*StorageStepPlan{step("install", n, all, 45*time.Minute), step("upgrade", a, admins, 12*time.Hour)}, nil
 	case StorageTaskChangeRoles:
 		run := changeRolesAdmins(admins, scope)
 		if len(run) == 0 {
@@ -188,7 +194,7 @@ func init() {
 			"configure":     {Script: "ceph_cluster.sh", Input: cephConfigureInput, Done: cephConfigureDone},
 			"resolve_disks": {Script: "stc_resolve_disks.sh", Input: gpfsResolveInput},
 			"create_osds":   {Script: "ceph_cluster.sh", Input: cephCreateOsdsInput, Done: cephCreateOsdsDone, RetryFrom: "resolve_disks"},
-			"client_setup":  {Script: "ceph_client.sh", Input: cephClientInput("setup")},
+			"client_setup":  {Script: "ceph_client.sh", Input: cephClientInput("setup"), Done: cephClientSetupDone},
 			"finish":        {Script: "stc_finish.sh", Input: gpfsFinishInput},
 		}
 	}
@@ -600,9 +606,46 @@ func cephClientInput(action string) storageStepInput {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]interface{}{"action": action, "cluster_uuid": cluster.UUID, "fsid": info.Fsid, "mon_addrs": info.MonAddrs,
-			"client_user": info.ClientUser, "client_key": key, "secret_uuid": info.SecretUUID}, nil
+		in := map[string]interface{}{"action": action, "cluster_uuid": cluster.UUID, "fsid": info.Fsid, "mon_addrs": info.MonAddrs,
+			"client_user": info.ClientUser, "client_key": key, "secret_uuid": info.SecretUUID}
+		// A pending key left by an aborted rotation may have become the key (storageRotateFinish): the host takes it only
+		// when the cluster refuses the recorded one, and says so (cephClientSetupDone)
+		if action == "setup" {
+			if secrets, err := storageClusterSecrets(cluster); err == nil && cephKeyRe.MatchString(secrets["client_key_pending"]) {
+				in["client_key_alt"] = secrets["client_key_pending"]
+			}
+		}
+		return in, nil
 	}
+}
+
+// cephClientSetupDone: a host that had to take the pending key of an aborted rotation shows it is the key now
+func cephClientSetupDone(ctx context.Context, tx *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, runs []*model.StorageTaskRun) error {
+	took := false
+	for _, r := range runs {
+		res := map[string]interface{}{}
+		if json.Unmarshal([]byte(r.Result), &res) == nil && res["key"] == "alt" {
+			took = true
+		}
+	}
+	if !took {
+		return nil
+	}
+	cluster, _, _, err := storageClusterOfTask(tx, task)
+	if err != nil {
+		return err
+	}
+	secrets, err := storageClusterSecrets(cluster)
+	if err != nil {
+		return err
+	}
+	if !cephKeyRe.MatchString(secrets["client_key_pending"]) {
+		return nil
+	}
+	logger.Ctx(ctx).Warningf("Storage cluster %d refuses its recorded client key: the pending key of an aborted rotation is the key", cluster.ID)
+	secrets["client_key"] = secrets["client_key_pending"]
+	delete(secrets, "client_key_pending")
+	return storageClusterSaveSecrets(tx, cluster, secrets)
 }
 
 func cephActionInput(action string) storageStepInput {

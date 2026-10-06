@@ -11,6 +11,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	. "api/src/common"
 	"api/src/model"
@@ -52,6 +53,15 @@ type HyperResponse struct {
 	DiskMaxUsageRatio float64                     `json:"disk_max_usage_ratio"`
 	StoragePools      []*services.HostPoolFigures `json:"storage_pools"`
 	DeployCommand     string                      `json:"deploy_command,omitempty"`
+	// Since when cland has the host offline (status 10); its instances may be evacuated after a grace period
+	OfflineAt string `json:"offline_at,omitempty"`
+	// How long it has been offline and the grace period, in seconds, counted by clapi: the times carry no time zone
+	OfflineSeconds       int64 `json:"offline_seconds,omitempty"`
+	EvacuateGraceSeconds int64 `json:"evacuate_grace_seconds,omitempty"`
+	// When the host last reconciled its instances with the database after a boot or a reconnect
+	ReconciledAt string `json:"reconciled_at,omitempty"`
+	// Storage clusters keeping the host off their disks while its instances run elsewhere (detail only)
+	Fences []*services.HostFence `json:"fences,omitempty"`
 }
 
 type HyperListResponse struct {
@@ -111,6 +121,9 @@ func (v *HyperAPI) Get(c *gin.Context) {
 	}
 
 	hyperResp := withStorage(c.Request.Context(), convertHyperToResponse(hyper))
+	if fences, ferr := services.HostFences(c.Request.Context(), hyper.Hostid); ferr == nil && len(fences) > 0 {
+		hyperResp.Fences = fences
+	}
 	c.JSON(http.StatusOK, hyperResp)
 }
 
@@ -423,6 +436,14 @@ func convertHyperToResponse(hyper *model.Hyper) *HyperResponse {
 		MemOverRate:  hyper.MemOverRate,
 		DiskOverRate: hyper.DiskOverRate,
 		Remark:       hyper.Remark,
+	}
+	if hyper.OfflineAt != nil {
+		resp.OfflineAt = hyper.OfflineAt.Format(TimeStringForMat)
+		resp.OfflineSeconds = int64(time.Since(*hyper.OfflineAt).Seconds())
+		resp.EvacuateGraceSeconds = int64(services.EvacuateGrace().Seconds())
+	}
+	if hyper.ReconciledAt != nil {
+		resp.ReconciledAt = hyper.ReconciledAt.Format(TimeStringForMat)
 	}
 
 	if hyper.Zone != nil {

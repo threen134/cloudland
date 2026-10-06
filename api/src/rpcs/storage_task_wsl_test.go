@@ -73,9 +73,25 @@ func wsl(hostid int32, script string) (string, error) {
 	return string(out), err
 }
 
+// target is the host a command goes to: inter=<host>, or the first host of a group select=group-<...>:<hosts> (the
+// scheduler of cland is not there to weigh them)
+func (w *wslCland) target(control string) (int, error) {
+	if strings.HasPrefix(control, "select=") {
+		group := strings.Fields(strings.TrimPrefix(control, "select="))[0]
+		if i := strings.Index(group, ":"); i >= 0 {
+			return strconv.Atoi(strings.Split(group[i+1:], ",")[0])
+		}
+		return 0, fmt.Errorf("no hosts in %s", group)
+	}
+	if !strings.HasPrefix(control, "inter=") {
+		return 0, fmt.Errorf("no target in %s", control)
+	}
+	return strconv.Atoi(strings.TrimPrefix(control, "inter="))
+}
+
 func (w *wslCland) Execute(_ context.Context, req *pb.ExecuteRequest) (*pb.ExecuteReply, error) {
-	hostid, err := strconv.Atoi(strings.TrimPrefix(req.Control, "inter="))
-	if err != nil || !strings.HasPrefix(req.Control, "inter=") {
+	hostid, err := w.target(req.Control)
+	if err != nil {
 		return &pb.ExecuteReply{Status: "error: no target node"}, nil
 	}
 	w.mu.Lock()

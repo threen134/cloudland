@@ -275,6 +275,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			Memory:         memory,
 			Disk:           disk,
 			FlavorID:       flavorID,
+			NestedEnable:   nestedEnable,
 		}
 		if placement != nil {
 			instance.PlacementGroupID, instance.PlacementHyper = group.ID, pick

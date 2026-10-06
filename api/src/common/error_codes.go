@@ -147,6 +147,11 @@ const (
 	ErrStoragePackageState    ErrCode = 123012 // not ready, license not accepted, upload out of order, still in use
 	ErrStorageNeedsS3         ErrCode = 123013 // packages are kept in S3, which is not configured or not reachable
 	ErrStorageInvalidPlan     ErrCode = 123021 // roles, hosts or disks of a request do not make a valid cluster
+	// A host can not be fenced on a storage cluster (no admin host left online, an imported GPFS cluster) and nobody
+	// confirmed it is powered off; or it can not be let back in yet
+	ErrStorageFenceUnavailable ErrCode = 123031
+	// The instances of a host can not be evacuated: it is not offline (long enough), or the instance can not be
+	ErrEvacuationRefused ErrCode = 123032
 
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)
@@ -365,7 +370,8 @@ func (c ErrCode) ToHTTPStatus() int {
 		return 409
 	case c == ErrStorageClusterNotFound || c == ErrStorageTaskNotFound || c == ErrStoragePackageNotFound:
 		return 404
-	case c == ErrStorageClusterBusy || c == ErrStorageTaskState || c == ErrStoragePackageState:
+	case c == ErrStorageClusterBusy || c == ErrStorageTaskState || c == ErrStoragePackageState ||
+		c == ErrStorageFenceUnavailable || c == ErrEvacuationRefused:
 		return 409
 	case c == ErrStorageNeedsS3 || c == ErrStorageInvalidPlan:
 		return 400

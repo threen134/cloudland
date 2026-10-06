@@ -299,6 +299,20 @@ echo "LEFT: $($rbd ls -p $P | xargs)"`, string(pa), cephPool, c.UUID, copies[0].
 		}
 	}
 
+	// Evacuation (S6, §11.2-§11.3): a shut off instance of a host that is down, its boot disk and a data disk in the
+	// pool. The host is blocklisted on the cluster first (the only admin host is this one), then the instance is
+	// defined here from its record with the disks as they are, and not started. The host comes back and cleaned up
+	// (simulated: it is this same WSL instance): the blocklist entry goes. The domain type of the templates is TCG for
+	// this part, WSL has no KVM to define a domain with
+	evacuateCheck(t, hw, host, c, p, cephPool)
+
+	// Rotation (S6): the SSH key with the orchestrator switched between the passes, the client key made pending and
+	// committed once no QEMU started before the new key is left
+	rotateCheck(t, hw, c, cephPool)
+
+	// Upgrade (S6) to the release of the distribution, the one the cluster runs here: nothing moves
+	upgradeCheck(t, hw, c)
+
 	// The pool goes with the copy left in it: the removal step drops the copies clapi lists
 	must(t, db.Take(p, pool.ID).Error)
 	dtask, err := pools.DeleteShared(ctx, p)

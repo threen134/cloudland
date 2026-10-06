@@ -48,7 +48,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		}
 	}()
 	argn := len(args)
-	if argn < 4 {
+	if argn < 5 {
 		err = fmt.Errorf("Wrong params")
 		logger.Ctx(ctx).Error("Invalid args", err)
 		return
@@ -61,6 +61,10 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	instance := &model.Instance{Model: model.Model{ID: instID}}
 	reason := ""
 	errHndl := ctx.Value("error")
+	if errHndl != nil && services.FailEvacuationOf(ctx, instID, "no host that reaches its storage pools has the resources") {
+		// The instance stays the down host's: nothing of it was created anywhere
+		return
+	}
 	if errHndl != nil {
 		reason = "Resource is not enough"
 		err = db.Model(instance).Updates(map[string]interface{}{
@@ -98,6 +102,15 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	reason = args[4]
+	// Recovered on another host while this one was away: what the old copy reports is ignored until the host
+	// removed it (reconcile, shared-storage-design.md §11.4); a boot would otherwise take the instance back
+	if services.EvacuatedFrom(ctx, instID, int32(hyperID)) {
+		logger.Ctx(ctx).Warningf("Host %d reported instance %d, which was recovered elsewhere: ignored until the host removes its copy", hyperID, instID)
+		return
+	}
+	if reason == "evacuate" {
+		return evacuationLaunched(ctx, instance, int32(hyperID), serverStatus, args)
+	}
 	// "sync" is how the host reports an instance it found or started after a boot, not a reason to keep on the
 	// instance: the column gets cleared instead, which also drops start_failed or storage_pending once it runs
 	storedReason := reason
@@ -155,6 +168,41 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 			logger.Ctx(ctx).Warningf("Failed to sync the transit gateway to hyper %d, %v", hyperID, terr)
 		}
 	}
+	return
+}
+
+// evacuationLaunched takes the launch of an instance recovered from a host that is down (shared-storage-design.md
+// §11.3): the target owns it from now on, its floating IPs and routes are made there, and the gateway announced, as
+// after a migration. The copy on the down host goes when that host comes back
+func evacuationLaunched(ctx context.Context, instance *model.Instance, hyperID int32, state string, args []string) (status string, err error) {
+	message := ""
+	if len(args) > 5 {
+		message = args[5]
+	}
+	m, err := services.EvacuationLaunched(ctx, instance.ID, hyperID, state, message)
+	if err != nil || m == nil {
+		return
+	}
+	instance.Hyper = hyperID
+	if instance.RouterID > 0 {
+		if ferr := syncFloatingIp(ctx, instance); ferr != nil {
+			logger.Ctx(ctx).Error("Failed to make the floating IPs of the evacuated instance", ferr)
+		}
+		if verr := services.VpnResyncNode(ctx, instance.RouterID, hyperID); verr != nil {
+			logger.Ctx(ctx).Warningf("Failed to sync VPN routes to hyper %d, %v", hyperID, verr)
+		}
+		if terr := services.TgwResyncNode(ctx, instance.RouterID, hyperID); terr != nil {
+			logger.Ctx(ctx).Warningf("Failed to sync the transit gateway to hyper %d, %v", hyperID, terr)
+		}
+		// The guest still has the gateway MAC of the router of the down host
+		if gerr := HyperExecute(ctx, fmt.Sprintf("inter=%d", hyperID), fmt.Sprintf("/opt/cloudland/scripts/backend/post_migration_net.sh '%d' 'garp'", instance.ID)); gerr != nil {
+			logger.Ctx(ctx).Warningf("Failed to announce the gateway to evacuated instance %d: %v", instance.ID, gerr)
+		}
+		if terr := services.TgwNodeCheckLeave(ctx, instance.RouterID, m.SourceHyper); terr != nil {
+			logger.Ctx(ctx).Warningf("Failed to check the transit gateway of host %d: %v", m.SourceHyper, terr)
+		}
+	}
+	services.CleanEvacuatedSource(ctx, m, instance.RouterID)
 	return
 }
 

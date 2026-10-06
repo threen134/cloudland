@@ -42,7 +42,18 @@ type Migration struct {
 	PriorStatus string `gorm:"type:varchar(32)"`
 	// Transient: the best-effort placement group rule this migration breaks, for the create response
 	PlacementWarning string `gorm:"-"`
+	// An evacuation (type evacuate, shared-storage-design.md §11) started the instance on another host while its
+	// source was down; the copy defined on the source goes when the source comes back and reconciles, which sets
+	// SourceCleaned. Until then whatever the source reports about the instance is ignored
+	SourceCleaned bool
+	// Why an evacuation waits or failed
+	Message string `gorm:"type:varchar(512)"`
 }
+
+const (
+	MigrationTypeWarm     = "warm"
+	MigrationTypeEvacuate = "evacuate"
+)
 
 // DiskPlanItem is where one disk of a migrating instance goes
 type DiskPlanItem struct {

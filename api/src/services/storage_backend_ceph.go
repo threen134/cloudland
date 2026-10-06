@@ -197,7 +197,7 @@ func cephOsdMemoryMiB(p *cephParams) int {
 // Ceph rebalances by itself when OSDs come and go (§8.5): there is no rebalance to start, and no file system layer
 func (cephBackend) Capabilities() *StorageCapabilities {
 	return &StorageCapabilities{Managed: true, External: true, Pools: true, AddNodes: true, RemoveNode: true, AddDisks: true, RemoveDisk: true,
-		ReplaceDisk: true, ChangeRoles: true}
+		ReplaceDisk: true, ChangeRoles: true, RotateKeys: true, ClientKey: true, Upgrade: true}
 }
 
 func (cephBackend) PoolDriver() string { return model.StorageDriverCephRBD }

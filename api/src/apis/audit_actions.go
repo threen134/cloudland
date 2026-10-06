@@ -41,6 +41,8 @@ var auditRoutes = map[string]auditRoute{
 	"DELETE /hypers/:uuid":        {"hyper", "hyper.delete", "uuid", false},
 	"PATCH /hypers/:uuid":         {"hyper", "hyper.update", "uuid", false},
 	"POST /hypers/:uuid/maintain": {"hyper", "hyper.maintain", "uuid", false},
+	"POST /hypers/:uuid/evacuate": {"hyper", "hyper.evacuate", "uuid", false},
+	"POST /hypers/:uuid/unfence":  {"hyper", "hyper.unfence", "uuid", false},
 	"POST /hypers/:uuid/console":  {"hyper", "hyper.console", "uuid", false},
 
 	"POST /migrations": {"migration", "migration.create", "", false},
@@ -141,6 +143,8 @@ var auditRoutes = map[string]auditRoute{
 	"POST /storage_clusters/:id/disks":                  {"storage_cluster", "storage_cluster.add_disks", "id", false},
 	"DELETE /storage_clusters/:id/disks/:disk_id":       {"storage_cluster", "storage_cluster.remove_disk", "id", false},
 	"POST /storage_clusters/:id/rebalance":              {"storage_cluster", "storage_cluster.rebalance", "id", false},
+	"POST /storage_clusters/:id/rotate_keys":            {"storage_cluster", "storage_cluster.rotate_keys", "id", false},
+	"POST /storage_clusters/:id/upgrade":                {"storage_cluster", "storage_cluster.upgrade", "id", false},
 	"PATCH /storage_clusters/:id":                       {"storage_cluster", "storage_cluster.update", "id", false},
 	"PATCH /storage_clusters/:id/nodes/:hypervisor":     {"storage_cluster", "storage_cluster.change_roles", "id", false},
 	"POST /storage_clusters/:id/disks/:disk_id/replace": {"storage_cluster", "storage_cluster.replace_disk", "id", false},

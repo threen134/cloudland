@@ -46,6 +46,15 @@ type Hyper struct {
 	Zone         *Zone     `gorm:"foreignkey:ZoneID"`
 	Resource     *Resource `gorm:"foreignKey:Hostid;references:Hostid"`
 	Remark       string    `gorm:"type:varchar(512);default:''"`
+	// When cland took the host offline (status 10), nil while it is online; how long it has been away decides
+	// whether its instances may be recovered elsewhere (shared-storage-design.md §11.1)
+	OfflineAt *time.Time
+	// Status the host had when it went offline: disabled (0) and maintaining (2) are set by an admin and come back
+	// with the host, which reports itself active
+	OfflinePrior *int32
+	// When the host last applied a reconcile of its instances (§11.4), and for which boot
+	ReconciledAt   *time.Time
+	ReconciledBoot string `gorm:"type:varchar(64)"`
 }
 
 func (hyper *Hyper) BeforeCreate(tx *gorm.DB) (err error) {
@@ -75,6 +84,10 @@ const (
 	HYPER_DEPLOYING     = "deploying"
 	HYPER_DEPLOY_FAILED = "deploy_failed"
 )
+
+// HyperStatusOffline is the status cland's topology report gives a host it lost: not one of the statuses below,
+// which an admin or the host itself sets
+const HyperStatusOffline int32 = 10
 
 var (
 	HyperStatusValues = map[int32]string{

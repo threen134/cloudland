@@ -137,6 +137,15 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	} else {
 		logger.Ctx(ctx).Debugf("Hypervisor %d kept in administrative status %d (reported %d)", hyperID, hyper.Status, hyperStatus)
 	}
+	// Back from offline: the status an admin set before it went away (disabled, maintaining) comes back with it,
+	// the host only ever reports itself active
+	if hyper.Status == model.HyperStatusOffline {
+		updates["offline_at"] = nil
+		updates["offline_prior"] = nil
+		if p := hyper.OfflinePrior; p != nil && (*p == model.HyperStatusNames[model.HYPER_DISABLED] || *p == model.HyperStatusNames[model.HYPER_MAINTAINING]) {
+			updates["status"] = *p
+		}
+	}
 	// map 更新不会处理 Zone 关联，需直接写外键列；未上报可用区时保留原值
 	if zoneName != "" {
 		updates["zone_id"] = zone.ID

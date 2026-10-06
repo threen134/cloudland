@@ -902,6 +902,63 @@ func (v *StorageClusterAPI) Rebalance(c *gin.Context) {
 	v.taskStarted(c, task, err, "Failed to start the rebalance")
 }
 
+type StorageRotateKeysPayload struct {
+	// Renew the SSH key the admin hosts log in to the members with
+	SSH bool `json:"ssh"`
+	// Renew the key of the client user (ceph). Running instances keep their sessions with the old key and take the
+	// new one when they start again or migrate
+	Client bool `json:"client"`
+}
+
+// @Summary rotate the keys of a storage cluster
+// @Description renew the SSH key of a managed cluster and, for Ceph, the key of its client user, without a moment when a host or QEMU is left without a valid key (shared-storage-design.md §6.6, §8.4). Every member must be online. Nothing named: both. The new client key becomes the key of the user the first time a host uses it, the old one is refused for new sessions from then on; running instances keep their sessions and take the new key when they start again or migrate
+// @tags StorageCluster
+// @Accept  json
+// @Produce json
+// @Param   id       path  string                    true   "Cluster UUID"
+// @Param   message  body  StorageRotateKeysPayload  false  "What to rotate"
+// @Success 202 {object} StorageTaskResponse
+// @Router /storage_clusters/{id}/rotate_keys [post]
+func (v *StorageClusterAPI) RotateKeys(c *gin.Context) {
+	payload := &StorageRotateKeysPayload{}
+	if err := c.ShouldBindJSON(payload); err != nil && c.Request.ContentLength > 0 {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	task, err := storageClusterAdmin.RotateKeys(c.Request.Context(), c.Param("id"), &services.StorageRotateKeys{SSH: payload.SSH, Client: payload.Client})
+	v.taskStarted(c, task, err, "Failed to start the rotation of the keys")
+}
+
+type StorageUpgradePayload struct {
+	// gpfs: UUID of the package of the new release (verified, its license accepted)
+	Package string `json:"package" binding:"omitempty,uuid"`
+	// gpfs: once every host runs the new release, raise the cluster and its file systems to it. Irreversible: hosts
+	// of an older release can not join afterwards
+	Finalize bool `json:"finalize"`
+	// ceph: the image of the daemons; empty: the one of the release the hosts install from their distribution
+	Image string `json:"image" binding:"omitempty,max=200"`
+}
+
+// @Summary upgrade a storage cluster
+// @Description roll a managed cluster to a new release, one host after the other (shared-storage-design.md §7.7, §8.7). gpfs: name the package of the new release; each host has the instances that use the cluster moved off (as maintenance does), GPFS stopped, upgraded and started, and its disks brought back before the next one; then, separately, finalize to raise the cluster and its file systems to the release (irreversible). ceph: the hosts install the release their distribution has and cephadm upgrades the daemons; no instance moves (QEMU takes the new client library when it starts again or migrates). Every member must be online
+// @tags StorageCluster
+// @Accept  json
+// @Produce json
+// @Param   id       path  string                 true   "Cluster UUID"
+// @Param   message  body  StorageUpgradePayload  false  "What to upgrade to"
+// @Success 202 {object} StorageTaskResponse
+// @Router /storage_clusters/{id}/upgrade [post]
+func (v *StorageClusterAPI) Upgrade(c *gin.Context) {
+	payload := &StorageUpgradePayload{}
+	if err := c.ShouldBindJSON(payload); err != nil && c.Request.ContentLength > 0 {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	task, err := storageClusterAdmin.Upgrade(c.Request.Context(), c.Param("id"),
+		&services.StorageUpgrade{PackageUUID: payload.Package, Finalize: payload.Finalize, Image: payload.Image})
+	v.taskStarted(c, task, err, "Failed to start the upgrade")
+}
+
 type StorageClusterImportPayload struct {
 	// A kind from GET /storage_backends whose capabilities include external
 	Kind        string `json:"kind" binding:"required,max=16"`

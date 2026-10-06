@@ -634,6 +634,14 @@ func (a *HyperAdmin) releaseStorage(db *gorm.DB, hostID int32, keepPools bool) (
 	if members > 0 {
 		return NewCLError(ErrHypervisorInvalidState, "Hypervisor is a member of a storage cluster: remove it from the cluster first", nil)
 	}
+	// A fence left (lifting it failed) would keep refusing the address of the host on the cluster
+	var fences int64
+	if err = db.Model(&model.StorageFence{}).Where("hostid = ?", hostID).Count(&fences).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to count the fences of the host", err)
+	}
+	if fences > 0 {
+		return NewCLError(ErrHypervisorInvalidState, "Hypervisor is still fenced on a storage cluster: lift the fence first, or mark it lifted by hand", nil)
+	}
 	var pools, volumes int64
 	// Only local pools live on the host; rows of shared pools only say whether the host can reach them
 	if err = db.Model(&model.HyperStoragePool{}).Joins("JOIN storage_pools ON storage_pools.id = hyper_storage_pools.pool_id").

@@ -87,6 +87,11 @@ type storageStepDef struct {
 	// OnlineOnly: a nodes step that runs on the hosts online when it starts and skips the others, for work a host
 	// that is away catches up on later by itself (the pool lists, §9.2)
 	OnlineOnly bool
+	// Control: a step clapi does itself instead of a script on the hosts (moving the instances off a host before it
+	// is upgraded). Called outside the transactions of the engine when the step starts, at each move of the task and
+	// each round of the worker, until it is done; it must do nothing twice. An error fails the step, so does the
+	// timeout of the step. Script and Input are not used
+	Control func(ctx context.Context, task *model.StorageTask, step *model.StorageTaskStep) (done bool, err error)
 }
 
 // storageTaskKind is a kind of task: the slot it takes, the steps it may have and what to do when it ends
@@ -327,7 +332,10 @@ func startStorageTask(ctx context.Context, spec *storageTaskSpec) (task *model.S
 func advanceStorageTask(ctx context.Context, taskID int64) {
 	// Bounded: a step that ends at once (every run failed to build or to send) moves the task on again
 	for i := 0; i < 64; i++ {
-		sends, again, err := advanceStorageTaskOnce(ctx, taskID)
+		sends, control, again, err := advanceStorageTaskOnce(ctx, taskID)
+		if err == nil && control != 0 {
+			again = runStorageControl(ctx, taskID, control)
+		}
 		if err != nil {
 			logger.Ctx(ctx).Errorf("Failed to advance storage task %d: %v", taskID, err)
 			return
@@ -341,7 +349,7 @@ func advanceStorageTask(ctx context.Context, taskID int64) {
 	}
 }
 
-func advanceStorageTaskOnce(ctx context.Context, taskID int64) (sends []*storageDispatch, again bool, err error) {
+func advanceStorageTaskOnce(ctx context.Context, taskID int64) (sends []*storageDispatch, control int64, again bool, err error) {
 	db := dbs.DBContext(ctx)
 	err = db.Transaction(func(tx *gorm.DB) error {
 		task, err := lockStorageTask(tx, taskID)
@@ -380,6 +388,17 @@ func advanceStorageTaskOnce(ctx context.Context, taskID int64) (sends []*storage
 		if def == nil && cur.Status != model.StorageStepFailed {
 			// A step this version no longer has (renamed or removed by an upgrade while the task waited)
 			return failStorageStep(tx, task, cur, "the step is unknown to this version of clapi")
+		}
+		if def != nil && def.Control != nil && cur.Status != model.StorageStepFailed {
+			// Done by clapi, after this transaction
+			if cur.Status == model.StorageStepPending {
+				now := time.Now()
+				if err := tx.Model(cur).Updates(map[string]interface{}{"status": model.StorageStepRunning, "started_at": &now, "finished_at": nil}).Error; err != nil {
+					return err
+				}
+			}
+			control = cur.ID
+			return nil
 		}
 		switch cur.Status {
 		case model.StorageStepPending:
@@ -432,6 +451,74 @@ func advanceStorageTaskOnce(ctx context.Context, taskID int64) (sends []*storage
 		return nil
 	})
 	return
+}
+
+// runStorageControl does a step clapi does itself (storageStepDef.Control) and records how it went. It tells whether
+// the step ended, so the task moves on
+func runStorageControl(ctx context.Context, taskID, stepID int64) (ended bool) {
+	db := dbs.DBContext(ctx)
+	task := &model.StorageTask{}
+	step := &model.StorageTaskStep{}
+	if db.Take(task, taskID).Error != nil || db.Take(step, stepID).Error != nil || task.Status != model.StorageTaskRunning ||
+		step.Status != model.StorageStepRunning {
+		return false
+	}
+	kind := storageTaskKindOf(task)
+	if kind == nil || kind.Steps[step.Name] == nil || kind.Steps[step.Name].Control == nil {
+		return false
+	}
+	var done bool
+	var cerr error
+	if step.TimeoutSec > 0 && step.StartedAt != nil && time.Since(*step.StartedAt) > time.Duration(step.TimeoutSec)*time.Second {
+		cerr = fmt.Errorf("timed out after %s", time.Duration(step.TimeoutSec)*time.Second)
+	} else {
+		done, cerr = kind.Steps[step.Name].Control(ctx, task, step)
+	}
+	if !done && cerr == nil {
+		return false
+	}
+	err := db.Transaction(func(tx *gorm.DB) error {
+		task, err := lockStorageTask(tx, taskID)
+		if err != nil {
+			return err
+		}
+		if err = tx.Take(step, stepID).Error; err != nil || task.Status != model.StorageTaskRunning || step.Status != model.StorageStepRunning {
+			return err
+		}
+		ended = true
+		if cerr != nil {
+			return failStorageStep(tx, task, step, cerr.Error())
+		}
+		now := time.Now()
+		return tx.Model(step).Updates(map[string]interface{}{"status": model.StorageStepSucceeded, "finished_at": &now}).Error
+	})
+	if err != nil {
+		logger.Ctx(ctx).Errorf("Failed to record step %d of storage task %d: %v", stepID, taskID, err)
+		return false
+	}
+	return ended
+}
+
+// workStorageControls moves on the tasks whose current step clapi does itself: what it waits for (migrations) does
+// not report to the task
+func workStorageControls(ctx context.Context) {
+	db := dbs.DBContext(ctx)
+	steps := []*model.StorageTaskStep{}
+	if err := db.Joins("JOIN storage_tasks ON storage_tasks.id = storage_task_steps.task_id").
+		Where("storage_tasks.status = ? AND storage_task_steps.status = ? AND storage_task_steps.seq = storage_tasks.current_step",
+			model.StorageTaskRunning, model.StorageStepRunning).Find(&steps).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to list the running storage steps: %v", err)
+		return
+	}
+	for _, step := range steps {
+		task := &model.StorageTask{}
+		if db.Take(task, step.TaskID).Error != nil {
+			continue
+		}
+		if kind := storageTaskKindOf(task); kind != nil && kind.Steps[step.Name] != nil && kind.Steps[step.Name].Control != nil {
+			advanceStorageTask(ctx, task.ID)
+		}
+	}
 }
 
 // storageStepHosts are the hosts a step runs on now: every host of a nodes step (the online ones for a step that
@@ -697,6 +784,13 @@ func RetryStorageTask(ctx context.Context, taskID int64) (err error) {
 		if def == nil {
 			return NewCLError(ErrStorageTaskState, "The step "+cur.Name+" is unknown to this version", nil)
 		}
+		if def.Control != nil {
+			// Done by clapi again, from the start: its timeout too
+			if err := tx.Model(cur).Updates(map[string]interface{}{"status": model.StorageStepPending, "started_at": nil, "finished_at": nil}).Error; err != nil {
+				return err
+			}
+			return tx.Model(task).Updates(map[string]interface{}{"status": model.StorageTaskRunning, "message": ""}).Error
+		}
 		if def.RetryFrom != "" {
 			var from *model.StorageTaskStep
 			for _, s := range steps {
@@ -799,6 +893,10 @@ func StartStorageTaskWorker() {
 			ctx, span := tracing.StartBackground(context.Background(), "storage.tasks")
 			storageLeader(ctx, func(ctx context.Context) {
 				workStorageRuns(ctx)
+				workStorageControls(ctx)
+				// Evacuations wait for the fences of their host, fences for their tasks (shared-storage-design.md §11)
+				maintainStorageFences(ctx)
+				advanceEvacuations(ctx)
 				// The clusters' own rounds: every 4 rounds (a minute)
 				if round%4 == 0 {
 					maintainStorageClusters(ctx)

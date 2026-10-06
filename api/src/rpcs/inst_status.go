@@ -73,6 +73,12 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 			continue
 		}
+		// Recovered on another host while this one was away: what this host says about its old copy is not believed
+		// until it removed that copy (reconcile, shared-storage-design.md §11.4)
+		if services.EvacuatedFrom(ctx, instance.ID, int32(hyperID)) {
+			logger.Ctx(ctx).Warningf("Host %d reported instance %d, which was recovered elsewhere: ignored until the host removes its copy", hyperID, instance.ID)
+			continue
+		}
 		if instance.Status == "rescuing" {
 			continue
 		}
@@ -147,6 +153,8 @@ func instanceStatusReason(reported string) (status, reason string) {
 		return string(model.InstanceStatusShutoff), services.InstanceReasonStoragePending
 	case "start_failed":
 		return string(model.InstanceStatusShutoff), services.InstanceReasonStartFailed
+	case "pending_reconcile":
+		return string(model.InstanceStatusShutoff), services.InstanceReasonReconcilePending
 	}
 	return reported, ""
 }
@@ -158,5 +166,5 @@ func storageReasonChanged(current, reason string) bool {
 		return current != reason
 	}
 	return current == services.InstanceReasonStorageFull || current == services.InstanceReasonStoragePending ||
-		current == services.InstanceReasonStartFailed
+		current == services.InstanceReasonStartFailed || current == services.InstanceReasonReconcilePending
 }

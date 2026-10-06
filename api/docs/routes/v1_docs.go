@@ -1630,6 +1630,65 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/hypers/{uuid}/evacuate": {
+            "post": {
+                "description": "Recover the instances of a host that cland has had offline for at least 5 minutes on other hosts. Only instances whose disks are all in shared storage pools can be recovered; the others are listed as not_doing with the reason. The host is first fenced on every storage cluster their disks are on (GPFS expels it, Ceph blocklists its address), then each instance is defined again from its record on a host that reaches its pools and started when it was running. A host that can not be fenced (no other admin host online, an imported GPFS cluster) needs confirm_fenced. The copies left on the host are removed when it comes back, and the fences lifted after that.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration",
+                    "Hypervisor"
+                ],
+                "summary": "evacuate a hypervisor that is down",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Evacuation options",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HyperEvacuatePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HyperEvacuateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Hypervisor not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "The host is not offline long enough, or can not be fenced",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/hypers/{uuid}/maintain": {
             "post": {
                 "description": "start maintenance for a hypervisor, optionally migrating all instances",
@@ -2086,6 +2145,56 @@ const docTemplatev1 = `{
                 "responses": {
                     "202": {
                         "description": "Accepted"
+                    }
+                }
+            }
+        },
+        "/hypers/{uuid}/unfence": {
+            "post": {
+                "description": "Lift the fences of a host now, once it came back and removed the instances recovered elsewhere (this also happens by itself); or forget them after lifting them by hand.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration",
+                    "Hypervisor"
+                ],
+                "summary": "let a hypervisor back into its storage clusters",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Options",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HyperUnfencePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No content"
+                    },
+                    "404": {
+                        "description": "Hypervisor not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "The host is not fenced, or can not be let back in yet",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
                     }
                 }
             }
@@ -7174,6 +7283,86 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/storage_clusters/{id}/rotate_keys": {
+            "post": {
+                "description": "renew the SSH key of a managed cluster and, for Ceph, the key of its client user, without a moment when a host or QEMU is left without a valid key (shared-storage-design.md §6.6, §8.4). Every member must be online. Nothing named: both. The new client key becomes the key of the user the first time a host uses it, the old one is refused for new sessions from then on; running instances keep their sessions and take the new key when they start again or migrate",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "rotate the keys of a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "What to rotate",
+                        "name": "message",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageRotateKeysPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/{id}/upgrade": {
+            "post": {
+                "description": "roll a managed cluster to a new release, one host after the other (shared-storage-design.md §7.7, §8.7). gpfs: name the package of the new release; each host has the instances that use the cluster moved off (as maintenance does), GPFS stopped, upgraded and started, and its disks brought back before the next one; then, separately, finalize to raise the cluster and its file systems to the release (irreversible). ceph: the hosts install the release their distribution has and cephadm upgrades the daemons; no instance moves (QEMU takes the new client library when it starts again or migrates). Every member must be online",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "upgrade a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "What to upgrade to",
+                        "name": "message",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageUpgradePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/storage_packages": {
             "get": {
                 "produces": [
@@ -11694,6 +11883,39 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.HyperEvacuatePayload": {
+            "type": "object",
+            "properties": {
+                "confirm_fenced": {
+                    "description": "The host is powered off (through IPMI, the provider): stands in for a fence CloudLand can not run, and the grace\nperiod (5 minutes offline) is not waited for. Recorded in the audit log",
+                    "type": "boolean"
+                },
+                "instances": {
+                    "description": "UUIDs of the instances to recover; every instance of the host when empty",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "target_hyper": {
+                    "description": "Host (hostid) to start the instances on; nil or -1: any active host of their zone that reaches their pools",
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": -1
+                }
+            }
+        },
+        "apis.HyperEvacuateResponse": {
+            "type": "object",
+            "properties": {
+                "instances": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.EvacuateResult"
+                    }
+                }
+            }
+        },
         "apis.HyperListResponse": {
             "type": "object",
             "properties": {
@@ -11776,6 +11998,16 @@ const docTemplatev1 = `{
                 "disk_used": {
                     "type": "integer"
                 },
+                "evacuate_grace_seconds": {
+                    "type": "integer"
+                },
+                "fences": {
+                    "description": "Storage clusters keeping the host off their disks while its instances run elsewhere (detail only)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.HostFence"
+                    }
+                },
                 "host_ip": {
                     "type": "string"
                 },
@@ -11797,6 +12029,18 @@ const docTemplatev1 = `{
                 },
                 "memory_total": {
                     "type": "integer"
+                },
+                "offline_at": {
+                    "description": "Since when cland has the host offline (status 10); its instances may be evacuated after a grace period",
+                    "type": "string"
+                },
+                "offline_seconds": {
+                    "description": "How long it has been offline and the grace period, in seconds, counted by clapi: the times carry no time zone",
+                    "type": "integer"
+                },
+                "reconciled_at": {
+                    "description": "When the host last reconciled its instances with the database after a boot or a reconnect",
+                    "type": "string"
                 },
                 "remark": {
                     "type": "string"
@@ -11824,6 +12068,15 @@ const docTemplatev1 = `{
                 },
                 "zone_name": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.HyperUnfencePayload": {
+            "type": "object",
+            "properties": {
+                "forget": {
+                    "description": "Forget the fences instead of lifting them: after an admin lifted them by hand (the blocklist entry of an\nimported Ceph cluster, which the CloudLand client can not remove)",
+                    "type": "boolean"
                 }
             }
         },
@@ -14877,6 +15130,19 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.StorageRotateKeysPayload": {
+            "type": "object",
+            "properties": {
+                "client": {
+                    "description": "Renew the key of the client user (ceph). Running instances keep their sessions with the old key and take the\nnew one when they start again or migrate",
+                    "type": "boolean"
+                },
+                "ssh": {
+                    "description": "Renew the SSH key the admin hosts log in to the members with",
+                    "type": "boolean"
+                }
+            }
+        },
         "apis.StorageRunLogResponse": {
             "type": "object",
             "properties": {
@@ -15087,6 +15353,24 @@ const docTemplatev1 = `{
                     "items": {
                         "$ref": "#/definitions/apis.StorageStepResponse"
                     }
+                }
+            }
+        },
+        "apis.StorageUpgradePayload": {
+            "type": "object",
+            "properties": {
+                "finalize": {
+                    "description": "gpfs: once every host runs the new release, raise the cluster and its file systems to it. Irreversible: hosts\nof an older release can not join afterwards",
+                    "type": "boolean"
+                },
+                "image": {
+                    "description": "ceph: the image of the daemons; empty: the one of the release the hosts install from their distribution",
+                    "type": "string",
+                    "maxLength": 200
+                },
+                "package": {
+                    "description": "gpfs: UUID of the package of the new release (verified, its license accepted)",
+                    "type": "string"
                 }
             }
         },
@@ -17446,6 +17730,59 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "services.EvacuateResult": {
+            "type": "object",
+            "properties": {
+                "hostname": {
+                    "type": "string"
+                },
+                "instance": {
+                    "type": "string"
+                },
+                "migration": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "fencing | in_progress | not_doing",
+                    "type": "string"
+                }
+            }
+        },
+        "services.HostFence": {
+            "type": "object",
+            "properties": {
+                "cluster": {
+                    "type": "string"
+                },
+                "cluster_uuid": {
+                    "type": "string"
+                },
+                "confirmed_by": {
+                    "type": "string"
+                },
+                "fenced_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                }
+            }
+        },
         "services.HostPoolFigures": {
             "type": "object",
             "properties": {
@@ -17567,11 +17904,17 @@ const docTemplatev1 = `{
                 "change_roles": {
                     "type": "boolean"
                 },
+                "client_key": {
+                    "type": "boolean"
+                },
                 "external": {
                     "type": "boolean"
                 },
                 "filesystems": {
                     "description": "Filesystems: the kind has file systems between the cluster and the pools (gpfs)",
+                    "type": "boolean"
+                },
+                "finalize": {
                     "type": "boolean"
                 },
                 "managed": {
@@ -17593,6 +17936,14 @@ const docTemplatev1 = `{
                 },
                 "replace_disk": {
                     "description": "ReplaceDisk swaps a failed disk for a new disk of the same host; ChangeRoles changes the roles of a member",
+                    "type": "boolean"
+                },
+                "rotate_keys": {
+                    "description": "RotateKeys renews the SSH key of a managed cluster; ClientKey: the kind has a client key CloudLand renews too",
+                    "type": "boolean"
+                },
+                "upgrade": {
+                    "description": "Upgrade: a rolling upgrade of the software of a managed cluster; Finalize: the kind raises the cluster to a new\nrelease in a separate, irreversible step afterwards (gpfs)",
                     "type": "boolean"
                 }
             }
