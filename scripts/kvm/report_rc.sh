@@ -116,6 +116,8 @@ function inst_status()
         [ -z "$id" ] && continue
         if [ "$st" = "paused" ] && paused_nospace inst-$id; then
             st=paused_nospace
+        elif [ "$st" = "shut_off" ] && reconcile_held $id; then
+            st=pending_reconcile
         elif [ "$st" = "shut_off" ] && grep -qx "$id" $pending_list 2>/dev/null; then
             # Waiting for a pool, or its pools are fine and libvirt refused to start it
             if [ -f $run_dir/start_failed-$id ] && instance_pools_ok $id; then
@@ -283,6 +285,11 @@ function sync_instance()
         sudo virsh autostart inst-$inst_id --disable >/dev/null 2>&1
         if [ "$(sudo virsh domstate inst-$inst_id 2>/dev/null)" = "running" ]; then
             echo "|:-COMMAND-:| launch_vm.sh '$inst_id' 'running' '$NODE_ID' 'sync'"
+        elif instance_shared $inst_id; then
+            # A disk in a shared pool: the instance may have been recovered on another host while this one was down.
+            # It waits for clapi to say it is still this host's (reconcile_check, §11.4 of the shared storage design)
+            reconcile_hold_add $inst_id
+            pending_start_add $inst_id
         elif ! instance_pools_ok $inst_id; then
             # Waiting in the heartbeat for a pool would get the host taken offline: start it later
             pending_start_add $inst_id
@@ -351,10 +358,52 @@ function instance_pools_ok()
     return 0
 }
 
-function pending_start_add()
+# Whether an instance has a disk in a shared pool: anything but the builtin pool and the local pools of this host
+function instance_shared()
 {
-    local list=$cache_dir/pending_start
-    grep -qx "$1" $list 2>/dev/null || echo "$1" >>$list
+    local p
+    for p in $(instance_pools $1); do
+        [ "$p" = "builtin" ] && continue
+        [ -d "$pools_dir/$p" ] && continue
+        return 0
+    done
+    return 1
+}
+
+# Ask clapi which of the instances defined here are still this host's (shared-storage-design.md §11.4): after a boot,
+# and after a gap in the heartbeats, which only run while cloudlet is connected: cloudlet restarted or got its
+# connection back, and the host may have been taken for dead meanwhile and its instances recovered elsewhere. The
+# question is asked again every minute until node_reconcile.sh applies an answer
+function reconcile_check()
+{
+    local now boot last reason="" asked_boot asked fresh="" domains
+    now=$(date +%s)
+    boot=$(cat /proc/sys/kernel/random/boot_id)
+    last=$(cat $run_dir/heartbeat_at 2>/dev/null)
+    echo $now >$run_dir/heartbeat_at
+    # The run directory is on disk: what it says may be from an earlier boot
+    read asked_boot asked < <(cat $run_dir/reconcile_asked 2>/dev/null)
+    [ "$asked_boot" != "$boot" ] && fresh=1
+    if [ "$(cat $run_dir/reconciled_boot 2>/dev/null)" != "$boot" ]; then
+        reason=boot
+    elif [ -n "$last" ] && [ $(( now - last )) -gt 60 ]; then
+        reason=reconnect
+        fresh=1
+        echo "reconnect $now" >$run_dir/reconcile_pending
+    elif [ -f $run_dir/reconcile_pending ]; then
+        reason=$(cut -d' ' -f1 $run_dir/reconcile_pending)
+    else
+        return 0
+    fi
+    # Asked at once after a boot or a gap, then once a minute until an answer is applied
+    [ -z "$fresh" ] && [ $(( now - ${asked:-0} )) -lt 60 ] && return 0
+    # The control plane took the host offline: report its state again at once, not when the resources change
+    [ -n "$fresh" ] && rm -f $run_dir/old_resource_list
+    echo "$boot $now" >$run_dir/reconcile_asked
+    domains=$(timeout 30 sudo virsh list --all --name 2>/dev/null | grep -E '^inst-[0-9]+$' | while read d; do
+        echo "{\"id\": ${d#inst-}, \"state\": \"$(timeout 10 sudo virsh domstate $d 2>/dev/null | tr ' ' '_')\"}"
+    done | jq -cs . 2>/dev/null)
+    echo "|:-COMMAND-:| node_recovered '$NODE_ID' '$boot' '$reason' '$(echo "${domains:-[]}" | base64 -w0)'"
 }
 
 # Start the instances that wait for their pools, in the background (§4.8 of the storage plan)
@@ -369,6 +418,7 @@ function pending_start()
             pending_start_remove $id
             continue
         fi
+        reconcile_held $id && continue
         instance_pools_ok $id || continue
         # A start that failed with its pools fine is retried every 5 minutes, not every heartbeat
         last=$(cat $run_dir/start_attempt-$id 2>/dev/null)
@@ -552,6 +602,7 @@ pool_report
 shared_pool_report
 storage_metrics
 sync_instance
+reconcile_check
 pending_start
 recover_loadbalancer
 check_lb_process

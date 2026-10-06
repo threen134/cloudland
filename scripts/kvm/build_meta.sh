@@ -218,7 +218,7 @@ if [ "${os_code}" != "windows" ]; then
 fi
 
 [ -z "$dns" ] && dns=$dns_server
-net_json=$(jq 'del(.userdata) | del(.userdata_type) | del(.vendordata) | del(.vendordata_type) | del(.vlans) | del(.keys) | del(.security) | del(.login_port) | del(.root_passwd) | del(.dns) | del(.boot_disk)' <<< $vm_meta | jq --arg dns $dns '.services[0].type = "dns" | .services[0].address |= .+$dns')
+net_json=$(jq 'del(.userdata) | del(.userdata_type) | del(.vendordata) | del(.vendordata_type) | del(.vlans) | del(.keys) | del(.security) | del(.login_port) | del(.root_passwd) | del(.dns) | del(.boot_disk) | del(.data_disks) | del(.evacuate)' <<< $vm_meta | jq --arg dns $dns '.services[0].type = "dns" | .services[0].address |= .+$dns')
 let mtu=$(cat /sys/class/net/$vxlan_interface/mtu)-50
 if [ "$mtu" -lt 1450 ]; then
     net_json=$(sed "s/\"mtu\": 1450/\"mtu\": $mtu/g" <<<$net_json)

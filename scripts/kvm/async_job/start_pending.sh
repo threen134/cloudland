@@ -11,6 +11,8 @@ ID=$1
 exec 9>$run_dir/start_pending-$ID.lock
 flock -n 9 || exit 0
 grep -qx "$ID" $cache_dir/pending_start 2>/dev/null || exit 0
+# Not before clapi said it is still this host's (§11.4 of the shared storage design)
+reconcile_held $ID && exit 0
 if try_start_instance $ID; then
     pending_start_remove $ID
     echo "|:-COMMAND-:| launch_vm.sh '$ID' 'running' '$NODE_ID' 'sync'"

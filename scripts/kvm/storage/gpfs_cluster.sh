@@ -9,6 +9,11 @@
 #   remove:   {"cluster_uuid", "ip", "offline"}     a host leaves; offline: it is gone for good, nothing runs on it
 #   roles:    {"cluster_uuid", "ip", "quorum", "server"}   a member becomes a quorum (and manager) node or stops being
 #             one (§13.1), online; server: it needs a server license
+#   fence:    {"cluster_uuid", "ip"}   a host that is down is expelled and can not join again (§11.2)
+#   unfence:  {"cluster_uuid", "ip"}   it may join again, once it removed what was recovered elsewhere
+#   finalize: {"cluster_uuid", "filesystems"}   once every host runs the new release (upgrade, §7.7): the cluster and the
+#             file systems take it (mmchconfig release=LATEST, mmchfs -V full); hosts of an older release can not
+#             join afterwards, there is no way back
 # Every action checks first what is there, so it can run again after a failure.
 
 cd $(dirname $0)
@@ -256,14 +261,136 @@ function do_roles()
     stc_result "$(jq -cn --arg d "$(designation_of $ip)" '{designation: $d}')"
 }
 
+# gpfs_daemon_name <ip>: the GPFS node name of a member, from its address
+function gpfs_daemon_name()
+{
+    $gpfs_bin/mmlscluster -Y 2>/dev/null | awk -F: -v ip="$1" '
+        $2 == "clusterNode" && $3 == "HEADER" { for (i = 1; i <= NF; i++) { if ($i == "daemonNodeName") n = i; if ($i == "ipAddress") a = i }; next }
+        $2 == "clusterNode" && n && a && $a == ip { print $n }'
+}
+
+# gpfs_expelled <node name> <address>: whether a node is on the list of the nodes expelled by mmexpelnode, whose lines
+# are "<address> (<node name>)" under a dashed line; 0 when it is, 1 when not, 2 when the list could not be read
+function gpfs_expelled()
+{
+    local out
+    out=$(timeout 60 $gpfs_bin/mmexpelnode -l 2>/dev/null) || return 2
+    awk -v n="$1" -v ip="$2" '
+        f && NF && $1 != "(Empty)" { name = $2; gsub(/[()]/, "", name); if ($1 == ip || name == n) found = 1 }
+        /^---/ { f = 1 }
+        END { exit !found }' <<<"$out"
+}
+
+# fence: a host taken for dead is expelled (§11.2). Unlike the expel GPFS does by itself when a lease runs out, this
+# one stays when the host comes back and starts GPFS again: it can not mount the file systems, so the instances it
+# still runs can not write to disks that are in use elsewhere, until unfence lets it back in
+function do_fence()
+{
+    local ip name
+    ip=$(jq -r .ip <<<"$1")
+    [[ "$ip" =~ ^[0-9.]+$ ]] || stc_fail "invalid address $ip"
+    name=$(gpfs_daemon_name $ip)
+    [ -n "$name" ] || stc_fail "$ip is not a node of this cluster"
+    gpfs_expelled "$name" $ip
+    case $? in
+        0) echo "$name is expelled already" ;;
+        1)
+            stc_progress 30 "expelling $name"
+            timeout 600 $gpfs_bin/mmexpelnode -N $name || stc_fail "mmexpelnode -N $name failed"
+            ;;
+        *) stc_fail "mmexpelnode -l failed" ;;
+    esac
+    gpfs_expelled "$name" $ip || stc_fail "$name is not on the list of expelled nodes"
+    # The file systems stay frozen until GPFS recovered the node: for one that may still be alive it first waits for its
+    # lease to run out, up to a minute. The evacuation that waits for this fence would find its pools not reachable
+    local m deadline=$((SECONDS + 300))
+    stc_progress 60 "waiting for the file systems to recover from the expel of $name"
+    for m in $(mount -t gpfs | awk '{print $3}'); do
+        until timeout 10 stat -f -c %T "$m" >/dev/null 2>&1 && timeout 10 ls "$m" >/dev/null 2>&1; do
+            [ $SECONDS -ge $deadline ] && stc_fail "$m did not recover in 5 minutes after the expel of $name"
+            sleep 3
+        done
+        echo "$m answers"
+    done
+    stc_result "$(jq -cn --arg n "$name" '{node: $n}')"
+}
+
+function do_unfence()
+{
+    local ip name
+    ip=$(jq -r .ip <<<"$1")
+    [[ "$ip" =~ ^[0-9.]+$ ]] || stc_fail "invalid address $ip"
+    name=$(gpfs_daemon_name $ip)
+    if [ -z "$name" ]; then
+        # Removed from the cluster: GPFS forgot its expel with it
+        echo "$ip is not a node of this cluster (any more): nothing to let back in"
+        stc_result "$(jq -cn --arg a "$ip" '{address: $a}')"
+        return 0
+    fi
+    gpfs_expelled "$name" $ip
+    case $? in
+        0)
+            stc_progress 30 "letting $name join again"
+            timeout 600 $gpfs_bin/mmexpelnode -r -N $name || stc_fail "mmexpelnode -r -N $name failed"
+            ;;
+        1) echo "$name is not expelled" ;;
+        *) stc_fail "mmexpelnode -l failed" ;;
+    esac
+    gpfs_expelled "$name" $ip
+    case $? in
+        0) stc_fail "$name is still on the list of expelled nodes" ;;
+        1) ;;
+        *) stc_fail "mmexpelnode -l failed" ;;
+    esac
+    stc_result "$(jq -cn --arg n "$name" '{node: $n}')"
+}
+
+# fs_format <file system> <field>: a format version of mmlsfs -V (filesystemVersion, filesystemHighestSupported), as
+# "38.00 (6.0.0.0)"
+function fs_format()
+{
+    timeout 60 $gpfs_bin/mmlsfs $1 -V -Y 2>/dev/null | awk -F: -v f="$2" '
+        $3 == "HEADER" { for (i = 1; i <= NF; i++) { if ($i == "fieldName") n = i; if ($i == "data") d = i }; next }
+        n && $n == f { print $d; exit }'
+}
+
+function do_finalize()
+{
+    local fs release
+    stc_progress 10 "raising the cluster to the release its hosts run"
+    # GPFS 5.1 and later refuse without a cipher list unless told the clear daemon traffic is what the admin wants
+    timeout 900 $gpfs_bin/mmchconfig release=LATEST --accept-empty-cipherlist-security ||
+        stc_fail "mmchconfig release=LATEST failed: does every host run the new release, with GPFS up?"
+    for fs in $(jq -r '.filesystems[]?' <<<"$1"); do
+        [[ "$fs" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] || stc_fail "invalid file system $fs"
+        stc_progress 50 "raising the format of $fs"
+        # mmchfs -V asks for a confirmation on its standard input; without one it changes nothing and still exits 0
+        printf 'yes\n' | timeout 900 $gpfs_bin/mmchfs $fs -V full || stc_fail "mmchfs $fs -V full failed"
+        have=$(fs_format $fs filesystemVersion)
+        top=$(fs_format $fs filesystemHighestSupported)
+        [ -n "$have" ] && [ "$have" = "$top" ] || stc_fail "$fs is at format ${have:-unknown} after mmchfs -V full, not ${top:-unknown}"
+        echo "$fs is at format $have"
+    done
+    release=$($gpfs_bin/mmlsconfig minReleaseLevel -Y 2>/dev/null | gpfs_y "" value | head -1)
+    stc_result "$(jq -cn --arg r "$release" '{release: $r}')"
+}
+
 function stc_main()
 {
-    local input action
+    local input action uuid
     input=$(cat)
-    valid_uuid "$(jq -r .cluster_uuid <<<"$input")" || stc_fail "invalid cluster uuid"
-    stc_lock "gpfs-$(jq -r .cluster_uuid <<<"$input")"
+    uuid=$(jq -r .cluster_uuid <<<"$input")
+    valid_uuid "$uuid" || stc_fail "invalid cluster uuid"
     action=$(jq -r .action <<<"$input")
+    # A fence is urgent and does not wait for a structural job that may hang on the very host that is down
     case "$action" in
+        fence | unfence) stc_lock "gpfs-fence-$uuid" ;;
+        *) stc_lock "gpfs-$uuid" ;;
+    esac
+    case "$action" in
+        fence) do_fence "$input" ;;
+        unfence) do_unfence "$input" ;;
+        finalize) do_finalize "$input" ;;
         create) do_create "$input" ;;
         start) do_start ;;
         teardown) do_teardown "$input" ;;

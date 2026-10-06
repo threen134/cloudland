@@ -94,4 +94,10 @@ if [ $? -ne 0 ]; then
         ip link set v-$vlan up
     fi
 fi
+# However the uplink was made, it has to be in the bridge and up: NM creates the device on connection add even when it
+# then refuses to activate it (unmanaged), which leaves it down and out of the bridge, so it exists and is never fixed
+if [ -e /sys/class/net/v-$vlan ]; then
+    [ "$(basename "$(readlink /sys/class/net/v-$vlan/master 2>/dev/null)")" = "$vm_br" ] || ip link set v-$vlan master $vm_br
+    ip link show v-$vlan | grep -q '[<,]UP[,>]' || ip link set v-$vlan up
+fi
 udevadm settle

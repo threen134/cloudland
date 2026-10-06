@@ -39,7 +39,43 @@ let fsize=$disk_size*1024*1024*1024
 
 boot_disk=$(jq -c '.boot_disk // empty' <<<"$metadata" 2>/dev/null)
 boot_disk_xml=""
-if [ -n "$boot_disk" ]; then
+# Recovering an instance of a host that is down (shared-storage-design.md §11.3): its disks are in shared pools and
+# used as they are; the definition is made again from the record and reported as an evacuation
+evacuate=$(jq -c '.evacuate // empty' <<<"$metadata" 2>/dev/null)
+report_reason=init
+[ -n "$evacuate" ] && report_reason=evacuate
+if [ -n "$evacuate" ]; then
+    function disk_fail()
+    {
+        echo "|:-COMMAND-:| $(basename $0) '$ID' 'error' '$NODE_ID' 'evacuate' '${1//\'/}'"
+        exit -1
+    }
+    [ "$(jq -r '.existing // false' <<<"$boot_disk")" = "true" ] || disk_fail "an evacuation needs the existing boot disk"
+    # Sent again (a retry, a lost report): already defined here, it is only reported, and started when it should run
+    if timeout 30 virsh dominfo $vm_ID >/dev/null 2>&1; then
+        st=$(timeout 30 virsh domstate $vm_ID 2>/dev/null | sed 's/shut off/shut_off/')
+        if [ "$st" != "running" ] && [ "$(jq -r '.start' <<<"$evacuate")" = "true" ]; then
+            vnc_ensure_domain_passwd $vm_ID
+            timeout 120 virsh start $vm_ID >/dev/null 2>&1 && st=running
+        fi
+        echo "|:-COMMAND-:| $(basename $0) '$ID' '$st' '$NODE_ID' 'evacuate'"
+        exit 0
+    fi
+    drv_load "$boot_disk" || disk_fail "$guard_error"
+    drv_volume "$boot_disk" "$vol_ID" || disk_fail "$guard_error"
+    drv_guard || disk_fail "$guard_error"
+    drv_exists "$drv_vol" || disk_fail "boot disk $drv_vol not found"
+    # UEFI variables of a file pool are there for every host; those of an RBD disk were on the host that is down, and
+    # are made again from the template: the boot entries are lost, the default boot path is taken
+    vm_nvram=$(jq -r '.nvram // empty' <<<"$boot_disk")
+    [ -z "$vm_nvram" ] && vm_nvram=$image_dir/${vm_ID}_VARS.fd
+    if [ "$boot_loader" = "uefi" ] && [ ! -s "$vm_nvram" ]; then
+        cp $nvram_template $vm_nvram || disk_fail "failed to create $vm_nvram"
+    fi
+    vm_img=$drv_vol
+    boot_disk_xml=$(drv_disk_xml "$drv_vol" vda)
+    vol_state=attached
+elif [ -n "$boot_disk" ]; then
     # A boot disk in a shared pool (shared-storage-design.md §9.7): made by the driver of the pool from the copy of the
     # image in the pool, a clone or a full copy; clapi sent where everything is
     function disk_fail()
@@ -153,24 +189,64 @@ sed -i \
     $vm_xml
 # The disk of a shared pool as its driver describes it, in place of the file disk of the template
 if [ -n "$boot_disk_xml" ] && ! xml_replace_disk $vm_xml vda "$boot_disk_xml"; then
-    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'init'"
+    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' '$report_reason'"
     exit -1
 fi
 # A random VNC password of its own: QEMU accepts the password of the console only when started with one
 if ! vnc_xml_set_passwd $vm_xml; then
-    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'init'"
+    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' '$report_reason'"
     exit -1
 fi
 
-virsh define $vm_xml
+# evacuate_fail <message>: an evacuation that can not go on leaves nothing of the instance here (definition, security
+# group chains, router), or the heartbeat of this host would take over the instance the evacuation gave back to its
+# host; no disk is touched (clear_stale_vm.sh, its report kept out)
+function evacuate_fail()
+{
+    local msg=${1//$'\n'/ }
+    ./clear_stale_vm.sh "$ID" "$(jq -r '[.vlans[]?.router | numbers] | max // 0' <<<"$metadata" 2>/dev/null || echo 0)" >/dev/null
+    echo "|:-COMMAND-:| $(basename $0) '$ID' 'error' '$NODE_ID' 'evacuate' '${msg//\'/}'"
+    exit -1
+}
+
+define_out=$(virsh define $vm_xml 2>&1)
+define_rc=$?
+echo "$define_out" >&2
+[ -n "$evacuate" ] && [ $define_rc -ne 0 ] && evacuate_fail "defining it on $(hostname) failed: ${define_out:0:200}"
+# The data disks of an evacuated instance, with the devices they had (the guest knows them by those), before it starts
+if [ -n "$evacuate" ]; then
+    while read -r row; do
+        dev=$(jq -r '.device' <<<"$row")
+        dvol=$(jq -r '.volume_id' <<<"$row")
+        [[ "$dev" =~ ^vd[a-z]+$ ]] && [[ "$dvol" =~ ^[0-9]+$ ]] || evacuate_error="invalid data disk $dvol $dev"
+        if [ -z "$evacuate_error" ] && drv_load "$row" && drv_volume "$row" "$dvol" && drv_guard && drv_exists "$drv_vol"; then
+            drv_disk_xml "$drv_vol" "$dev" >$xml_dir/$vm_ID/disk-${dvol}.xml
+            virsh attach-device $vm_ID $xml_dir/$vm_ID/disk-${dvol}.xml --config >/dev/null 2>&1 || evacuate_error="attaching data disk $dvol failed"
+        else
+            evacuate_error=${evacuate_error:-"data disk $dvol: ${guard_error:-not found}"}
+        fi
+        [ -n "$evacuate_error" ] && break
+    done < <(jq -c '.data_disks[]?' <<<"$metadata")
+    [ -n "$evacuate_error" ] && evacuate_fail "$evacuate_error"
+    virsh dumpxml --security-info $vm_ID 2>/dev/null | sed "s/autoport='yes'/autoport='no'/g" >$vm_xml.dump && mv -f $vm_xml.dump $vm_xml
+fi
 # Map the libvirt domain to its instance id for the Prometheus metrics
 ./generate_vm_instance_map.sh add $vm_ID
 # Instances are started by report_rc.sh after a host reboot, once their pools are checked
 virsh autostart $vm_ID --disable
 jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"
-virsh start $vm_ID
-[ $? -eq 0 ] && state=running
-echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' 'init'"
+if [ -n "$evacuate" ] && [ "$(jq -r '.start' <<<"$evacuate")" != "true" ]; then
+    # It was shut off on the host that is down: it stays so here
+    state=shut_off
+else
+    start_out=$(virsh start $vm_ID 2>&1)
+    start_rc=$?
+    echo "$start_out" >&2
+    [ $start_rc -eq 0 ] && state=running
+    [ -n "$evacuate" ] && [ $start_rc -ne 0 ] && evacuate_fail "starting it on $(hostname) failed: ${start_out:0:200}"
+fi
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$NODE_ID' '$report_reason'"
+[ -n "$evacuate" ] && exit 0
 
 # Windows: change the RDP port when another one is asked for, and set the primary IP
 if [ "$os_code" = "windows" ]; then

@@ -37,7 +37,9 @@ function stc_main()
         wipe_disk $path || stc_fail "wiping $id ($path) failed"
         wiped=$((wiped + 1))
     done
+    # The line of the cluster, and the one of a new key an aborted rotation left
     stc_keys_update suffix "cloudland-storage-$uuid" || stc_fail "rewriting authorized_keys failed"
+    stc_keys_update suffix "cloudland-storage-$uuid-rotate" || stc_fail "rewriting authorized_keys failed"
     ./stc_mem_reserve.sh "$uuid" 0
     for p in $(cat $dir/held_packages 2>/dev/null); do
         apt-mark unhold $p >/dev/null 2>&1

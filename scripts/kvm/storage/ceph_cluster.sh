@@ -14,6 +14,18 @@
 #   set_labels:  {"hostname", "ip", "labels", "mons"}   the mon, mgr and _admin labels of a host as its roles say;
 #                cephadm places the daemons by them. Waits for the mons and an active mgr
 #   teardown:    the orchestrator stops, so it does not redeploy what the hosts remove next (stc_leave.sh)
+#   fence:       {"address", "expire", "client_user"}   every client on the address of a host taken for dead is refused
+#                by the OSDs (§11.2); client_user: an imported cluster, with no admin key here: the CloudLand client
+#                may add to the blocklist, not remove from it
+#   unfence:     {"address", "client_user"}   the address may connect again
+#   cephadm_key: {"private_key", "public_key", "hosts": [{"hostname", "ip"}]}   the orchestrator logs in with a new key
+#                of the cluster (rotation, every host takes it already) and checks it reaches every host with it
+#   cephadm_check: {"hosts"}   the orchestrator reaches every host (after the old key is refused)
+#   client_pending: {"client_user"}   a pending key for the client user; the cluster takes both keys until the
+#                pending one is first used, which makes it the key   result: {"client_key_pending"}
+#   client_commit: {"client_user", "client_key"}   the key given is the key of the user: made so when no host used it
+#   upgrade:     {"version", "image"}   cephadm upgrades every daemon to the image of the release the hosts installed
+#                (ceph orch upgrade), one after the other; waits until every daemon runs it   result: {"version"}
 # Every action checks first what is there, so it can run again after a failure.
 
 cd $(dirname $0)
@@ -426,6 +438,226 @@ function do_teardown()
     stc_result '{"teardown": true}'
 }
 
+# fence_ceph <ceph arguments>: with the admin key of a managed cluster, or the CloudLand client of an imported one
+function fence_ceph()
+{
+    local user
+    user=$(jq -r '.client_user // empty' <<<"$input")
+    if [ -n "$user" ]; then
+        [[ "$user" =~ ^[A-Za-z0-9_.-]+$ ]] || stc_fail "invalid client user $user"
+        timeout ${CEPH_TIMEOUT:-120} ceph --conf /etc/ceph/$uuid.conf --id $user "$@"
+    else
+        ceph_admin $fsid "$@"
+    fi
+}
+
+# blocklisted <address>: whether the blocklist has the range of one address
+function blocklisted()
+{
+    fence_ceph osd blocklist ls 2>/dev/null | awk '{print $1}' | grep -qx "cidr:$1:0/32"
+}
+
+# fence: a blocklist range for the host's address, with a long expiry: the default one (an hour) would let the old
+# writer back in while what was recovered elsewhere uses its disks
+function do_fence()
+{
+    local addr expire
+    addr=$(jq -r .address <<<"$input")
+    expire=$(jq -r '.expire // 315360000' <<<"$input")
+    [[ "$addr" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || stc_fail "invalid address $addr"
+    [[ "$expire" =~ ^[0-9]+$ ]] || stc_fail "invalid expiry $expire"
+    stc_progress 30 "blocklisting $addr"
+    fence_ceph osd blocklist range add $addr/32 $expire || stc_fail "adding $addr to the blocklist failed"
+    blocklisted $addr || stc_fail "$addr is not on the blocklist"
+    stc_result "$(jq -cn --arg a "$addr" '{address: $a}')"
+}
+
+function do_unfence()
+{
+    local addr
+    addr=$(jq -r .address <<<"$input")
+    [[ "$addr" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || stc_fail "invalid address $addr"
+    if blocklisted $addr; then
+        stc_progress 30 "removing $addr from the blocklist"
+        fence_ceph osd blocklist range rm $addr/32 ||
+            stc_fail "removing $addr from the blocklist failed (an imported cluster needs its admin to run: ceph osd blocklist range rm $addr/32)"
+    else
+        echo "$addr is not on the blocklist"
+    fi
+    blocklisted $addr && stc_fail "$addr is still on the blocklist"
+    stc_result "$(jq -cn --arg a "$addr" '{address: $a}')"
+}
+
+# check_hosts: the orchestrator logs in to every host of the input
+function check_hosts()
+{
+    local name ip failed=""
+    while read -r name ip; do
+        valid_name "$name" && valid_ip "$ip" || stc_fail "invalid host $name $ip"
+        ceph_admin $fsid cephadm check-host "$name" "$ip" >/dev/null 2>&1 || failed="$failed $name"
+    done < <(jq -r '.hosts[] | "\(.hostname) \(.ip)"' <<<"$input")
+    [ -z "$failed" ] || stc_fail "the orchestrator can not log in to:$failed"
+}
+
+# cephadm_has_key: the orchestrator holds the key pair of the input, as stored
+function cephadm_has_key()
+{
+    [ "$(ceph_admin $fsid config-key get mgr/cephadm/ssh_identity_pub 2>/dev/null | xargs)" = "$(jq -r .public_key <<<"$input" | xargs)" ] &&
+        [ "$(ceph_admin $fsid config-key get mgr/cephadm/ssh_identity_key 2>/dev/null)" = "$(jq -r .private_key <<<"$input")" ]
+}
+
+# mgr_restart: the active mgr fails over, so the orchestrator loads its keys again and drops the connections it keeps
+# open to the hosts (a check through one of those proves nothing about the key)
+function mgr_restart()
+{
+    local i
+    ceph_admin $fsid mgr fail >/dev/null || stc_fail "ceph mgr fail failed"
+    for i in $(seq 1 60); do
+        sleep 3
+        [ "$(ceph_admin $fsid mgr stat -f json 2>/dev/null | jq -r '.available // false')" = "true" ] &&
+            ceph_admin $fsid cephadm get-pub-key >/dev/null 2>&1 && return 0
+    done
+    stc_fail "no mgr with the orchestrator came back in 3 minutes"
+}
+
+function do_cephadm_key()
+{
+    local tmp
+    [[ "$(jq -r .public_key <<<"$input")" =~ ^ssh-ed25519\ [A-Za-z0-9+/=]+$ ]] || stc_fail "invalid public key"
+    if cephadm_has_key; then
+        echo "the orchestrator holds the new key already"
+    else
+        tmp=$(mktemp -d)
+        (umask 077 && jq -r .private_key <<<"$input" >$tmp/key && jq -r .public_key <<<"$input" >$tmp/key.pub)
+        stc_progress 30 "giving the orchestrator the new key"
+        # Both at once: cephadm set-priv-key / set-pub-key check the new half against the other, old one, and quietly
+        # keep the old pair (exit status 0, "Public key mismatch" in the mgr log; seen on 20.2)
+        if ! ceph_admin $fsid config-key set mgr/cephadm/ssh_identity_key -i $tmp/key >/dev/null ||
+            ! ceph_admin $fsid config-key set mgr/cephadm/ssh_identity_pub -i $tmp/key.pub >/dev/null; then
+            rm -rf $tmp
+            stc_fail "storing the new key of the orchestrator failed"
+        fi
+        rm -rf $tmp
+    fi
+    stc_progress 50 "restarting the mgr so the orchestrator takes it"
+    mgr_restart
+    cephadm_has_key || stc_fail "the orchestrator does not hold the new key"
+    [ "$(ceph_admin $fsid cephadm get-pub-key 2>/dev/null | xargs)" = "$(jq -r .public_key <<<"$input" | xargs)" ] ||
+        stc_fail "the orchestrator did not load the new key"
+    stc_progress 70 "checking the orchestrator reaches every host with it"
+    check_hosts
+    stc_result '{"switched": true}'
+}
+
+# cephadm_check: after the old key is refused, the orchestrator (with fresh connections) still reaches every host
+function do_cephadm_check()
+{
+    [ "$(ceph_admin $fsid cephadm get-pub-key 2>/dev/null | xargs)" = "$(jq -r .public_key <<<"$input" | xargs)" ] ||
+        stc_fail "the orchestrator does not use the key of the cluster"
+    mgr_restart
+    check_hosts
+    stc_result '{"checked": true}'
+}
+
+function client_entity()
+{
+    local user
+    user=$(jq -r .client_user <<<"$input")
+    [[ "$user" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$ ]] || stc_fail "invalid client user"
+    echo "client.$user"
+}
+
+function do_client_pending()
+{
+    local entity key
+    entity=$(client_entity) || exit 1
+    stc_progress 30 "making a pending key for $entity"
+    key=$(ceph_admin $fsid auth get-or-create-pending $entity -f json 2>/dev/null | jq -r '.[0].pending_key // empty')
+    [[ "$key" =~ ^[A-Za-z0-9+/]{38,64}={0,2}$ ]] || stc_fail "the cluster made no pending key for $entity"
+    stc_result "$(jq -cn --arg k "$key" '{client_key_pending: $k}')"
+}
+
+function do_client_commit()
+{
+    local entity want auth key pending
+    entity=$(client_entity) || exit 1
+    want=$(jq -r .client_key <<<"$input")
+    [[ "$want" =~ ^[A-Za-z0-9+/]{38,64}={0,2}$ ]] || stc_fail "invalid client key"
+    auth=$(ceph_admin $fsid auth get $entity -f json 2>/dev/null) || stc_fail "reading $entity failed"
+    key=$(jq -r '.[0].key // empty' <<<"$auth")
+    pending=$(jq -r '.[0].pending_key // empty' <<<"$auth")
+    if [ "$key" = "$want" ]; then
+        # The usual case: a host used the pending key (the check of its client configuration), which committed it
+        echo "the key of $entity is the new one already"
+    else
+        # The key every host was given: another pending key would leave them all out
+        [ "$pending" = "$want" ] || stc_fail "the pending key of $entity is not the one the hosts were given: run the rotation again"
+        stc_progress 50 "committing the pending key of $entity"
+        ceph_admin $fsid auth commit-pending $entity >/dev/null || stc_fail "committing the pending key of $entity failed"
+        key=$(ceph_admin $fsid auth get $entity -f json 2>/dev/null | jq -r '.[0].key // empty')
+        [ "$key" = "$want" ] || stc_fail "the key of $entity is not the new one after the commit"
+    fi
+    stc_result '{"committed": true}'
+}
+
+# daemon_versions: the releases the daemons of the cluster run, one a line
+function daemon_versions()
+{
+    ceph_admin $fsid versions -f json 2>/dev/null | jq -r '.overall // {} | keys[]' | awk '{print $3}' | sort -u
+}
+
+# upgrade_status: the upgrade cephadm runs as JSON; {} when it runs none (it then answers in words, not JSON)
+function upgrade_status()
+{
+    local out
+    out=$(ceph_admin $fsid orch upgrade status -f json 2>/dev/null)
+    jq -ce 'objects' <<<"$out" 2>/dev/null || echo '{}'
+}
+
+function do_upgrade()
+{
+    local version image status have checks done total
+    version=$(jq -r .version <<<"$input")
+    image=$(jq -r .image <<<"$input")
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || stc_fail "invalid release $version"
+    [[ "$image" =~ ^[a-z0-9][a-z0-9./:_@-]{0,199}$ ]] || stc_fail "invalid image $image"
+    have=$(daemon_versions | xargs)
+    [ -n "$have" ] || stc_fail "the cluster does not tell the releases of its daemons"
+    status=$(upgrade_status)
+    if [ "$have" = "$version" ] && [ "$(jq -r '.in_progress // false' <<<"$status")" != "true" ]; then
+        echo "every daemon runs Ceph $version already"
+        stc_result "$(jq -cn --arg v "$version" '{version: $v}')"
+        return 0
+    fi
+    if [ "$(jq -r '.in_progress // false' <<<"$status")" = "true" ]; then
+        # An upgrade going on (an earlier run of this step): it is followed if it goes where this one goes
+        [ "$(jq -r '.target_image // ""' <<<"$status")" = "$image" ] ||
+            stc_fail "cephadm upgrades to $(jq -r '.target_image // "another image"' <<<"$status") already: stop it (ceph orch upgrade stop) or let it end first"
+        echo "following the upgrade to $image going on"
+    else
+        stc_progress 5 "upgrading the daemons from Ceph $have to $version ($image)"
+        ceph_admin $fsid orch upgrade start --image "$image" || stc_fail "ceph orch upgrade start failed"
+    fi
+    while true; do
+        sleep 15
+        status=$(upgrade_status)
+        checks=$(ceph_admin $fsid health detail -f json 2>/dev/null | jq -r '.checks // {} | to_entries[] | select(.key | startswith("UPGRADE_")) |
+            "\(.key): \(.value.summary.message)"')
+        [ -n "$checks" ] && stc_fail "the upgrade stopped: $checks (ceph orch upgrade status tells more; fix it, then retry)"
+        [ "$(jq -r '.is_paused // false' <<<"$status")" = "true" ] && stc_fail "the upgrade is paused: $(jq -r '.message // ""' <<<"$status")"
+        [ "$(jq -r '.in_progress // false' <<<"$status")" = "true" ] || break
+        # "5/12 daemons upgraded"
+        read -r done total < <(jq -r '.progress // ""' <<<"$status" | grep -oE '^[0-9]+/[0-9]+' | tr '/' ' ')
+        if [[ "$done" =~ ^[0-9]+$ ]] && [[ "$total" =~ ^[1-9][0-9]*$ ]]; then
+            stc_progress $(( 5 + 90 * done / total )) "$done of $total daemons on Ceph $version"
+        fi
+    done
+    have=$(daemon_versions | xargs)
+    [ "$have" = "$version" ] || stc_fail "the daemons run Ceph $have after the upgrade, not $version"
+    echo "every daemon runs Ceph $version"
+    stc_result "$(jq -cn --arg v "$version" '{version: $v}')"
+}
+
 function stc_main()
 {
     local action uuid
@@ -434,8 +666,19 @@ function stc_main()
     uuid=$(jq -r .cluster_uuid <<<"$input")
     fsid=$(jq -r .fsid <<<"$input")
     valid_uuid "$uuid" && valid_uuid "$fsid" || stc_fail "invalid cluster uuid or fsid"
-    stc_lock "ceph-$uuid"
+    # A fence is urgent and does not wait for a structural job that may hang on the very host that is down
     case "$action" in
+        fence | unfence) stc_lock "ceph-fence-$uuid" ;;
+        *) stc_lock "ceph-$uuid" ;;
+    esac
+    case "$action" in
+        fence) do_fence ;;
+        unfence) do_unfence ;;
+        cephadm_key) do_cephadm_key ;;
+        cephadm_check) do_cephadm_check ;;
+        client_pending) do_client_pending ;;
+        client_commit) do_client_commit ;;
+        upgrade) do_upgrade ;;
         bootstrap) do_bootstrap ;;
         add_hosts) do_add_hosts ;;
         configure) do_configure ;;

@@ -3,7 +3,8 @@
 # hosts and QEMU use) everywhere; on a host that runs daemons also cephadm and the container image of the daemons.
 # The image is the one of the release the host installed (quay.io/ceph/ceph:v<version>) unless one is given: the
 # daemons must not be newer than the client libraries of the hosts (a newer release writes keys an older client can
-# not read). Input: {"cluster_uuid", "image", "orch"}. Result: {"version", "image"} (image empty on a client host)
+# not read). Input: {"cluster_uuid", "image", "orch"}. Result: {"version", "image", "image_version"} (the release of
+# the image; both empty on a client host)
 
 cd $(dirname $0)
 source ../../cloudrc
@@ -62,7 +63,7 @@ function stc_main()
     fi
     touch $ceph_ours
     echo "image $image runs Ceph $have"
-    stc_result "$(jq -cn --arg v "$version" --arg i "$image" '{version: $v, image: $i}')"
+    stc_result "$(jq -cn --arg v "$version" --arg i "$image" --arg iv "$have" '{version: $v, image: $i, image_version: $iv}')"
 }
 
 stc_run "$@"

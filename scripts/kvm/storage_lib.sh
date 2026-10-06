@@ -526,12 +526,39 @@ function pool_df_json()
 }
 
 # Remove an instance from the pending start list (§4.8 of the plan): <instance id>
+function pending_start_add()
+{
+    local list=$cache_dir/pending_start
+    grep -qx "$1" $list 2>/dev/null || echo "$1" >>$list
+}
+
 function pending_start_remove()
 {
     local list=$cache_dir/pending_start
     [ -f $list ] && sed -i "/^$1\$/d" $list
     rm -f $run_dir/start_attempt-$1 $run_dir/start_failed-$1 $run_dir/start_pending-$1.lock
     return 0
+}
+
+# Instances held at a boot until clapi says they are still this host's (shared-storage-design.md §11.4): one with a
+# disk in a shared pool may have been recovered on another host while this one was taken for dead, and starting it
+# here again would put two writers on its disks. The list is cleared by node_reconcile.sh, entry by entry
+reconcile_hold_file=$cache_dir/reconcile_hold
+
+function reconcile_hold_add()
+{
+    grep -qx "$1" $reconcile_hold_file 2>/dev/null || echo "$1" >>$reconcile_hold_file
+}
+
+function reconcile_hold_remove()
+{
+    [ -f $reconcile_hold_file ] && sed -i "/^$1\$/d" $reconcile_hold_file
+    return 0
+}
+
+function reconcile_held()
+{
+    grep -qx "$1" $reconcile_hold_file 2>/dev/null
 }
 
 # Start an instance of the pending start list once, keeping when it was tried and, when it fails, what libvirt
