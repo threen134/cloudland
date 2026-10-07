@@ -87,6 +87,61 @@ function do_start()
     stc_result "$(jq -cn --argjson n "$total" '{active: $n}')"
 }
 
+# teardown_ece <input>: the erasure code layer of a cluster goes first, in mmvdisk's order: the file systems on the
+# vdisk sets, the vdisk sets, the recovery group, the server configuration, the node class (§7.9). Input "ece":
+# {"recovery_group", "node_class"}, the vdisk sets are those on the recovery group; nothing when the cluster has no such
+# layer. Each part that is gone already is skipped, so a retry goes on where the last run stopped
+function teardown_ece()
+{
+    local input=$1 rg nc vs fs servers created rgs
+    rg=$(jq -r '.ece.recovery_group // empty' <<<"$input")
+    [ -n "$rg" ] || return 0
+    nc=$(jq -r '.ece.node_class // empty' <<<"$input")
+    [[ "$rg" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] && [[ "$nc" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] || stc_fail "invalid recovery group or node class"
+    for fs in $(jq -r '.filesystems[]?' <<<"$input"); do
+        [[ "$fs" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] || continue
+        $gpfs_bin/mmlsfs $fs >/dev/null 2>&1 || continue
+        stc_progress 20 "deleting file system $fs"
+        $gpfs_bin/mmvdisk filesystem delete --file-system $fs --confirm </dev/null || stc_fail "mmvdisk filesystem delete $fs failed"
+    done
+    # Every vdisk set on the recovery group, the file system on it first; one only defined (a deployment stopped half
+    # way) is undefined
+    while read -r vs created fs rgs; do
+        [[ ",$rgs," == *",$rg,"* ]] && [[ "$vs" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] || continue
+        if [[ "$fs" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]]; then
+            stc_progress 25 "deleting file system $fs"
+            $gpfs_bin/mmvdisk filesystem delete --file-system $fs --confirm </dev/null || stc_fail "mmvdisk filesystem delete $fs failed"
+        fi
+        stc_progress 30 "deleting vdisk set $vs"
+        if [ "$created" = yes ]; then
+            # It asks before deleting vdisks; the cluster is being deleted, so yes
+            printf 'yes\n' | $gpfs_bin/mmvdisk vdiskset delete --vdisk-set $vs || stc_fail "mmvdisk vdiskset delete $vs failed"
+        fi
+        $gpfs_bin/mmvdisk vdiskset undefine --vdisk-set $vs --confirm </dev/null || stc_fail "mmvdisk vdiskset undefine $vs failed"
+    done < <(gpfs_vdisksets)
+    if $gpfs_bin/mmvdisk recoverygroup list --recovery-group $rg -Y </dev/null >/dev/null 2>&1; then
+        stc_progress 40 "deleting recovery group $rg"
+        if ! printf 'yes\n' | $gpfs_bin/mmvdisk recoverygroup delete --recovery-group $rg --confirm; then
+            # Still in use (a vdisk set the loop above could not see): a configuration problem, not one to force
+            vs=$(gpfs_vdisksets | awk -v r="$rg" 'index("," $4 ",", "," r ",") {print $1}')
+            [ -z "$vs" ] || stc_fail "recovery group $rg still has vdisk sets: $(echo $vs)"
+            # A recovery group left half made (a log vdisk the daemon serves but the configuration does not know, after
+            # an interrupted log format) does not delete. Stop its servers and remove it from the configuration only:
+            # -p is refused while it is served. The cluster goes next anyway, and its disks are wiped when claimed
+            servers=$($gpfs_bin/mmlsnodeclass $nc -Y 2>/dev/null | gpfs_y "" memberNodes)
+            [ -n "$servers" ] || stc_fail "mmvdisk recoverygroup delete failed, and node class $nc has no members"
+            stc_progress 45 "stopping the servers of $rg to remove it from the configuration"
+            $gpfs_bin/mmshutdown -N $servers
+            printf 'yes\n' | $gpfs_bin/mmvdisk recoverygroup delete --recovery-group $rg --confirm -p ||
+                stc_fail "mmvdisk recoverygroup delete failed"
+        fi
+    fi
+    if $gpfs_bin/mmlsnodeclass $nc >/dev/null 2>&1; then
+        $gpfs_bin/mmvdisk server unconfigure --node-class $nc --recycle none </dev/null || stc_fail "mmvdisk server unconfigure failed"
+        $gpfs_bin/mmvdisk nodeclass delete --node-class $nc --confirm </dev/null || stc_fail "mmvdisk nodeclass delete failed"
+    fi
+}
+
 function do_teardown()
 {
     local input=$1 uuid name fs nsd list
@@ -113,6 +168,7 @@ function do_teardown()
     fi
     stc_progress 10 "unmounting"
     $gpfs_bin/mmumount all -a
+    teardown_ece "$input"
     for fs in $(jq -r '.filesystems[]?' <<<"$input"); do
         $gpfs_bin/mmlsfs $fs >/dev/null 2>&1 || continue
         stc_progress 30 "deleting file system $fs"

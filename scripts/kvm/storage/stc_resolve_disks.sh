@@ -53,7 +53,9 @@ function stc_main()
         out=$(jq -c --arg i "$id" --arg p "$path" --arg n "$name" '. + [{id: $i, path: $p, name: $n}]' <<<"$out")
         ids+=("$id")
     done
-    if declare -F backend_disks_resolved >/dev/null; then
+    # "nsddevices": false: the disks go to a GPFS recovery group as pdisks, never as NSDs (the erasure code layout).
+    # Not "// true": jq's alternative operator takes false for missing too
+    if declare -F backend_disks_resolved >/dev/null && [ "$(jq -r '.nsddevices == false' <<<"$input")" != "true" ]; then
         backend_disks_resolved "$uuid" "${ids[@]}" || stc_fail "the $kind part of resolving the disks failed"
     fi
     stc_result "$(jq -cn --argjson d "$out" '{disks: $d}')"

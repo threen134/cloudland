@@ -85,13 +85,27 @@ function gpfs_nsd_exists()
     $gpfs_bin/mmlsnsd -X 2>/dev/null | awk '{print $1}' | grep -qx "$1"
 }
 
+# gpfs_debs_missing <input>: the packages of the installer (input "debs", files <package>_<version>_<arch>.deb) that are
+# not installed at their version, a line each; nothing when all are. Only gpfs.base is not enough: the editions share
+# its version, and a host left with the packages of a replica cluster has none of the erasure code ones
+function gpfs_debs_missing()
+{
+    local f pkg rest ver
+    for f in $(jq -r '.debs | keys[]' <<<"$1"); do
+        pkg=${f%%_*}
+        rest=${f#*_}
+        ver=${rest%%_*}
+        [ "$(dpkg-query -W -f='${Version} ${Status}' "$pkg" 2>/dev/null)" = "$ver install ok installed" ] || echo "$pkg"
+    done
+}
+
 # gpfs_install_packages <input>: install GPFS from a fetched installer (gpfs_install.sh, gpfs_upgrade.sh): take the
 # packages out of its tar.gz payload instead of running the self-extracting script, check them against the md5 sums of
 # its manifest and install them with apt, which brings their dependencies and upgrades a release installed before.
 # Input: {"sha256", "name", "payload_line", "version", "debs": {file: md5}}. Run in a job, with the gpfs-install lock
 function gpfs_install_packages()
 {
-    local input=$1 sha name line version file tmp members f md5 have aio
+    local input=$1 sha name line version file tmp members f md5 have aio extra missing
     sha=$(jq -r .sha256 <<<"$input")
     name=$(jq -r .name <<<"$input")
     line=$(jq -r .payload_line <<<"$input")
@@ -101,9 +115,11 @@ function gpfs_install_packages()
     [[ "$line" =~ ^[0-9]+$ ]] || stc_fail "invalid payload line"
     export DEBIAN_FRONTEND=noninteractive
     apt-cache show libaio1t64 >/dev/null 2>&1 && aio=libaio1t64 || aio=libaio1
-    if [ "$(dpkg-query -W -f='${Version}' gpfs.base 2>/dev/null)" = "$version" ] &&
-        [ "$(dpkg-query -W -f='${Status}' gpfs.base 2>/dev/null)" = "install ok installed" ]; then
-        echo "gpfs.base $version is installed already"
+    # The erasure code packages find the disks and their enclosures with lsscsi and sg3_utils (mmdiscovercomp)
+    extra=""
+    jq -e '.debs | keys | any(startswith("gpfs.gnr"))' <<<"$input" >/dev/null && extra="lsscsi sg3-utils"
+    if [ -z "$(gpfs_debs_missing "$input")" ]; then
+        echo "the packages of GPFS $version are installed already"
     else
         file=$cache_dir/storage-pkg/$sha/$name
         [ -f $file ] || stc_fail "the installer was not fetched"
@@ -119,13 +135,15 @@ function gpfs_install_packages()
         done
         stc_progress 40 "installing"
         apt-get -o DPkg::Lock::Timeout=600 update -q || echo "apt-get update failed, going on with the lists at hand"
-        apt-get -o DPkg::Lock::Timeout=600 install -y -q build-essential "linux-headers-$(uname -r)" ksh m4 $aio python3 iputils-arping             $tmp/gpfs_debs/*.deb || { rm -rf $tmp; stc_fail "apt-get install failed"; }
+        apt-get -o DPkg::Lock::Timeout=600 install -y -q build-essential "linux-headers-$(uname -r)" ksh m4 $aio python3 iputils-arping $extra \
+            $tmp/gpfs_debs/*.deb || { rm -rf $tmp; stc_fail "apt-get install failed"; }
         rm -rf $tmp
     fi
     # The build tools may be missing when gpfs.base was there already (installed by hand, or a failed run)
-    apt-get -o DPkg::Lock::Timeout=600 install -y -q build-essential "linux-headers-$(uname -r)" ksh m4 $aio python3 iputils-arping >/dev/null ||
+    apt-get -o DPkg::Lock::Timeout=600 install -y -q build-essential "linux-headers-$(uname -r)" ksh m4 $aio python3 iputils-arping $extra >/dev/null ||
         stc_fail "installing the build tools failed"
-    [ "$(dpkg-query -W -f='${Status}' gpfs.base 2>/dev/null)" = "install ok installed" ] || stc_fail "gpfs.base is not installed"
+    missing=$(gpfs_debs_missing "$input")
+    [ -z "$missing" ] || stc_fail "not installed: $(echo $missing)"
 }
 
 # gpfs_y <section> <field>: the values of a field in the -Y output of a mm command on stdin, for the lines of a
@@ -137,6 +155,32 @@ function gpfs_y()
         $2 == sec && col { print $col }'
 }
 
+# gpfs_y_rows <section> <field>...: per line of a section of the -Y output on stdin, the fields asked for, tab
+# separated, the columns found from the HEADER line (they move between releases)
+function gpfs_y_rows()
+{
+    local sec=$1
+    shift
+    awk -F: -v sec="$sec" -v want="$*" '
+        BEGIN { n = split(want, w, " ") }
+        $2 == sec && $3 == "HEADER" { for (i = 1; i <= NF; i++) col[$i] = i; ok = 1; next }
+        $2 == sec && ok {
+            line = ""
+            for (j = 1; j <= n; j++) line = line (j > 1 ? "\t" : "") (col[w[j]] ? $col[w[j]] : "")
+            print line
+        }'
+}
+
+# gpfs_vdisksets: the vdisk sets of the erasure code layout, a line each: name, created (yes / no), file system,
+# recovery groups (comma separated). Only the plain "mmvdisk vdiskset list -Y" has this summary; with --vdisk-set it
+# prints other sections
+function gpfs_vdisksets()
+{
+    $gpfs_bin/mmvdisk vdiskset list -Y </dev/null 2>/dev/null |
+        awk -F: '$2 == "vdisksetSummary" && $3 == "HEADER" { for (i = 1; i <= NF; i++) { if ($i == "vdisksetName") n = i; if ($i == "created") c = i; if ($i == "fsName") f = i; if ($i == "recoveryGroups") r = i }; next }
+            $2 == "vdisksetSummary" && n { print $n, $c, ($f == "" ? "-" : $f), $r }'
+}
+
 # backend_health <cluster uuid> <input>: the health of the cluster as this host sees it, the JSON of
 # shared-storage-design.md §14.1 on stdout. The nodes come from mmgetstate, the disks of each file system from
 # mmlsdisk (availability), the file systems from this host's mount and df, the summary of the components from
@@ -145,7 +189,7 @@ function gpfs_y()
 function backend_health()
 {
     local uuid=$1 input=$2 nodes disks="" fs mnt health=healthy msgs="" fsj="" mounted total free lines name state
-    local failed degraded comp nodes_total nodes_active disks_total disks_up
+    local failed degraded comp nodes_total nodes_active disks_total disks_up rg
     if [ ! -x $gpfs_bin/mmgetstate ]; then
         jq -cn '{health: "unknown", error: "GPFS is not installed on this host"}'
         return
@@ -184,6 +228,24 @@ function backend_health()
         fsj+=$(jq -cn --arg n "$fs" --argjson m $mounted --argjson t "${total:-0}" --argjson f "${free:-0}" \
             '{name: $n, mounted: $m, total: $t, free: $f}')$'\n'
     done < <(jq -r '.filesystems[]? | [.name, .mount] | @tsv' <<<"$input")
+    # The erasure code layout: the pdisks of the recovery group are the disks of the cluster, by name. A pdisk that is
+    # not ok (diagnosing, missing, draining...) is a warning: the code keeps the data readable while it rebuilds
+    rg=$(jq -r '.recovery_group // empty' <<<"$input")
+    if [[ "$rg" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]]; then
+        lines=$(timeout 60 $gpfs_bin/mmvdisk pdisk list --recovery-group $rg -Y </dev/null 2>/dev/null | awk -F: '
+            $2 == "pdiskSummary" && $3 == "HEADER" { for (i = 1; i <= NF; i++) { if ($i == "pdiskName") n = i; if ($i == "state") s = i }; next }
+            $2 == "pdiskSummary" && n && s && $n != "" { print $n "\t" ($s == "ok" ? "up" : $s) }')
+        if [ -z "$lines" ]; then
+            msgs+="recovery group $rg gave no pdisks"$'\n'
+            [ $health = healthy ] && health=warning
+        fi
+        disks+="$lines"$'\n'
+        while IFS=$'\t' read -r name state; do
+            [ -z "$name" ] || [ "$state" = up ] && continue
+            msgs+="pdisk $name of $rg is $state"$'\n'
+            [ $health = healthy ] && health=warning
+        done <<<"$lines"
+    fi
     # The summary of mmhealth: a component with failed entities is an error, with degraded ones a warning
     while IFS=$'\t' read -r comp failed degraded; do
         [ -z "$comp" ] && continue
