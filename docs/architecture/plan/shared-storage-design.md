@@ -1,6 +1,6 @@
 # 共享存储设计：在 CloudLand 里部署与使用 GPFS、Ceph
 
-- **状态**：S1、S2、S3 已实施并在 work-x 上验收（2026-10-03；S3 先在本机 WSL 沙箱里用单节点 Ceph 跑通，再在三台上用回环盘验收）；S4 起未做。各阶段的实施记录在 §16。都未提交（阶段 S0 的 GPFS 内核编译验证见 §2.2）。2026-10-01 做过一轮三路评审（代码事实核对、对抗式设计审查、内部一致性），正文已按结论修改，每条发现的处置见附录 H
+- **状态**：S1–S6 已实施，在 work-x 上验收通过，代码已提交并推送到 `origin/stage-01`。各阶段的完成时间：S1–S3 2026-10-03（S3 先在本机 WSL 沙箱里用单节点 Ceph 跑通，再在三台上用回环盘验收），S4 2026-10-03，S5 2026-10-04，S6 2026-10-06。S7 的纠删码第一版 2026-10-06 已实现（未提交、未部署；先在虚拟机里做了可行性验证，§7.9），多集群远程挂载和 SAN 共享 LUN 没开始。各阶段的实施记录在 §16，阶段 S0 的 GPFS 内核编译验证见 §2.2。2026-10-01 做过一轮三路评审（代码事实核对、对抗式设计审查、内部一致性），正文已按结论修改，每条发现的处置见附录 H
 - **日期**：2026-10-01，基于 `stage-01` 分支 `0778bb2a`（文中行号均以此为准）
 - **涉及**：clapi（`api/`）、节点脚本（`scripts/`）、cpgateway 代理白名单、前端（`web/`）、部署脚本（`deploy/`）
 - **相关文档**：
@@ -13,11 +13,20 @@
 ## 0. 摘要
 
 - **CloudLand 自己部署和管理存储集群**：系统管理员在界面上上传 GPFS 安装包、选节点和角色、选磁盘、填参数，CloudLand 经现有的命令通道（clapi → cland → cloudlet）在节点上完成安装、建集群、建文件系统（GPFS）或建池（Ceph）；之后的加节点、加盘、删节点、删集群也在界面上做。已有的外部集群可以「导入」，只用不管
-- **四层模型**：存储集群（GPFS 集群 / Ceph 集群）→ 文件系统（只有 GPFS）→ CloudLand 存储池（GPFS 的一个独立 fileset，或 Ceph 的一个 RBD 池）→ 卷。存储池以下沿用原设计的思路：按卷选驱动、clapi 下发路径、节点可用性、容量准入、共享迁移、宕机恢复
+- **四层模型**：存储集群（GPFS 集群 / Ceph 集群）→ 文件系统（仅 GPFS，Ceph 没有这一层）→ CloudLand 存储池（GPFS 的一个独立 fileset，或 Ceph 的一个 RBD 池）→ 卷。存储池以下沿用原设计的思路：按卷选驱动、clapi 下发路径、节点可用性、容量准入、共享迁移、宕机恢复
+  - **为什么 Ceph 没有文件系统层**：GPFS 是并行文件系统，磁盘（NSD）要先建成文件系统（如 `fs1`）并挂到各节点（`/gpfs/fs1`），存储池是其中的 fileset，卷是 fileset 里的 qcow2 文件。Ceph 的层次是集群 → OSD → 池，CloudLand 的存储池直接对应一个 RBD 池，卷就是池里的 RBD 镜像，QEMU 经 librbd 直接访问，不经过文件系统。Ceph 自带的文件系统 CephFS 没有用：虚拟机磁盘走 RBD，快照与克隆（格式 v2）更合适
+  - 框架里不按类型分支：Ceph 后端只是没有文件系统相关的步骤和接口（`LayoutCapabilities` 等按集群能力判断）
+
+    | 层 | GPFS | Ceph |
+    |---|---|---|
+    | 存储集群 | GPFS 集群 | Ceph 集群 |
+    | 文件系统 | `fs1` | 无 |
+    | 存储池 | 独立 fileset（带配额） | RBD 池 |
+    | 卷 | qcow2 文件 | RBD 镜像 |
 - **新做的通用部分**：多步骤任务引擎（每步每节点的状态与日志、重试、中止，节点上有持久的作业记录，重启、丢回调、重复下发都能收敛）、节点角色与磁盘认领（用到盘的那一刻按稳定 ID 和序列号核对身份）、部署前预检、每个集群独立的 SSH 密钥、存储进程的内存预留；软件包仓库（安装包上传到 S3、许可证确认、节点按预签名地址下载）只有 GPFS 用，随 S2 做
 - **通用接口**（§4.5）：GPFS、Ceph 和以后的共享存储都经同一套接口接入。集群一层是「存储后端」（每种存储一个 clapi 文件加一个节点钩子文件，类型专用的数据放进 JSON 列）；存储池一层是「驱动」（分文件型、块型两类，节点上每个操作一个通用脚本、每个驱动一个函数文件）。S1 的代码已按这个接口改好
 - **GPFS 节点必须是 Ubuntu 24.04**：手上的安装包（6.0.0.2）对 work-x 的 26.04 / 7.0 内核**编译失败，65 个错误**（§2.2）。IBM 也只支持到 24.04。GPFS 的真实环境测试要先解决「哪来的 24.04 节点」（§18 决策 D1）；Ceph 在现有节点上没有障碍。开发阶段先用本机 WSL 做沙箱（§2.5），不占 work-x
-- **测试环境的限制**：三台节点没有空闲磁盘（`sdb` 都被保留的 `local-hdd` 占着）、内存 30 GB、网络 2 Gbit/s。只够做功能测试（用文件做的回环盘），GPFS 纠删码版（ECE）的硬件门槛达不到，只能测副本模式（§2.3、§2.5）。2026-10-02 起 work-01 / 02 / 03 已重装为 Ubuntu 24.04（原有环境清空），`sdb` 上残留旧本地池的 LVM，擦除后可作测试盘（决策 D2）
+- **测试环境的限制**：三台节点各有两块 2 TB 的 SATA 机械盘，`sda` 是系统盘，`sdb` 给了 GPFS 集群 gpfs1；内存 31 GB、网络 2 Gbit/s。只够做功能测试（Ceph 用 `sda` 根文件系统上的回环盘）。GPFS 纠删码版（ECE）在物理机上建不起来（盘数达不到程序的硬性要求），但 2026-10-06 已在 work-x 上的三台 KVM 虚拟机里跑通了完整流程，可以做功能开发与验证（§2.3、§7.9）。2026-10-02 起 work-01 / 02 / 03 已重装为 Ubuntu 24.04（原有环境清空）
 - **从用户角度看完整流程**（管理员搭建、维护，普通用户使用）：GPFS 见 §19，Ceph 见 §20
 
 ---
@@ -47,7 +56,7 @@
 
 ### 1.3 非目标
 
-- **GPFS 纠删码（ECE 的 `mmvdisk` 恢复组）放在后面**（阶段 S7）：硬件门槛高，测试环境达不到（§2.3）。第一版用副本模式，ECE 安装包的许可证覆盖副本模式（§2.1）
+- **GPFS 纠删码（ECE 的 `mmvdisk` 恢复组）放在后面**（阶段 S7）：IBM 支持的硬件门槛高，测试环境的物理机达不到（§2.3）；功能流程已在 KVM 虚拟机里验证过（§7.9）。第一版用副本模式，ECE 安装包的许可证覆盖副本模式（§2.1）
 - **GPFS 的协议服务**（NFS / SMB / S3 / HDFS / AFM）、IBM 的图形界面（`gpfs.gui`）和 REST 接口（`gpfs.scaleapi`）、性能采集（zimon）：都不装。CloudLand 的界面替代图形界面，管理命令走节点脚本（§4.3）
 - **Ceph 的 CephFS、RGW（对象存储）、iSCSI / NVMe-oF 网关**：都不做，只用 RBD
 - **SAN 共享 LUN 做 GPFS 的 NSD**：第一版只用节点本地盘（无共享副本模式）。磁盘扫描现在会把多路径、FC、iSCSI 盘判为 `shared` 并拒绝（`scripts/kvm/storage_lib.sh:271` 的 `classify_disk`），以后要支持时再放开（阶段 S7）
@@ -118,17 +127,24 @@ CloudLand 在部署前做硬性预检（§6.5）：操作系统和内核不在�
 
 ### 2.3 GPFS 纠删码版（ECE）的硬件门槛
 
-按 IBM 的 ECE 硬件要求（[最低硬件预检](https://www.ibm.com/docs/en/storage-scale-ece/5.2.2?topic=requirements-minimum-hardware-precheck)）：
+IBM 的要求（[最低硬件预检](https://www.ibm.com/docs/en/storage-scale-ece/5.2.2?topic=requirements-minimum-hardware-precheck)）是**支持条件**，程序本身只强制其中一部分。2026-10-06 解开 6.0.0.2 安装包里的 `gpfs.gnr`（`mmvdisk` 的 Python 代码）并搜 `mmfsd` 的报错字符串，逐条核对：
 
-| 要求 | ECE | work-x |
-|---|---|---|
-| 每个恢复组的服务器数 | 3–32 台，配置相同 | 3 台，相同 ✓ |
-| 内存 | 64 GB 以上（每台 64 块盘以内） | 30 GB ✗ |
-| 网络 | 至少 25 Gbit/s | 2 Gbit/s（bond） ✗ |
-| CPU | 16 核以上 | 64 线程 ✓ |
-| 盘 | 每台若干块同型号盘 | 每台 2 块 HDD，都在用 ✗ |
+| 要求 | IBM 支持要求 | 程序是否强制 | work-x 物理机 |
+|---|---|---|---|
+| 服务器 | x86 只支持物理机 | 不检查。`mmvdisk` 发现全是 VMware 虚拟机时还会自动放宽槽位检查（见下面「盘的类型」一行） | 物理机 |
+| 每个恢复组的服务器数 | 3–32 台，配置相同 | **强制至少 3 台**（6.0.0.2 的 `mmvdisk_recoverygroup` 手册正文写 4–32，是旧文字，代码与 5.2.2 文档都是 3） | 3 台，相同 |
+| 内存 | 64 GB 以上（每台 64 块盘以内） | **强制约 10 GiB 以上**（`pagepool` 最少 8 GiB，最多占内存 80%），各台相差不超过 10% | 31 GB |
+| CPU | 16 核以上 | 不检查 | 64 线程 |
+| 网络 | 25 Gbit/s 以上、延迟低于 1 毫秒、Mellanox ConnectX 网卡 | 不检查 | 2 Gbit/s（bond） |
+| 盘的类型 | SAS / NL-SAS 盘接在 LSI 等 SAS 卡上（直通模式），或直连的 U.2 NVMe；**不支持 SATA、SMR**；每台至少一块 SSD / NVMe 放日志（合计 500 GB 以上）；盘要有唯一 WWN、能热插拔 | 代码里没找到拒绝 SATA 的检查（发现磁盘时 SAS 与 SATA 走同一条路），没实测；没有 SSD 时日志放在 HDD 那组盘上（实测如此）；**每块盘要有槽位位置**，实体机由 `ecedrivemapping` 从 storcli 或 NVMe 读出生成，没有就拒绝建恢复组，除非设隐藏参数 `nsdRAIDStrictPdiskSlotLocation=0` | 希捷 2 TB SATA 机械盘（ST2000NM0055，有 WWN），接在主板芯片组的 SATA 口（Intel C620，AHCI），没有 SAS 卡 |
+| 盘的数量 | 每台盘数和型号相同；至少一组（declustered array）12 块以上，每组至少 4 块 | **强制**：各台磁盘拓扑和盘数相同；至少一组达到规定块数；每组非备用盘的块数不少于纠删码宽度（4+2p 是 6，8+2p 是 10，8+3p 是 11） | **每台 2 块：`sda` 是系统盘，`sdb` 给了 gpfs1** |
+| 就绪检查工具 | 用 IBM 安装工具装时必跑（`ece_os_readiness`，不达标报 FATAL；[原仓库](https://github.com/IBM/SpectrumScale_ECE_OS_READINESS) 2024 年已归档，5.2.2 文档改指 IBM 的 SpectrumScaleTools） | 只有安装工具调用它；单独运行有 `--no-mem-check`、`--no-net-check` 等跳过开关；手工用 `mmvdisk` 装时根本不经过它 | — |
 
-**ECE 在现有测试环境上跑不了**（何况它也要 24.04）。第一版用「无共享副本模式」：每台节点的本地盘作为它自己的 NSD，每台节点一个故障组，数据和元数据都存 2 或 3 份。这是 Storage Scale 的基本功能，三台节点就够。
+结论：
+
+- **物理机上建不起来**，卡在盘数这条硬性检查上；回环盘大概率也凑不了数（`mmgetpdisktopology` 没有回环设备的分支，没实测）。另外 GPFS 一台节点只能属于一个集群，在物理机上做还得先拆掉 gpfs1
+- **功能验证可以在虚拟机里做**：2026-10-06 在 work-x 上用三台 KVM 虚拟机（每台 12 GB 内存、5 块带 WWN 的 virtio-scsi 虚拟盘）跑通了建集群、恢复组、4+2p 纠删码卷、文件系统，坏盘和停节点也按预期处理（§7.9）。IBM 不支持这种形态，2 Gbit/s 网络下的性能也没有参考意义，只证明功能流程对
+- 第一版仍用「无共享副本模式」：每台节点的本地盘作为它自己的 NSD，每台节点一个故障组，数据和元数据都存 2 或 3 份。这是 Storage Scale 的基本功能，三台节点就够
 
 ### 2.4 Ceph
 
@@ -170,7 +186,7 @@ WSL 没有 cloudlet，所以不能端到端（界面 → clapi → cland → 节
 ### 2.6 结论
 
 - 技术上可以做。Ceph 在现有节点上没有障碍；**GPFS 只能跑在 24.04 节点上**，测试要先有 24.04 的机器
-- 测试环境只够验证功能和流程，不够验证性能和 ECE
+- 测试环境只够验证功能和流程，不够验证性能；ECE 只能在虚拟机里验证功能（§2.3、§7.9）
 - 下面的设计不依赖「GPFS 节点在哪」：操作系统支持做成预检，同一区域混用 24.04 / 26.04 节点时，GPFS 存储池只在 24.04 节点上可用
 
 ---
@@ -888,7 +904,167 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 
 ### 7.9 纠删码模式（阶段 S7）
 
-只在硬件满足 §2.3 时做。流程换成 `mmvdisk`：`mmvdisk nodeclass create` → `mmvdisk server configure` → `mmvdisk server recycle` → `mmvdisk recoverygroup create` → `mmvdisk vdiskset define --code 4+2p|8+3p|...` → `mmvdisk vdiskset create` → `mmvdisk filesystem create`。预检加上 IBM 提供的 ECE 就绪检查工具（操作系统、网络、存储三项）。测试环境做不了，不展开。
+正式使用要满足 IBM 的支持条件（§2.3）；开发与功能验证可以在虚拟机里做。
+
+**实现（2026-10-06，第一版，未提交、未部署）**：
+- 后端：参数与布局规则在 `api/src/services/storage_backend_gpfs.go`；步骤、输入、收尾、拆除、健康输入在 `storage_backend_gpfs_ece.go`。
+- 节点：`scripts/kvm/storage/gpfs_ece.sh`（`configure` / `slots` / `create_rg` / `create_vs` / `create_fs`）；拆除在 `gpfs_cluster.sh` 的 `teardown_ece`；健康在 `backends/gpfs.sh` 的 `backend_health`。
+- 界面：创建向导的「GPFS 纠删码」卡片，集群详情显示纠删码方式、恢复组和纠删码卷。
+
+**参数**（`storage_clusters.params`）：
+- `layout: ece`；
+- `ece_code`：默认 4+2p；
+- `block_size`：按纠删码限定，默认 4M，三副本 / 四副本默认 2M；
+- `ece_set_size`：纠删码卷占恢复组空间的百分比，默认 80；
+- `pagepool_mib`：恢复组服务器的，默认且至少 8192；
+- `no_slot_map`：不要求槽位映射，仅测试；
+- `fs_name`。
+
+不接受 `data_replicas` 和 `test`，纠删码专用的参数也不能用在副本模式上。
+
+**布局规则**（`checkECELayout`）：
+- NSD 主机就是恢复组服务器，3–32 台，只有它们能给盘；
+- 每台盘数相同，暂时只支持一种介质（一组盘）；
+- 盘总数至少 12 块，且至少比纠删码宽度多 2 块；
+- 仲裁和管理节点的规则同副本模式；
+- 内存预留：服务器是 `pagepool` + 2 GiB，其他成员是默认 `pagepool` + 1 GiB。
+
+**部署步骤**（任务 `deploy`，`managed` + `ece`）：前 9 步与副本模式共用（`gpfsDeployPrefix`），之后换成纠删码的步骤。
+
+| # | 步骤 | 范围 | 做什么 | 说明 |
+|---|---|---|---|---|
+| 1–8 | `precheck` … `start` | — | 同 §7.2。`install` 另装 `gpfs.gnr*`、`gpfs.adv`、`gpfs.crypto`、`gpfs.compression`（和 `lsscsi sg3-utils`），安装包里没有 `gpfs.gnr` 时这一步就失败（建集群时已按版本拦下非纠删码版的包，坑 ⑫）；是否已装好按安装包里**每个**包的版本判断，不只看 `gpfs.base`（坑 ⑯）；`create_cluster` 把集群默认 `pagepool` 留在 1 GiB，服务器的由 `mmvdisk` 按节点类设 | 预检里的 IBM 就绪检查还没做 |
+| 9 | `resolve_disks` | 服务器 | 同 §7.2，但不写 `nsddevices`（输入 `nsddevices: false`；第一版的判断写错、一直在写，坑 ⑰）：盘交给恢复组当物理盘，不当 NSD | 结果里的内核设备名用来拼盘表达式 |
+| 10 | `ece_configure` | 管理节点 | 建节点类 `cl<ID>_nc` → 按盘表达式查拓扑（每台「needs attention no」、拓扑相同）→ `mmvdisk server configure --pagepool <字节数> --recycle one`；节点类已配置过就跳过配置；最后尽力跑一次 `mmdiscovercomp -N <节点类>`（坑 ⑭） | 盘表达式是 `<服务器 IP>:sdb,sdc;…`，只列认领的盘（`mmvdisk` 认 IP 作节点名）；重试从 `resolve_disks` 开始 |
+| 11 | `ece_slots` | 管理节点 | 实体机：检查每台有 `ecedrivemapping` 生成的槽位映射，没有就失败并提示先去生成；`no_slot_map`：对本节点类设 `nsdRAIDStrictPdiskSlotLocation=0`（提示处输入 999）和 `nsdRAIDDiskCheckVWCE=no`（坑 ⑩），逐台核对运行中的守护进程，没生效的逐台重启 | 实体机这条路没实测 |
+| 12 | `ece_create_rg` | 管理节点 | `mmvdisk recoverygroup create --recovery-group cl<ID>_rg --node-class … --disk-list <盘表达式>`；然后核对日志组数量（服务器数 × 2 + 1；服务器数取自盘表达式，节点类成员数对不上就失败），不够就补跑 `--complete-log-format`（坑 ⑦）；根日志组不在服务器列表第一台上时挪过去（坑 ⑮）；结果带每块物理盘的名字、所在服务器地址、设备和 WWN（取自 `mmlspdisk`，坑 ⑧），物理盘数必须等于认领的盘数（读不全时隔 15 秒重读，最多 10 次，仍不符就失败） | 超时 8 小时，进度看 `tscrvdisk` 进程；重试从 `resolve_disks` 开始 |
+| 13 | `ece_create_vs` | 管理节点 | 定义并建出纠删码卷 `cl<ID>_vs`，已定义 / 已建好的部分跳过 | 块大小限制：三副本 / 四副本 256K–2M，4+2p / 4+3p 512K–8M，8+2p / 8+3p 512K–16M；CloudLand 只开放 1M–16M 里对应的几档 |
+| 14 | `ece_create_fs` | 管理节点 | `mmvdisk filesystem create … --mmcrfs -T /gpfs/<fs> -A yes -Q yes`，等所有成员挂上 | 开配额：CloudLand 的存储池是带配额的 fileset（§7.4） |
+| 15 | `finish` | 全部成员 | 同 §7.2 | — |
+
+**收尾**（`gpfsECEDeployFinish`，记账部分与副本模式共用 `gpfsDeployDone`）：
+- 文件系统记录的数据副本数和元数据副本数都是 1。
+- 每块盘先按 WWN 找对应的物理盘：WWN 是认领时记下的，GPFS 写成 `naa.xxx`，比较前统一写法。找不到再按「服务器地址 + 解析时的设备名」找。
+- 找到后把物理盘名记成盘名，健康看护按这个名字对盘。有盘对不上，或两块盘对上同一块物理盘，部署就失败。
+- 集群 `attrs` 记下 `node_class`、`recovery_group`、`vdisk_set`、`ece_code`。
+
+**能力**：
+- 纠删码集群只支持部署、删除、建存储池、轮换密钥（`LayoutCapabilities`）。接口和集群详情按集群返回 `capabilities`，界面据此显示按钮。
+- 布局的组成经后端的可选接口 `LayoutInfo` 给出，接口返回通用的 `layout_info`（GPFS 纠删码：`code`、`no_slot_map`、`recovery_group`、`vdisk_set`、`node_class`），接口层不按类型分支。
+- 加减节点、加盘、移除盘、换盘、改角色、重新均衡、升级都关掉。
+- GPFS 每分钟「拉起状态为 down 的 NSD」的看护，对纠删码集群跳过。
+
+**删除**：拆除步骤先按 `mmvdisk` 的顺序拆纠删码这一层：文件系统 → 纠删码卷（恢复组上的每一个，含只定义未建的；有文件系统先删，已建的先 delete，再 undefine）→ 恢复组 → 取消服务器配置 → 删节点类。已经没有的层跳过，然后照副本模式删集群；输入里 `nsds` 为空，`ece` 只有恢复组与节点类。恢复组上已没有纠删码卷还删不掉时，停掉服务器再强制删（坑 ⑪）；还有纠删码卷时直接失败、不停服务器。
+
+**健康**：节点钩子收到 `recovery_group` 时查 `mmvdisk pdisk list -Y`，物理盘 `ok` 报成 `up`，其余状态照报（`diagnosing`、`missing/draining` 等）。clapi 按盘名对上集群的盘，照常告警。
+
+建好之后，CloudLand 存储池照 §7.4 建独立 fileset，驱动、准入、迁移与副本模式完全相同。
+
+**实测**（2026-10-06，用户「开发环境应该可以部署 你试试」）：
+
+- **环境**：经 CloudLand 建三台虚拟机 ece1 / ece2 / ece3，分别在 work-01 / 02 / 03 上，4 核 12 GB（系统里约 11.7 GiB），Ubuntu 24.04 server 云镜像，内核 6.8.0-142-generic。放在单独的 VPC（192.168.240.0/24），安全组子网内全放行，临时挂了弹性 IP 装软件包。
+- **测试盘**：CloudLand 挂的数据盘没有序列号，所以测试盘在宿主机上用 `virsh attach-device` 另挂。每台先热插一个 virtio-scsi 控制器，再插 5 块 64 GiB 稀疏 raw 盘，每块指定 `<wwn>`、`<serial>`、`rotation_rate='7200'`。虚拟机里看到的是带 WWN 的 SCSI 机械盘，`mmvdisk` 认成「ECE 5 HDD」，三台匹配度 100/100。
+
+| 步骤 | 耗时 | 结果 |
+|---|---|---|
+| 装包、`mmbuildgpl`、建集群并启动 | 几分钟 | 三台 active |
+| `server configure` | 每台重启一次 | 默认把 `pagepool` 设成 10G，虚拟机只剩约 100 MB 可用内存，触发 OOM；改成 8 GiB 后剩约 2 GB |
+| 建恢复组 rg1 | 约 1.5 小时 | 一组 15 块盘、2 块的备用空间，建出 7 块日志盘 |
+| 4+2p 纠删码卷 vs1（4 MiB 块，`--set-size 80%`） | 32 秒 | — |
+| 文件系统 ecefs，三台挂载 | 73 秒 | 3.7G |
+| 写 1 GiB 随机数据 | — | 三台 md5 一致 |
+| 在宿主机上热拔 ece2 的一块盘 | 约 25 秒发现 | 判为 `diagnosing`，开始重建（`rebuild-1r`）；三台读写照常，期间写的 200 MiB 校验正确 |
+| 把盘插回 | 约 75 秒 | 全部盘恢复 ok，开始 `rebalance` |
+| 停 ece3 的 GPFS | — | 它的两个日志组切到 ece1 / ece2，盘显示 `missing/draining`；剩下两台读写照常 |
+| 启动 ece3 | 约 40 秒 active | ece3 读出的三个文件 md5 全对，约 1 分钟后全部盘 ok |
+
+**踩到的坑**（实现 S7 时照着做）：
+
+1. **槽位位置**：恢复组要求每块盘有槽位，虚拟盘没有，报 `Slot location is missing ... empty slot locations are found`。
+   - 这个检查在 `mmfsd` 里，由隐藏参数 `nsdRAIDStrictPdiskSlotLocation` 控制。`mmvdisk` 发现节点全是 VMware 虚拟机时会自己设成 0，KVM 识别不出来，要手工设。
+   - `mmchconfig` 不认这个参数，会提示按回车跳过，要在提示处输入 `999` 才会写入：`printf '999\n' | mmchconfig nsdRAIDStrictPdiskSlotLocation=0 -N <nc>`。之后要逐台重启守护进程才生效，用 `mmdiag --config` 核对。
+   - `mmvdisk server configure --custom-config` 最终也是调 `mmchconfig`，同样停在这个提示上；非交互执行时没人输入 `999`，参数不会写入（实测如此）。
+2. **`pagepool`**：
+   - `--pagepool` 只认纯字节数或百分比，写 `8G` 会报 `Invalid argument`（代码只把非数字的值当成 `dynamic`）。
+   - 带 `--update` 时，程序取旧值和新值里大的那个，只能调大不能调小；实测是先 `mmvdisk server unconfigure` 再 `configure` 才调小的。有了恢复组之后还能不能取消配置没试过（多半不行），所以第一次 `configure` 就要给对。
+   - 和云服务器混跑的节点，内存预留（§6.7）要把它算进去。
+3. **`--recycle all`** 会要求人工确认（同时重启会短暂失去仲裁），节点脚本里用 `--recycle one`，并给命令一个空的标准输入。
+4. **日志盘的空间与时间**：
+   - 每台服务器两个日志组，每个日志组一块 32G、三副本的日志盘，另有一块 2G 的根日志盘。三台按名义大小算约 582 GiB 原始空间，另留 2 块盘的备用空间。
+   - 建完后每块盘（63 GiB）还剩约 21 GiB 空闲，但 `mmvdisk` 只给纠删码卷放出 9.3 GiB 原始空间，最后是 3.7G 的文件系统。剩下的空闲为什么不给（备用之外还按什么保留）没查清。
+   - 下次测试盘给 256 GiB 以上（稀疏文件，只占实际写入的空间），能留出多少还要实测。
+   - 建日志盘时三台宿主机的系统盘合计约 120 MB/s，写了约 1.5 小时。
+5. **虚拟盘的形态**：拓扑发现主要靠 SCSI 查询（`sg_inq`、WWN、序列号），所以用 virtio-scsi 盘并给 WWN 和序列号。
+   - virtio-blk 盘（`/dev/vd*`）脚本里虽然有分支，但没有 WWN，没试过。
+   - CloudLand 现在挂数据盘的 XML 不带序列号，开发环境的测试盘只能手工挂。
+6. **手册与代码不一致**：手册写恢复组 4–32 台，代码是至少 3 台。
+7. **日志盘可能被推迟**：在 LIO 模拟盘（256 GiB）上建恢复组时，`mmvdisk` 7 分钟就返回了，但提示 `Deferring recovery group log vdisk creation and format`，之后要再执行 `mmvdisk recoverygroup create --complete-log-format` 才能定义纠删码卷。代码里是建恢复组的某一步返回非零时设推迟，具体原因没查清；在 64 GiB 的 virtio-scsi 盘上没有推迟。节点脚本一律核对日志组数量，不够就补跑，所以两种情况都能走通。
+8. **`mmvdisk pdisk list -Y` 没有设备和 WWN**：它的 `pdiskSummary` 只有物理盘名、所在节点、状态、容量和型号（`fru`，LIO 盘是 `lio3`，实体盘上多块会相同）。设备和 `WWN` 要从 `mmlspdisk <rg>` 的段落输出里取；恢复组正在格式化日志盘时，`mmlspdisk` 会直接失败。**盘在哪台服务器要看 `device`**：scale-out 的写法是 `//ece1/dev/sdc`；段落里的 `server` 是此刻服务这个恢复组的节点（实测 15 块盘的 `server` 全是 ece3），不是盘所在的节点。第一版按 `server` 取地址，15 块盘的地址全是 ece3（2026-10-07 修；收尾先按 WWN 对盘，所以没影响到盘名）。
+9. **节点类上的参数在节点类删掉后可能残留**：所以 `ece_slots` 每次都对本集群的节点类重设 `nsdRAIDStrictPdiskSlotLocation`，再逐个守护进程核对实际生效的值，不靠 `mmlsconfig` 判断。
+10. **LIO 模拟盘的写缓存与 DPO 两头卡**（2026-10-07 在 LIO 盘上补跑 `--complete-log-format` 时卡住 35 分钟才查清）：
+    - 慢盘上写超时后，GNR 诊断这块盘时发带 DPO 位的 `Read(10)`。LIO 只在设备声明了写缓存时接受 DPO（内核 `sbc_check_dpofua` → `target_check_fua`），fileio 写直通（`write-thru`）不声明，于是一律回 `ILLEGAL REQUEST / invalid field in CDB`（来宾内核日志 `Got CDB: 0x28 with DPO bit set, but device does not advertise support for DPO`）。盘一直卡在诊断里，日志格式化等它，持着恢复组锁和 SDR 锁，`mmlspdisk` / `mmlsrecoverygroup` 全部排队。
+    - 打开 `emulate_write_cache` 后 DPO 能过，但 GNR 看到易失写缓存就把盘标成 `VWCE`，想关掉又关不掉（LIO 不让改），开始迁出数据（`draining`）。这由隐藏参数 `nsdRAIDDiskCheckVWCE` 控制，`mmvdisk server configure` 把它设成 1。
+    - 所以模拟盘要两样一起：LIO 每块盘 `emulate_write_cache=1`（写直通下写仍是同步的，只是多声明了一个缓存），恢复组服务器 `nsdRAIDDiskCheckVWCE=no`。后者是 GPFS 认识的参数，只收 yes / no（`mmdiag --config` 显示 1 / 0，第一版写成 `=0` 被 `mmchconfig` 拒绝），不像槽位参数要输 999；`ece_slots` 在 `no_slot_map` 时两个一起设、逐台核对（`test_disk_attrs`）。前者是测试环境的准备工作，不在 CloudLand 里做。
+    - virtio-scsi 盘（QEMU `scsi-hd`）没有这个问题：QEMU 不按写缓存拦 DPO，也允许 GNR 关掉写缓存。
+11. **半成品恢复组删不掉**：日志格式化被打断（上面那次杀掉卡住的命令后重启 GPFS）后，守护进程里还有根日志盘 RG001ROOTLOGHOME，集群配置里却没有，`mmvdisk recoverygroup delete` 报 `Vdisk RG001ROOTLOGHOME not found` 失败；`-p`（只从配置里删）又不能用在还在服务的恢复组上。`teardown_ece` 的兜底：普通删除失败时先 `mmshutdown -N <节点类成员>`，再 `mmvdisk recoverygroup delete --confirm -p`（提示处输入 yes），之后照常取消服务器配置、删节点类；集群随后整个删掉，所以不再启动这些节点。`-p` 不清盘上的 pdisk 描述，这些盘再认领时要勾「清除旧数据」（`wipe_disk` 清两端各 10 MiB 后，在同一批盘上重建恢复组可以成功，见下面的实测）。
+12. **安装包要纠删码版**：只有纠删码版的安装包里有 `gpfs.gnr`。原先要到部署中途 `install` 那一步才失败，现在建集群时就检查（通用钩子 `storagePackageChecker`，GPFS 的 `CheckPackage`：纠删码布局只收 `edition = erasure_code`），向导里其他版本的包置灰并说明原因。
+13. **`mmvdisk vdiskset list --vdisk-set X -Y` 没有汇总段**：它输出 `vdisksetAttributes` / `vdisksetDaSizing` / `vdiskSetServerMemory`，`vdisksetSummary`（名字、是否已建、文件系统、恢复组）只在不带参数的 `vdiskset list -Y` 里。第一版按带参数的输出找汇总段，结果永远「不存在」：`ece_create_vs` 重试时再定义一次报 `already exists`，`teardown_ece` 跳过纠删码卷、删恢复组报 `is in use by vdisk set`，又被当成「建到一半」走了兜底、停掉了服务器（2026-10-07 在真机上跑出来的）。改为 `backends/gpfs.sh` 的 `gpfs_vdisksets` 读不带参数的列表；`teardown_ece` 删恢复组上的所有纠删码卷（含只定义未建的、先删其上的文件系统），拆除输入不再带 `vdisk_sets`；恢复组上还有纠删码卷时直接失败，不走兜底。
+14. **刚部署完健康就是 warning：`ess_config_mismatch`**（2026-10-07 物理机端到端发现）：健康监控拿 `mmlscomp`（组件库）的节点列表比 `mmlscluster`，对不上就报 GPFS 降级。按它的提示要跑 `mmdiscovercomp`，而它在各节点调 `mmgssconfig discoverinfo`，缺 `/usr/bin/lsscsi` 时直接失败（Ubuntu 默认没装）。装包步骤在安装包带 `gpfs.gnr` 时一起装 `lsscsi sg3-utils`，`ece_configure` 最后尽力跑一次 `mmdiscovercomp`。但组件只能登记 IBM / Lenovo 的已知型号和盘柜（`mmlscompspec`），这几台 Supermicro 加 LIO 盘发现 0 个组件，这个事件消不掉、也不能隐藏（只有提示级事件能 `mmhealth event hide`），集群健康一直是 warning、`StorageClusterUnhealthy` 一直在。实体机上用支持的服务器时应能发现组件，没验证。
+15. **根日志组不在首选服务器上：`gnr_rg_not_primary`**：建恢复组时 `mmvdisk` 把根日志组放到了 work-02，而服务器列表第一台是 work-01，三台都报这个警告（提示升级前要纠正）。`--active DEFAULT` 不动它（默认位置就是 work-02），要 `mmvdisk recoverygroup change --log-group root --active <第一台>`，12 秒，三台的事件随即消失、NATIVE_RAID 恢复健康。`ece_create_rg` 最后按 `mmlsrecoverygroup -Y` 的 server 行检查并挪过去（`primary_root`，失败只记日志）。节点重启后日志组可能又漂走，那时这个警告是真的
+16. **只看 `gpfs.base` 判断「已装好」**（2026-10-07 代码审查）：数据管理版和纠删码版的 `gpfs.base` 版本号相同，节点上留着副本集群的包（删集群时没卸）时，纠删码部署跳过安装、`gpfs.gnr` 一直没装，`ece_configure` 报「mmvdisk is not installed」，重试也一样。改为按安装包清单里每个包的文件名（`<包>_<版本>_<架构>.deb`）逐个核对（`gpfs_debs_missing`）
+17. **`jq '.nsddevices // true'` 把 `false` 也当成没给**（2026-10-07 代码审查）：jq 的 `//` 对 `false` 和 `null` 一视同仁，所以「纠删码不写 `nsddevices`」从来没生效，两次验证里都写进了恢复组服务器（功能没受影响）。改为 `.nsddevices == false`
+18. **其他代码审查修复**（2026-10-07）：`ece_create_rg` 的进度监视继承了作业的集群锁（fd 5），被杀后残留的 `sleep` 还占着锁，下一步要多等最多 30 秒（与 keepalived 的 `9>&-` 同一个坑；改为 `5>&-` 并连子进程一起杀）；磁盘拓扑和 `primary_root` 原先按固定列号读 `-Y` 输出，改为按表头取列（`gpfs_y_rows`）；布局检查的宽度报错原先打印现有盘数而不是需要的盘数；两种布局的部署计划前 9 步与收尾记账合并（顺带修了副本模式的老问题：收尾重跑、文件系统记录已存在时盘的 `fs_id` 被写成 0）
+
+**LIO 模拟盘上的节点脚本验证**（2026-10-07，试验虚拟机 ece1–3，每台 5 块 256 GiB 的 LIO fileio 盘，`emulate_write_cache=1`；节点脚本按作业协议执行，编排 work-01 `/root/ece-spike-{12,13,14,15}.sh`，用例 TC-25）：
+
+| 步骤 | 耗时 | 结果 |
+|---|---|---|
+| `ece_configure` | 3 分钟 | 拓扑三台「ECE 5 HDD」100/100，逐台重启 |
+| `ece_slots`（`no_slot_map`） | 2.5 分钟 | 两个参数在三台守护进程里都是 0（第一次因 VWCE 参数写成 0 失败，见坑 ⑩） |
+| `ece_create_rg` | 3 小时 35 分 | 7 块日志盘，没有推迟（推迟应是 DPO 问题引起的）；每台写 LIO 盘只有约 15 MB/s（盘在宿主机系统盘上的稀疏文件里，写直通每次都要同步） |
+| `ece_create_vs` | 1.5 分钟 | 4+2p，6 块纠删码盘 218 GiB |
+| `ece_create_fs` | 7 分钟 | 1.3T，三台挂上 |
+| 各步重跑 | 每步 0.5 分钟 | `configure` / `slots` / `create_rg` / `create_fs` 都发现已做完；`create_vs` 第一次失败（坑 ⑬），修后跳过 |
+| 健康钩子 | — | 15 块物理盘 `up`；整体 warning 来自 `mmhealth` 的历史事件（前一轮 rg1 的服务器 panic、接管失败、盘诊断，以及更早的 OOM、节点被驱逐），这类 INFO_EXTERNAL 事件不会自己消失，测试环境要手工清 |
+| 写 1 GiB、三台读 | — | md5 一致 |
+| 拔掉 ece2 一块 LIO 盘 | — | `n002p003` 报 `missing/draining`，其他节点读数据照常；插回后 10 分钟内全部 ok |
+| `teardown_ece` | 2.3 分钟 | 第一次没删纠删码卷、错误地停了服务器（坑 ⑬），修后文件系统、纠删码卷、恢复组、服务器配置、节点类都删掉，GPFS 一直 active |
+
+**物理机端到端**（2026-10-07，用户同意删 gpfs1 并部署；界面 → clapi → cland → cloudlet → 节点）：先删掉 gpfs1（连带 gp1、s4ga-1、gv1、gv2，卸软件包、擦盘），三台在 sdb 上建 xfs、各放 5 块 256 GiB 的 LIO fileio 盘（`emulate_write_cache=1`，配置由 `rtslib-fb-targetctl` 开机恢复），扫描后是 15 块带 WWN 的空闲机械盘。经接口预检、部署集群 `gece`（4+2p、`no_slot_map`、文件系统 `efs1`）：
+
+| 项 | 结果 |
+|---|---|
+| 部署（15 步） | 2 小时 10 分：前 11 步约 20 分钟（装 12 个包、编模块、建集群、拓扑三台「ECE 5 HDD」、两个检查参数关掉）；建恢复组 1 小时 40 分（每台 sdb 约 40 MB/s，是虚拟机里的 2.7 倍，每块日志盘 13–19 分钟）；纠删码卷 2 分钟；文件系统 7 分钟（1.3T） |
+| 收尾 | 15 块盘按 WWN 对上物理盘名，节点对应正确（n001 → work-01……）；每台预留 10240 MiB；`capabilities` 只剩部署 / 文件系统 / 建池 / 轮换密钥 |
+| 不支持的操作 | 加盘、加节点、移除盘、换盘、重新均衡、升级、改角色、移除节点都 400「gpfs clusters (ece) do not support this operation yet」，集群保持 ready |
+| 公网界面（只读） | 详情页布局 / 纠删码 / 恢复组 / 纠删码卷 / 无槽位映射、没有加节点 / 加盘 / 升级 / 移除 / 换盘按钮、15 个物理盘名；向导里两个纠删码版的包都能选 |
+| 存储池与卷 | 池 `ep1`（fileset、60 GB 配额、三台可用）；卷在 work-01 的云服务器写 64 MiB、挂到 work-03 的云服务器读出 md5 一致 |
+| 系统盘与迁移 | 系统盘从池里的基础副本克隆，云服务器在 work-02 起来；热迁移到 work-03，磁盘计划「共享、不复制」，标记文件一致 |
+| 拔盘 | 删掉 work-02 的 lun2：`n002p005` 报 `missing/draining`，2 分钟后 `StorageDiskDown`（带 WWN 和节点）；期间云服务器照常写盘；插回 3 分钟内恢复、告警解除 |
+| 删除 | 文件系统 → 纠删码卷 → 恢复组 → 服务器配置 → 节点类，没走兜底；卸软件包，15 块 LIO 盘盘头清零 |
+| 健康 | 部署后一直 warning：`ess_config_mismatch`（坑 ⑭，消不掉）与 `gnr_rg_not_primary`（坑 ⑮，已在收尾里纠正）；另有部署中逐台重启时的 `expel_conn_loss`（通知级，不算降级） |
+
+**健康看护与运维**（S5 的框架照用，命令不同）：
+
+- 盘状态：`mmvdisk pdisk list --recovery-group <rg> --not-ok`。
+- 后台任务（重建、均衡、巡检）与剩余空间：`mmvdisk recoverygroup list --recovery-group <rg> --declustered-array`。
+- 日志组在哪台：`mmvdisk recoverygroup list --recovery-group <rg> --log-group`。
+- 坏盘由纠删码自己重建，不像副本模式要 `mmchdisk start`；换盘走 `mmvdisk pdisk replace`。
+
+**没做 / 没测**：
+- 换盘（`mmvdisk pdisk replace`）、加减服务器（`mmvdisk recoverygroup add` 等）、带恢复组的滚动升级。
+- 实体机上的槽位映射（`ecedrivemapping`）。
+- 就绪检查、§6.6 的 SSH 包装脚本与 `adminMode=central` 下的 `mmvdisk`。
+- 8+2p / 8+3p，要更多盘；一组 SSD 加一组 HDD 的两组盘布局。
+- 纠删码卷可用空间的算法（坑 ④）。
+- 性能。
+- 实体机（SAS / NVMe、IBM 认可的服务器）上的部署：槽位映射、`mmdiscovercomp` 发现组件（坑 ⑭）都没验证。
+
+**测试环境**（保留中）：
+- 脚本在 work-01 的 `/root/ece-spike-{1-prep,2-vms,3-disks,4-install,6-faults}.sh`，`/root/ece-spike-lib.sh` 里的 `gx <n> <命令>` 进虚拟机执行。
+- 建文件系统那步的脚本在 ece1 的 `/root/ece-step5-fs.sh`。
+- 状态在 `/root/ece-spike.state`，里面记着改动前的配额。
+- 测试盘的文件在三台宿主机的 `/var/lib/cl-ece-spike/`，各占约 200 GB。
 
 ---
 
@@ -1873,6 +2049,24 @@ GPFS 优先：S2 先于 S3 开工。S2 的任何真实验证都要 24.04 的节�
 
 GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPFS 集群、对接已有的存储集群）、SAN 共享 LUN 做 NSD。
 
+**纠删码的可行性验证**（2026-10-06，还没写代码）：
+- work-x 的物理机建不起来：每台只有 2 块 SATA 盘，程序硬性要求的盘数不够（§2.3）。
+- 在 work-x 上三台 KVM 虚拟机里，用 6.0.0.2 手工跑通了建集群、恢复组、4+2p 纠删码卷、文件系统、坏盘重建、停节点。步骤、坑和结果见 §7.9，测试环境保留着。
+- 实现时：在 §7.2 的部署任务后面接第 9–15 步；健康看护换成 `mmvdisk` 的盘和后台任务查询；开发环境的测试盘要带 WWN 和序列号（CloudLand 现在挂的数据盘没有）。
+
+**纠删码第一版**（2026-10-06，用户「先验证模拟盘再定」并同时写代码；未提交、未部署）：
+- 范围：部署、删除、建存储池、轮换密钥。
+- 实现说明见 §7.9。
+- 测试：
+  - 单元测试 `TestGPFSECE*`；
+  - PostgreSQL 测试 `TestStorageGPFSECEDeployPG`，覆盖从建集群到删除下发的每一步输入、物理盘命名、能力、非纠删码版安装包被拒；
+  - WSL 沙箱 `gpfs-spike/stc-test9.sh`（13 项，替身 `mm*` 命令）：`ece_slots` 的两个参数与按需重启、`ece_create_rg` 补跑推迟的日志盘与 `mmlspdisk` 的两种 `device` 写法、`teardown_ece` 的兜底；
+  - 本机界面 `pw/stc-ui-ece.js`（24 项，接口在浏览器里模拟）：纠删码卡片、只能选纠删码版的包、参数页、预检与创建的载荷、详情页；
+  - 节点脚本在试验虚拟机里按作业协议对着真的 `mmvdisk` 执行（用例 `test-items/TC-25-GPFS纠删码.md`）。
+- 2026-10-07 在 LIO 模拟盘上按作业协议把节点脚本完整跑了一遍（部署 → 重试 → 健康 → 拔盘 → 拆除，结果见 §7.9「LIO 模拟盘上的节点脚本验证」），查出并修了 6 个问题（§7.9 坑 ⑧ 的盘所在节点、⑩–⑬，以及 `nsdRAIDDiskCheckVWCE` 只收 yes / no）。
+- 物理机上用 LIO 模拟盘跑通了 CloudLand 端到端（2026-10-07，§7.9「物理机端到端」）：部署 2 小时 10 分、不支持的操作 400、建池建卷、系统盘与热迁移、拔盘告警、删除，又修了 2 个问题（坑 ⑭ 的 `lsscsi` 与 `mmdiscovercomp`、坑 ⑮）；`ess_config_mismatch` 在非 IBM 硬件上消不掉，健康一直 warning。
+- 加减节点、换盘、升级以后再做。
+
 ---
 
 ## 17. 测试方案
@@ -1941,6 +2135,7 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 | V20 | 24.04 节点上 `qemu-block-extra` 带不带 RBD 驱动。**带**（2026-10-01 核对三台节点：`block-rbd.so` 在） | §8.4 | S3 |
 | V21 | 节点永久离线时 `mmdelnode`、`mmdeldisk -p` 的确切用法 | 离线移除（§7.5） | S2 |
 | V22 | ~~WSL 沙箱里能否为 WSL 内核编出并加载 GPFS 模块~~ **否**（2026-10-01）：编得出、版本校验过得了，加载 `mmfslinux` 时 `jump_label` 致命错误、内核崩溃；WSL 没有嵌套虚拟化 | 开发方式（§2.5）：GPFS 只能在 24.04 节点上验证 | S0（已做） |
+| V23 | GPFS 纠删码版能否在测试环境里建起来。**物理机不能，虚拟机能**（2026-10-06）：物理机每台只有 2 块 SATA 盘，程序硬性要求的盘数不够；三台 KVM 虚拟机各挂 5 块带 WWN 的 virtio-scsi 盘，设 `nsdRAIDStrictPdiskSlotLocation=0` 后建出恢复组、4+2p 纠删码卷与文件系统，坏盘重建、停节点都正常（§2.3、§7.9）。还没测：实体机上的槽位映射（`ecedrivemapping`）、换盘、加减服务器、带恢复组的升级、性能 | S7 能否在现有环境开发 | S7（虚拟机已做；实体机要合规硬件） |
 
 ### 18.3 风险
 
@@ -2066,7 +2261,7 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 | S4 | 镜像预热 | 系统盘放 GPFS、秒级克隆、全共享热迁移 |
 | S5 | 健康告警、监控曲线、完整日志、重新均衡、换盘、新节点自动加入 | — |
 | S6 | 滚动升级、密钥轮换、宕机疏散 | 节点宕机后云服务器能在别处恢复 |
-| S7 | 纠删码版（ECE）、多集群 | — |
+| S7 | 纠删码版（ECE，功能已在虚拟机里验证，§7.9）、多集群 | — |
 
 ---
 
@@ -2368,6 +2563,52 @@ mmsetquota fs1:cl_1a2b3c4d --block 10T:10T
 ```
 
 测试环境用回环设备时，节点开机后要先把回环设备建好再启动 GPFS（一个排在 `gpfs.service` 之前的 systemd 单元），否则 NSD 找不到盘。
+
+纠删码模式（§7.9），2026-10-06 在虚拟机里按这个顺序执行过的命令（`ecedrivemapping` 那行除外，它只用于实体机，没跑过）：
+
+```bash
+# install: the replica-mode packages plus the GNR ones and the ECE license
+apt-get install -y ./gpfs.base_*.deb ./gpfs.gpl_*.deb ./gpfs.gskit_*.deb ./gpfs.msg.en-us_*.deb \
+    ./gpfs.license.ec_*.deb ./gpfs.adv_*.deb ./gpfs.crypto_*.deb ./gpfs.compression_*.deb \
+    ./gpfs.gnr_*.deb ./gpfs.gnr.base_*.deb ./gpfs.gnr.support-scaleout_*.deb \
+    ksh libaio1t64 iputils-arping m4 sqlite3 nvme-cli sg3-utils build-essential linux-headers-$(uname -r)
+
+mmvdisk nodeclass create --node-class nc1 -N ece1,ece2,ece3
+mmvdisk server list --node-class nc1 --disk-topology      # all "no" attention, same topology, 100/100
+# pagepool in bytes or n% only ("8G" is rejected); --update never lowers it
+mmvdisk server configure --node-class nc1 --pagepool 8589934592 --recycle one </dev/null
+
+# slot mapping: real servers map the slots (not run here), VMs have none and turn the slot check off;
+# mmchconfig asks to confirm an attribute it does not know, 999 means "write it anyway"
+ecedrivemapping --mode lmr            # real servers only, or --mode nvme
+printf '999\n' | mmchconfig nsdRAIDStrictPdiskSlotLocation=0 -N nc1
+mmshutdown -N <node>; mmstartup -N <node>   # one node at a time, then: mmdiag --config | grep StrictPdisk
+
+mmvdisk recoverygroup create --recovery-group rg1 --node-class nc1 </dev/null     # took 1.5 h on HDDs
+mmvdisk vdiskset define --vdisk-set vs1 --recovery-group rg1 --code 4+2p --block-size 4m --set-size 80%
+mmvdisk vdiskset create --vdisk-set vs1
+mmvdisk filesystem create --file-system ecefs --vdisk-set vs1 --mmcrfs -T /gpfs/ecefs
+mmmount ecefs -a
+
+# health and placement
+mmvdisk pdisk list --recovery-group rg1 --not-ok
+mmvdisk recoverygroup list --recovery-group rg1 --declustered-array   # background task, free space
+mmvdisk recoverygroup list --recovery-group rg1 --log-group           # which server serves each log group
+```
+
+虚拟机里的测试盘（宿主机上执行，每块盘一个文件；CloudLand 挂的数据盘没有序列号，不能用）：
+
+```xml
+<controller type='scsi' index='1' model='virtio-scsi'/>
+<disk type='file' device='disk'>
+  <driver name='qemu' type='raw' cache='none' io='native'/>
+  <source file='/var/lib/cl-ece-spike/ece1-d1.raw'/>
+  <target dev='sdb' bus='scsi' rotation_rate='7200'/>
+  <serial>ECE1D1</serial>
+  <wwn>0x5000c50e0ece0011</wwn>
+  <address type='drive' controller='1' bus='0' target='0' unit='1'/>
+</disk>
+```
 
 ---
 
