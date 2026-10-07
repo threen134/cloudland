@@ -138,7 +138,10 @@ func (a *StorageClusterAdmin) ReplaceDisk(ctx context.Context, uuid, diskUUID st
 			if err := tx.Create(record).Error; err != nil {
 				return 0, NewCLError(ErrStorageDiskNotAllowed, fmt.Sprintf("Disk %s of host %d is claimed already", record.DiskID, record.Hostid), err)
 			}
-			return cluster.ID, tx.Model(&model.StorageClusterDisk{}).Where("id = ?", old.ID).Update("status", model.StorageDiskRemoving).Error
+			if err := tx.Model(&model.StorageClusterDisk{}).Where("id = ?", old.ID).Update("status", model.StorageDiskRemoving).Error; err != nil {
+				return 0, err
+			}
+			return cluster.ID, storageRefreshReserve(tx, cluster)
 		}})
 }
 

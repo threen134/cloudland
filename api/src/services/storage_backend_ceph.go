@@ -175,16 +175,34 @@ func (cephBackend) InitialAttrs(existing []*model.StorageClusterNode, existingDi
 	return nil, nil
 }
 
+// The memory the daemons of a managed cluster take on a host (§6.7)
+const (
+	cephMonReserveMiB  = 2048
+	cephMgrReserveMiB  = 1024
+	cephOsdOverheadMiB = 512
+	// The daemons go after the VMs of a host when its memory runs out (§6.7.2). Not -1000: with the daemons taking
+	// the memory, the kernel would have nothing left to kill
+	cephOomScoreAdj = -900
+)
+
 // mon 2 GiB, mgr 1 GiB, every OSD its memory target + 0.5 GiB; a client takes nothing, librbd counts in QEMU (§6.7)
 func (cephBackend) ReserveMB(roles []string, disks int, params interface{}) int32 {
 	var mb int32
 	if hasRole(roles, model.StorageRoleMon) {
-		mb += 2048
+		mb += cephMonReserveMiB
 	}
 	if hasRole(roles, model.StorageRoleMgr) {
-		mb += 1024
+		mb += cephMgrReserveMiB
 	}
-	return mb + int32(disks)*int32(cephOsdMemoryMiB(params.(*cephParams))+512)
+	return mb + int32(disks)*int32(cephOsdMemoryMiB(params.(*cephParams))+cephOsdOverheadMiB)
+}
+
+// cephOomProtect is what the units of the daemons give their containers when they start (ceph_oom_protect.sh,
+// §6.7.2): the oom_score_adj, and as memory.low the reservation of each kind of daemon, so what the kernel keeps for
+// them is what the hosts hold back for them
+func cephOomProtect(p *cephParams) map[string]interface{} {
+	return map[string]interface{}{"adj": cephOomScoreAdj, "mon_bytes": int64(cephMonReserveMiB) << 20, "mgr_bytes": int64(cephMgrReserveMiB) << 20,
+		"osd_bytes": int64(cephOsdMemoryMiB(p)+cephOsdOverheadMiB) << 20}
 }
 
 func cephOsdMemoryMiB(p *cephParams) int {

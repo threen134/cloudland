@@ -267,7 +267,7 @@ func (a *StorageClusterAdmin) expand(ctx context.Context, uuid string, task stri
 					return 0, NewCLError(ErrStorageDiskNotAllowed, fmt.Sprintf("Disk %s of host %d is claimed already", d.DiskID, d.Hostid), err)
 				}
 			}
-			return cluster.ID, nil
+			return cluster.ID, storageRefreshReserve(tx, cluster)
 		}})
 }
 
@@ -321,7 +321,10 @@ func (a *StorageClusterAdmin) RemoveDisk(ctx context.Context, uuid, diskUUID str
 	return startStorageTask(ctx, &storageTaskSpec{ClusterID: cluster.ID, Backend: cluster.Kind, Kind: StorageTaskRemoveDisk, Plan: steps,
 		Params: map[string]interface{}{"disk_id": disk.ID},
 		Prepare: func(tx *gorm.DB) (int64, error) {
-			return cluster.ID, tx.Model(&model.StorageClusterDisk{}).Where("id = ?", disk.ID).Update("status", model.StorageDiskRemoving).Error
+			if err := tx.Model(&model.StorageClusterDisk{}).Where("id = ?", disk.ID).Update("status", model.StorageDiskRemoving).Error; err != nil {
+				return 0, err
+			}
+			return cluster.ID, storageRefreshReserve(tx, cluster)
 		}})
 }
 
@@ -444,4 +447,58 @@ func storageTaskBool(task *model.StorageTask, key string) bool {
 	_ = json.Unmarshal([]byte(task.Params), &p)
 	b, _ := p[key].(bool)
 	return b
+}
+
+// storageRefreshReserve recomputes what the daemons of a cluster hold back on each member (shared-storage-design.md
+// §6.7.1) from its roles and its disks, a disk leaving (removing) not counted, and records it where it changed: with a
+// kind whose daemons go with the disks (a Ceph OSD per disk), adding or removing a disk changes it. Run when such a
+// task starts and when it ends; the task writes it on the hosts with its finish step. A failed claim is still
+// counted: its daemon may run, and holding back too much is the safe side
+func storageRefreshReserve(tx *gorm.DB, cluster *model.StorageCluster) error {
+	backend, err := storageBackendOf(cluster.Kind)
+	if err != nil {
+		return err
+	}
+	params, err := backend.ParseParams([]byte(cluster.Params))
+	if err != nil {
+		return err
+	}
+	nodes := []*model.StorageClusterNode{}
+	if err = tx.Where("cluster_id = ?", cluster.ID).Find(&nodes).Error; err != nil {
+		return err
+	}
+	disks := []*model.StorageClusterDisk{}
+	if err = tx.Where("cluster_id = ? AND status <> ?", cluster.ID, model.StorageDiskRemoving).Find(&disks).Error; err != nil {
+		return err
+	}
+	on := map[int32]int{}
+	for _, d := range disks {
+		on[d.Hostid]++
+	}
+	for _, n := range nodes {
+		mb := backend.ReserveMB(strings.Split(n.Roles, ","), on[n.Hostid], params)
+		if mb == n.ReservedMemMB {
+			continue
+		}
+		if err = tx.Model(&model.StorageClusterNode{}).Where("cluster_id = ? AND hostid = ?", cluster.ID, n.Hostid).
+			Update("reserved_mem_mb", mb).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// storageRefreshAfter: the finish of a task that changes the disks of a cluster, then what the daemons hold back on
+// its hosts as the disks are now (added, removed, or failed when the task was aborted)
+func storageRefreshAfter(finish storageTaskFinish) storageTaskFinish {
+	return func(ctx context.Context, tx *gorm.DB, task *model.StorageTask, succeeded bool) error {
+		if err := finish(ctx, tx, task, succeeded); err != nil {
+			return err
+		}
+		cluster := &model.StorageCluster{}
+		if err := tx.Take(cluster, task.ClusterID).Error; err != nil {
+			return err
+		}
+		return storageRefreshReserve(tx, cluster)
+	}
 }

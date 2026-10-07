@@ -51,13 +51,7 @@ func cephUpgradeInstallInput(ctx context.Context, db *gorm.DB, task *model.Stora
 	if err != nil {
 		return nil, err
 	}
-	orch := false
-	for _, n := range nodes {
-		if n.Hostid == hostid {
-			orch = len(cephOrchLabels(n)) > 0
-		}
-	}
-	return map[string]interface{}{"cluster_uuid": cluster.UUID, "image": storageUpgradeOf(task).Image, "orch": orch}, nil
+	return cephInstallArgs(cluster, nodes, hostid, storageUpgradeOf(task).Image), nil
 }
 
 // cephUpgradeInstallDone: every host installed one release and the cephadm hosts pulled one image, whose release (what

@@ -118,14 +118,18 @@ func (cephBackend) TaskPlan(task string, cluster *model.StorageCluster, scope *S
 		if len(osdHosts) == 0 {
 			return nil, planError("No disk joins the cluster")
 		}
-		return []*StorageStepPlan{step("resolve_disks", n, osdHosts, 5*time.Minute), step("create_osds", a, admins, 60*time.Minute)}, nil
+		// Every OSD is memory the host holds back (§6.7.1): the hosts of the new disks write what they hold back now
+		return []*StorageStepPlan{step("resolve_disks", n, osdHosts, 5*time.Minute), step("create_osds", a, admins, 60*time.Minute),
+			step("finish", n, osdHosts, 5*time.Minute)}, nil
 	case StorageTaskRemoveDisk:
 		hosts := gpfsDiskHosts(scope.Disks, model.StorageDiskRemoving)
 		if len(hosts) == 0 {
 			return nil, planError("No disk leaves the cluster")
 		}
-		// Ceph moves the data of an OSD before it goes (ceph orch osd rm), which takes as long as it takes
-		return []*StorageStepPlan{step("remove_osds", a, admins, 7*24*time.Hour), step("release_disks", n, hosts, 30*time.Minute)}, nil
+		// Ceph moves the data of an OSD before it goes (ceph orch osd rm), which takes as long as it takes; the host
+		// then holds back the memory of one OSD less
+		return []*StorageStepPlan{step("remove_osds", a, admins, 7*24*time.Hour), step("release_disks", n, hosts, 30*time.Minute),
+			step("finish", n, hosts, 5*time.Minute)}, nil
 	case StorageTaskReplaceDisk:
 		old := gpfsDiskHosts(scope.Disks, model.StorageDiskRemoving)
 		if len(osdHosts) != 1 || len(old) != 1 || osdHosts[0] != old[0] {
@@ -200,7 +204,9 @@ func init() {
 	}
 	registerStorageTaskKind("ceph:"+StorageTaskDeploy, &storageTaskKind{Slot: storageSlotStructural, Steps: deploySteps(), Finish: cephDeployFinish})
 	registerStorageTaskKind("ceph:"+StorageTaskAddNodes, &storageTaskKind{Slot: storageSlotStructural, Steps: deploySteps(), Finish: cephExpandFinish})
-	registerStorageTaskKind("ceph:"+StorageTaskAddDisks, &storageTaskKind{Slot: storageSlotStructural, Steps: deploySteps(), Finish: cephExpandFinish})
+	// The OSDs of a host go with its disks, and so does the memory it holds back for them: the tasks changing the
+	// disks record it again when they end (storageRefreshAfter)
+	registerStorageTaskKind("ceph:"+StorageTaskAddDisks, &storageTaskKind{Slot: storageSlotStructural, Steps: deploySteps(), Finish: storageRefreshAfter(cephExpandFinish)})
 	registerStorageTaskKind("ceph:"+StorageTaskDeleteCluster, &storageTaskKind{
 		Slot: storageSlotStructural,
 		Steps: map[string]*storageStepDef{
@@ -215,12 +221,13 @@ func init() {
 		Steps:  map[string]*storageStepDef{"check_import": {Script: "ceph_client.sh", Input: cephClientInput("import")}},
 		Finish: cephImportFinish,
 	})
-	registerStorageTaskKind("ceph:"+StorageTaskRemoveDisk, &storageTaskKind{Slot: storageSlotStructural, Finish: gpfsRemoveDiskFinish,
+	registerStorageTaskKind("ceph:"+StorageTaskRemoveDisk, &storageTaskKind{Slot: storageSlotStructural, Finish: storageRefreshAfter(gpfsRemoveDiskFinish),
 		Steps: map[string]*storageStepDef{
 			"remove_osds":   {Script: "ceph_cluster.sh", Input: cephRemoveOsdsInput},
 			"release_disks": {Script: "stc_release_disks.sh", Input: gpfsReleaseDisksInput},
+			"finish":        {Script: "stc_finish.sh", Input: gpfsFinishInput},
 		}})
-	registerStorageTaskKind("ceph:"+StorageTaskReplaceDisk, &storageTaskKind{Slot: storageSlotStructural, Finish: storageReplaceFinish(cephExpandFinish),
+	registerStorageTaskKind("ceph:"+StorageTaskReplaceDisk, &storageTaskKind{Slot: storageSlotStructural, Finish: storageRefreshAfter(storageReplaceFinish(cephExpandFinish)),
 		Steps: map[string]*storageStepDef{
 			"resolve_disks": {Script: "stc_resolve_disks.sh", Input: gpfsResolveInput},
 			"replace_osd":   {Script: "ceph_cluster.sh", Input: cephReplaceOsdInput, Done: cephCreateOsdsDone, RetryFrom: "resolve_disks"},
@@ -307,13 +314,23 @@ func cephInstallInput(ctx context.Context, db *gorm.DB, task *model.StorageTask,
 	if info := cephInfoOf(cluster); info.Image != "" {
 		image = info.Image
 	}
+	return cephInstallArgs(cluster, nodes, hostid, image), nil
+}
+
+// cephInstallArgs: the input of ceph_install.sh on a host; a cephadm host also gets what the units of the daemons
+// give their containers (§6.7.2)
+func cephInstallArgs(cluster *model.StorageCluster, nodes []*model.StorageClusterNode, hostid int32, image string) map[string]interface{} {
 	orch := false
 	for _, n := range nodes {
 		if n.Hostid == hostid {
 			orch = len(cephOrchLabels(n)) > 0
 		}
 	}
-	return map[string]interface{}{"cluster_uuid": cluster.UUID, "image": image, "orch": orch}, nil
+	in := map[string]interface{}{"cluster_uuid": cluster.UUID, "image": image, "orch": orch}
+	if orch {
+		in["oom"] = cephOomProtect(cephParamsOf(cluster))
+	}
+	return in
 }
 
 // cephInstallDone records the release and the image the hosts installed: one release everywhere, one image on the

@@ -114,6 +114,33 @@ echo "$(lsblk -dbno SIZE $d)"`)
 	if strings.TrimSpace(out) != "1" {
 		t.Fatalf("the OSD unit is not ordered after the mon of its host: %s", out)
 	}
+	// The daemons go after the VMs when the memory runs out (§6.7.2): the real processes, not the units, which only
+	// run docker; memory.low is the reservation of each daemon (mon 2 GiB, mgr 1 GiB, OSD 1 GiB target + 512 MiB), and
+	// system.slice, above the containers, covers their sum (a cgroup is protected only as far as its parents are)
+	oomCheck := `for c in mon mgr osd; do p=$(pgrep -x ceph-$c | head -1); cg=/sys/fs/cgroup$(awk -F: '$1 == "0" {print $3}' /proc/$p/cgroup)
+echo "$c $(cat /proc/$p/oom_score_adj) $(cat $cg/memory.low)"; done | tr '\n' ' '; echo "slice $(cat /sys/fs/cgroup/system.slice/memory.low)"`
+	wantOom := fmt.Sprintf("mon -900 %d mgr -900 %d osd -900 %d slice %d", 2048<<20, 1024<<20, 1536<<20, (2048+1024+1536)<<20)
+	// The protection comes in a transient unit of its own after a unit started: wait for it
+	waitOom := func(what string) {
+		for i := 0; i < 60; i++ {
+			if out, _ = wsl(0, oomCheck); strings.TrimSpace(out) == wantOom {
+				return
+			}
+			time.Sleep(time.Second)
+		}
+		t.Fatalf("OOM protection of the daemons %s: want %q, have %q", what, wantOom, out)
+	}
+	waitOom("after the deployment")
+	// Still there after systemd applied the settings of the units again, and in the OSD started again after a kill
+	out, _ = wsl(0, fmt.Sprintf(`systemctl daemon-reload; old=$(pgrep -x ceph-osd); kill -9 $old
+for i in $(seq 1 90); do n=$(pgrep -x ceph-osd); [ -n "$n" ] && [ "$n" != "$old" ] && systemctl is-active -q ceph-%s@osd.0.service && break; sleep 1; done`, c.UUID))
+	waitOom("after a daemon-reload and a killed OSD")
+	for i := 0; i < 60; i++ {
+		if out, _ = wsl(0, fmt.Sprintf(`ceph --conf /var/lib/ceph/%[1]s/config/ceph.conf --keyring /var/lib/ceph/%[1]s/config/ceph.client.admin.keyring osd stat -f json | jq .num_up_osds`, c.UUID)); strings.TrimSpace(out) == "1" {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
 
 	// A pool on the hdd OSDs
 	pools := &services.StoragePoolAdmin{}
@@ -336,8 +363,8 @@ echo "LEFT: $($rbd ls -p $P | xargs)"`, string(pa), cephPool, c.UUID, copies[0].
 		logRuns(del.ID)
 		t.Fatalf("deletion: %s", done.Message)
 	}
-	out, _ = wsl(0, fmt.Sprintf(`ls -d /var/lib/ceph/%[1]s 2>/dev/null | wc -l; docker ps -q | wc -l; vgs --noheadings -o vg_name 2>/dev/null | grep -c clceph-; ls /etc/ceph/%[1]s.conf 2>/dev/null | wc -l; virsh secret-list | grep -c %[1]s; grep -c cloudland-storage-%[1]s /root/.ssh/authorized_keys; ls -d /etc/systemd/system/ceph-%[1]s@.service.d 2>/dev/null | wc -l`, c.UUID))
-	if strings.Join(strings.Fields(out), " ") != "0 0 0 0 0 0 0" {
-		t.Fatalf("left after the deletion (cluster dir, containers, volume groups, client conf, secrets, trust lines, unit drop-ins): %s", out)
+	out, _ = wsl(0, fmt.Sprintf(`ls -d /var/lib/ceph/%[1]s 2>/dev/null | wc -l; docker ps -q | wc -l; vgs --noheadings -o vg_name 2>/dev/null | grep -c clceph-; ls /etc/ceph/%[1]s.conf 2>/dev/null | wc -l; virsh secret-list | grep -c %[1]s; grep -c cloudland-storage-%[1]s /root/.ssh/authorized_keys; ls -d /etc/systemd/system/ceph-%[1]s@.service.d 2>/dev/null | wc -l; cat /sys/fs/cgroup/system.slice/memory.low`, c.UUID))
+	if strings.Join(strings.Fields(out), " ") != "0 0 0 0 0 0 0 0" {
+		t.Fatalf("left after the deletion (cluster dir, containers, volume groups, client conf, secrets, trust lines, unit drop-ins, memory.low of system.slice): %s", out)
 	}
 }

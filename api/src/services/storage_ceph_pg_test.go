@@ -105,6 +105,16 @@ func TestStorageCephDeployPG(t *testing.T) {
 		if s.input["orch"] != (s.hostid != h[3]) || s.input["image"] != "" {
 			t.Fatalf("install input of host %d: %v", s.hostid, s.input)
 		}
+		// The cephadm hosts protect the daemons from the OOM killer, memory.low being the reservation of each daemon
+		oom, _ := s.input["oom"].(map[string]interface{})
+		if s.hostid == h[3] {
+			if oom != nil {
+				t.Fatalf("a client host gets OOM protection: %v", s.input)
+			}
+		} else if oom["adj"] != float64(-900) || oom["mon_bytes"] != float64(2048<<20) || oom["mgr_bytes"] != float64(1024<<20) ||
+			oom["osd_bytes"] != float64((1024+512)<<20) {
+			t.Fatalf("OOM protection of host %d: %v", s.hostid, oom)
+		}
 	}
 	succeed(sent, func(s *stcSent) string {
 		if s.hostid == h[3] {
@@ -308,7 +318,21 @@ func TestStorageCephDeployPG(t *testing.T) {
 	succeed(sent, func(*stcSent) string {
 		return fmt.Sprintf(`{"osds":[{"key":%q,"osd_id":3}]}`, osds[0].(map[string]interface{})["key"])
 	})
+	// The host holds back the memory of one OSD more (mon 2048 + two OSDs of 1024 + 512), recorded and written on it
+	reserveOf := func(hostid int32) int32 {
+		n := &model.StorageClusterNode{}
+		must(t, db.Where("cluster_id = ? AND hostid = ?", c.ID, hostid).Take(n).Error)
+		return n.ReservedMemMB
+	}
+	sent = f.expect("finish of the new disk", "stc_finish.sh", h[1])
+	if sent[0].input["reserve_mb"] != float64(5120) || reserveOf(h[1]) != 5120 {
+		t.Fatalf("reservation with the new disk: finish input %v, recorded %d", sent[0].input, reserveOf(h[1]))
+	}
+	succeed(sent, none)
 	f.wantTask(atask.ID, model.StorageTaskSucceeded, "")
+	if reserveOf(h[1]) != 5120 || reserveOf(h[0]) != 4608 {
+		t.Fatalf("reservations after the new disk: %d %d", reserveOf(h[1]), reserveOf(h[0]))
+	}
 	_, _, disks, _ = StorageClusters.Get(ctx, cluster.UUID)
 	var added *model.StorageClusterDisk
 	for _, d := range disks {
@@ -331,7 +355,16 @@ func TestStorageCephDeployPG(t *testing.T) {
 		t.Fatalf("release input %v", sent[0].input)
 	}
 	succeed(sent, none)
+	// One OSD less on the host again
+	sent = f.expect("finish of the removal", "stc_finish.sh", h[1])
+	if sent[0].input["reserve_mb"] != float64(3584) {
+		t.Fatalf("finish input after the removal %v", sent[0].input)
+	}
+	succeed(sent, none)
 	f.wantTask(rtask.ID, model.StorageTaskSucceeded, "")
+	if reserveOf(h[1]) != 3584 {
+		t.Fatalf("reservation after the removal: %d", reserveOf(h[1]))
+	}
 
 	// The disk of osd.1 fails: a new disk of its host takes the id; the failed disk is not wiped
 	_, _, disks, _ = StorageClusters.Get(ctx, cluster.UUID)
@@ -371,6 +404,10 @@ func TestStorageCephDeployPG(t *testing.T) {
 	must(t, db.Where("cluster_id = ? AND disk_id = ?", c.ID, "wwn-0x5000cebn").Take(nd).Error)
 	if nd.Status != model.StorageDiskActive || nd.Name != fmt.Sprintf("osd.%d", oldID) || cephOsdID(nd) != oldID {
 		t.Fatalf("new disk %+v", nd)
+	}
+	// A disk for a disk: as many OSDs as before
+	if reserveOf(h[1]) != 3584 {
+		t.Fatalf("reservation after the replacement: %d", reserveOf(h[1]))
 	}
 
 	// The mgr moves to h[1]: an even number of mons is refused; the labels follow the roles

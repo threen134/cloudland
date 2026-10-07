@@ -209,6 +209,10 @@ func TestStorageUpgradePG(t *testing.T) {
 		if s.input["image"] != "" || s.input["orch"] != orch {
 			t.Fatalf("install input on %d: %v", s.hostid, s.input)
 		}
+		// The drop-ins are written again with the upgrade: the redeployed daemons stay protected
+		if _, has := s.input["oom"]; has != orch {
+			t.Fatalf("OOM protection in the install input on %d: %v", s.hostid, s.input)
+		}
 		image, iv := "", ""
 		if orch {
 			image, iv = "quay.io/ceph/ceph:v19.2.4", "19.2.4"
