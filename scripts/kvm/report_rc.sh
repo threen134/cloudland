@@ -526,6 +526,18 @@ function storage_metrics()
     setsid $script_dir/storage/stc_metrics.sh </dev/null >/dev/null 2>&1 &
 }
 
+# Every 5 minutes, in the background: the Ceph daemons of this host still have their OOM protection, should a start
+# of theirs have missed it (a slow docker at boot), and system.slice covers the daemons deployed now
+# (storage/ceph_oom_protect.sh, shared-storage-design.md §6.7.2)
+function ceph_oom_sweep()
+{
+    local stamp=$shared_storage_dir/ceph_oom.started now=$(date +%s)
+    ls /etc/systemd/system/ceph-*@.service.d/cloudland-oom.conf >/dev/null 2>&1 || return 0
+    [ $((now - $(stat -c %Y $stamp 2>/dev/null || echo 0))) -ge 300 ] || return 0
+    mkdir -p $shared_storage_dir $log_dir/storage && touch $stamp
+    setsid bash $script_dir/storage/ceph_oom_protect.sh --sweep </dev/null >>$log_dir/storage/ceph_oom.log 2>&1 &
+}
+
 function sync_delayed_job()
 {
     for f in $(ls $async_job_dir/*.done); do
@@ -601,6 +613,7 @@ calc_resource
 pool_report
 shared_pool_report
 storage_metrics
+ceph_oom_sweep
 sync_instance
 reconcile_check
 pending_start

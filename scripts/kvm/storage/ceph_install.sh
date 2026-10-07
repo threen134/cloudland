@@ -3,8 +3,10 @@
 # hosts and QEMU use) everywhere; on a host that runs daemons also cephadm and the container image of the daemons.
 # The image is the one of the release the host installed (quay.io/ceph/ceph:v<version>) unless one is given: the
 # daemons must not be newer than the client libraries of the hosts (a newer release writes keys an older client can
-# not read). Input: {"cluster_uuid", "image", "orch"}. Result: {"version", "image", "image_version"} (the release of
-# the image; both empty on a client host)
+# not read). A cephadm host also gets the drop-ins of the units of the daemons: the order of their stop, and their
+# protection when the memory runs out (oom: what ceph_oom_protect.sh gives the containers, §6.7.2).
+# Input: {"cluster_uuid", "image", "orch", "oom": {"adj", "mon_bytes", "mgr_bytes", "osd_bytes"}}.
+# Result: {"version", "image", "image_version"} (the release of the image; both empty on a client host)
 
 cd $(dirname $0)
 source ../../cloudrc
@@ -49,6 +51,9 @@ function stc_main()
         useradd -r -u 167 -g 167 -M -d /var/lib/ceph -s /usr/sbin/nologin ceph-ctr || stc_fail "useradd ceph-ctr failed"
     fi
     ceph_unit_order $uuid || stc_fail "ordering the units of the cluster failed"
+    local adj mon mgr osd
+    read -r adj mon mgr osd < <(jq -r '.oom // {} | "\(.adj) \(.mon_bytes) \(.mgr_bytes) \(.osd_bytes)"' <<<"$input")
+    ceph_unit_oom $uuid "$adj" "$mon" "$mgr" "$osd" || stc_fail "protecting the daemons of the cluster from the OOM killer failed (oom: $adj $mon $mgr $osd)"
     [ -n "$image" ] || image=quay.io/ceph/ceph:v$version
     stc_progress 40 "pulling $image"
     for i in 1 2 3; do

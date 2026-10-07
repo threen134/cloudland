@@ -133,6 +133,34 @@ function ceph_unit_order()
     systemctl daemon-reload
 }
 
+function ceph_oom_script()
+{
+    echo "$(dirname "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")")/ceph_oom_protect.sh"
+}
+
+# ceph_unit_oom <cluster uuid> <oom_score_adj> <mon bytes> <mgr bytes> <osd bytes>: every start of a mon, mgr or OSD
+# of the cluster on this host gives its container the oom_score_adj and the memory.low of its kind of daemon
+# (ceph_oom_protect.sh, shared-storage-design.md §6.7.2); the daemons running already get them now. The script runs
+# in a transient unit of its own: it waits for the container, and the start timeout of the daemon's unit (200 s)
+# would count that wait, stopping a daemon that was coming up. Run through bash, not depending on its mode bits
+function ceph_unit_oom()
+{
+    local uuid=$1 adj=$2 mon=$3 mgr=$4 osd=$5 d=/etc/systemd/system/ceph-$1@.service.d u inst script
+    script=$(ceph_oom_script)
+    [[ "$adj" =~ ^-?[0-9]{1,4}$ ]] && [[ "$mon$mgr$osd" =~ ^[0-9]+$ ]] || return 1
+    mkdir -p $d || return 1
+    printf '[Service]\n# CloudLand: the daemon goes after the VMs when the memory runs out, and keeps what the host holds back for it\nExecStartPost=-/usr/bin/systemd-run --no-block --quiet --collect -p RuntimeMaxSec=300 /bin/bash %s %s %%i %s %s %s %s $MAINPID\n' \
+        "$script" "$uuid" "$adj" "$mon" "$mgr" "$osd" >$d/cloudland-oom.conf || return 1
+    systemctl daemon-reload
+    for u in $(systemctl list-units --no-legend --plain --state=active "ceph-$uuid@*.service" | awk '{print $1}'); do
+        inst=${u#ceph-$uuid@}
+        inst=${inst%.service}
+        bash "$script" "$uuid" "$inst" "$adj" "$mon" "$mgr" "$osd" || echo "protecting $inst failed"
+    done
+    return 0
+}
+
+# ceph_unit_order_remove <cluster uuid>: the drop-ins of the units of the cluster (order and OOM protection)
 function ceph_unit_order_remove()
 {
     [ -d /etc/systemd/system/ceph-$1@.service.d ] || return 0
@@ -173,6 +201,8 @@ function backend_leave()
         ceph_drop_vg $vg
     done
     rm -rf /var/lib/ceph/$uuid /var/log/ceph/$uuid /var/run/ceph/$uuid
+    # The protection of system.slice covers the daemons left on the host
+    bash "$(ceph_oom_script)" --sweep >/dev/null 2>&1
     if [ "$purge" = "true" ] && [ -f $ceph_ours ]; then
         others=$(ls -d /var/lib/ceph/*-*-*-*-*/ 2>/dev/null)
         if [ -z "$others" ]; then
