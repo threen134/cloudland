@@ -100,7 +100,7 @@ func (a *StorageClusterAdmin) Update(ctx context.Context, uuid string, req *Stor
 			if err != nil {
 				return err
 			}
-			if len(*req.AutoJoinZones) > 0 && (cluster.Mode != model.StorageModeManaged || !backend.Capabilities().AddNodes) {
+			if len(*req.AutoJoinZones) > 0 && (cluster.Mode != model.StorageModeManaged || !storageClusterCapabilities(backend, cluster).AddNodes) {
 				return planError("Hosts join only a managed cluster on their own")
 			}
 			ids := []int64{}
@@ -174,7 +174,7 @@ func maintainAutoJoin(ctx context.Context, cluster *model.StorageCluster) {
 		return
 	}
 	backend, err := storageBackendOf(cluster.Kind)
-	if err != nil || !backend.Capabilities().AddNodes {
+	if err != nil || !storageClusterCapabilities(backend, cluster).AddNodes {
 		return
 	}
 	db := dbs.DBContext(ctx)

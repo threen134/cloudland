@@ -209,8 +209,14 @@ type StorageClusterResponse struct {
 	Kind   string `json:"kind"`
 	Mode   string `json:"mode"`
 	Layout string `json:"layout,omitempty"`
-	Status string `json:"status"`
-	Health string `json:"health"`
+	// What the cluster supports: the operations of its kind, fewer in some layouts (gpfs erasure code); the
+	// interface offers only these
+	Capabilities *services.StorageCapabilities `json:"capabilities,omitempty"`
+	// What the layout is made of, the keys the kind's own (gpfs ece: code, no_slot_map, recovery_group, vdisk_set,
+	// node_class; shared-storage-design.md §7.9); absent when the layout has nothing to show
+	LayoutInfo map[string]interface{} `json:"layout_info,omitempty"`
+	Status     string                 `json:"status"`
+	Health     string                 `json:"health"`
 	// Detail only: the last health report and the alarms it raised
 	HealthInfo *StorageClusterHealthResponse `json:"health_info,omitempty"`
 	Version    string                        `json:"version,omitempty"`
@@ -595,6 +601,7 @@ func storageClusterResponse(ctx context.Context, cluster *model.StorageCluster, 
 			CreatedAt: cluster.CreatedAt.Format(TimeStringForMat), UpdatedAt: cluster.UpdatedAt.Format(TimeStringForMat)},
 		Kind: cluster.Kind, Mode: cluster.Mode, Layout: cluster.Layout, Status: cluster.Status, Health: cluster.Health,
 		Version: cluster.Version, ClusterRef: cluster.ClusterRef, Unsupported: cluster.Unsupported, Description: cluster.Description,
+		Capabilities: services.StorageClusterCapabilities(cluster), LayoutInfo: services.StorageClusterLayoutInfo(cluster),
 	}
 	if cluster.ActiveTask > 0 || cluster.ActivePoolTask > 0 {
 		uuids := storageClusterAdmin.TaskUUIDs(ctx, []int64{cluster.ActiveTask, cluster.ActivePoolTask})

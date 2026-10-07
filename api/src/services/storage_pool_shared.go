@@ -77,7 +77,7 @@ func (a *StoragePoolAdmin) CreateShared(ctx context.Context, req *SharedPoolCrea
 	if err != nil {
 		return
 	}
-	if !backend.Capabilities().Pools {
+	if !storageClusterCapabilities(backend, cluster).Pools {
 		return nil, nil, planError("Pools on %s clusters are not supported yet", cluster.Kind)
 	}
 	if cluster.Status != model.StorageClusterReady {

@@ -207,6 +207,79 @@ func storageParamRange(kind, name string, value, min, max int) error {
 	return nil
 }
 
+// storageLayoutChooser is a backend whose managed clusters come in layouts a parameter chooses (gpfs: replica or
+// erasure code); a backend without it gives every cluster its DefaultLayout
+type storageLayoutChooser interface {
+	LayoutOf(params interface{}) string
+}
+
+// storageLayoutFor is the layout of a new managed cluster with the parsed parameters of its kind
+func storageLayoutFor(backend StorageBackend, params interface{}) string {
+	if c, ok := backend.(storageLayoutChooser); ok {
+		if layout := c.LayoutOf(params); layout != "" {
+			return layout
+		}
+	}
+	return backend.DefaultLayout()
+}
+
+// storagePackageChecker is a backend that takes only some of its verified packages for some parameters (gpfs erasure
+// code: the erasure code edition); the error says why the package does not fit
+type storagePackageChecker interface {
+	CheckPackage(params interface{}, pkg *model.StoragePackage) error
+}
+
+// storageCheckPackage: whether the package fits a new cluster with the parsed parameters of its kind
+func storageCheckPackage(backend StorageBackend, params interface{}, pkg *model.StoragePackage) error {
+	if c, ok := backend.(storagePackageChecker); ok {
+		return c.CheckPackage(params, pkg)
+	}
+	return nil
+}
+
+// storageLayoutCapabilities is a backend whose clusters support less in some of their layouts (gpfs erasure code: no
+// disk or host changes yet); nil keeps the capabilities of the kind
+type storageLayoutCapabilities interface {
+	LayoutCapabilities(layout string) *StorageCapabilities
+}
+
+// storageClusterCapabilities is what a cluster supports: what its kind does, narrowed by its layout
+func storageClusterCapabilities(backend StorageBackend, cluster *model.StorageCluster) *StorageCapabilities {
+	if lc, ok := backend.(storageLayoutCapabilities); ok && cluster != nil {
+		if caps := lc.LayoutCapabilities(cluster.Layout); caps != nil {
+			return caps
+		}
+	}
+	return backend.Capabilities()
+}
+
+// storageLayoutDescriber is a backend whose clusters show what their layout is made of (gpfs erasure code: the code,
+// the recovery group, the vdisk set); the keys are the backend's own
+type storageLayoutDescriber interface {
+	LayoutInfo(cluster *model.StorageCluster) map[string]interface{}
+}
+
+// StorageClusterLayoutInfo is what the layout of a cluster is made of, for the API; nil when its backend shows nothing
+func StorageClusterLayoutInfo(cluster *model.StorageCluster) map[string]interface{} {
+	backend, err := storageBackendOf(cluster.Kind)
+	if err != nil {
+		return nil
+	}
+	if d, ok := backend.(storageLayoutDescriber); ok {
+		return d.LayoutInfo(cluster)
+	}
+	return nil
+}
+
+// StorageClusterCapabilities is what a cluster supports, for the API; nil for a kind CloudLand does not know
+func StorageClusterCapabilities(cluster *model.StorageCluster) *StorageCapabilities {
+	backend, err := storageBackendOf(cluster.Kind)
+	if err != nil {
+		return nil
+	}
+	return storageClusterCapabilities(backend, cluster)
+}
+
 // storageClusterMaintainer is a backend that has something to do for its ready clusters every minute, besides the
 // tasks (the GPFS disks of a host that came back)
 type storageClusterMaintainer interface {

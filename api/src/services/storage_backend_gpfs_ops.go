@@ -531,9 +531,10 @@ func gpfsRemoveNodeFinish(ctx context.Context, tx *gorm.DB, task *model.StorageT
 }
 
 // Maintain starts the NSDs of a host that came back (§7.1): an admin host checks, and starts them once every node is
-// active again. Imported clusters are their admins' business
+// active again. Imported clusters are their admins' business; in the erasure code layout the recovery group takes
+// its pdisks back by itself and the disks of the cluster are no NSDs (§7.9)
 func (gpfsBackend) Maintain(ctx context.Context, cluster *model.StorageCluster, nodes []*model.StorageClusterNode) {
-	if cluster.Mode != model.StorageModeManaged {
+	if cluster.Mode != model.StorageModeManaged || cluster.Layout == model.StorageLayoutECE {
 		return
 	}
 	db := dbs.DBContext(ctx)

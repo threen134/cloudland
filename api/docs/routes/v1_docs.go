@@ -14412,6 +14412,14 @@ const docTemplatev1 = `{
                         }
                     ]
                 },
+                "capabilities": {
+                    "description": "What the cluster supports: the operations of its kind, fewer in some layouts (gpfs erasure code); the\ninterface offers only these",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/services.StorageCapabilities"
+                        }
+                    ]
+                },
                 "capacity_bytes": {
                     "type": "integer"
                 },
@@ -14463,6 +14471,11 @@ const docTemplatev1 = `{
                 },
                 "layout": {
                     "type": "string"
+                },
+                "layout_info": {
+                    "description": "What the layout is made of, the keys the kind's own (gpfs ece: code, no_slot_map, recovery_group, vdisk_set,\nnode_class; shared-storage-design.md §7.9); absent when the layout has nothing to show",
+                    "type": "object",
+                    "additionalProperties": true
                 },
                 "mode": {
                     "type": "string"

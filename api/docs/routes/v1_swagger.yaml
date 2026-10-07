@@ -2707,6 +2707,12 @@ definitions:
         - $ref: '#/definitions/apis.StorageAutoJoinResponse'
         description: 'Detail only: the zones whose hosts join as clients on their
           own and the hosts on their way in'
+      capabilities:
+        allOf:
+        - $ref: '#/definitions/services.StorageCapabilities'
+        description: |-
+          What the cluster supports: the operations of its kind, fewer in some layouts (gpfs erasure code); the
+          interface offers only these
       capacity_bytes:
         type: integer
       cluster_ref:
@@ -2743,6 +2749,12 @@ definitions:
         type: string
       layout:
         type: string
+      layout_info:
+        additionalProperties: true
+        description: |-
+          What the layout is made of, the keys the kind's own (gpfs ece: code, no_slot_map, recovery_group, vdisk_set,
+          node_class; shared-storage-design.md §7.9); absent when the layout has nothing to show
+        type: object
       mode:
         type: string
       name:

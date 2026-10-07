@@ -48,8 +48,8 @@ func storageClusterForChange(ctx context.Context, uuid string, allowed func(*Sto
 	if backend, err = storageBackendOf(cluster.Kind); err != nil {
 		return
 	}
-	if !allowed(backend.Capabilities()) {
-		err = planError("%s clusters do not support this operation yet", cluster.Kind)
+	if !allowed(storageClusterCapabilities(backend, cluster)) {
+		err = planError("%s clusters (%s) do not support this operation yet", cluster.Kind, cluster.Layout)
 		return
 	}
 	if cluster.Mode != model.StorageModeManaged {

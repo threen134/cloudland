@@ -97,6 +97,9 @@ func (a *StorageClusterAdmin) Create(ctx context.Context, req *StorageClusterCre
 		if pkg.AcceptedBy == "" {
 			return nil, nil, NewCLError(ErrStoragePackageState, "Accept the license of the package first", nil)
 		}
+		if err = storageCheckPackage(backend, params, pkg); err != nil {
+			return nil, nil, err
+		}
 	} else if req.PackageUUID != "" {
 		return nil, nil, planError("A %s cluster installs from the distribution and takes no package", plan.Kind)
 	}
@@ -115,7 +118,7 @@ func (a *StorageClusterAdmin) Create(ctx context.Context, req *StorageClusterCre
 	for _, d := range plan.Disks {
 		disksOn[d.Hostid]++
 	}
-	cluster = &model.StorageCluster{Name: req.Name, Kind: plan.Kind, Mode: model.StorageModeManaged, Layout: backend.DefaultLayout(),
+	cluster = &model.StorageCluster{Name: req.Name, Kind: plan.Kind, Mode: model.StorageModeManaged, Layout: storageLayoutFor(backend, params),
 		Status: model.StorageClusterDeploying, Health: model.StorageHealthUnknown, Params: string(normalized),
 		Unsupported: plan.AllowUnsupported, SSHPubKey: pubKey, SSHPrivKey: privKey, Description: req.Description}
 	if pkg != nil {

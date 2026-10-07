@@ -23,6 +23,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/spf13/viper"
+	"gorm.io/gorm"
 )
 
 func TestStorageGPFSDeployPG(t *testing.T) {
@@ -198,6 +199,16 @@ func TestStorageGPFSDeployPG(t *testing.T) {
 	}
 	if fs.CapacityBytes != 6000 || nodes[0].Status != model.StorageNodeActive {
 		t.Fatalf("file system %+v node %+v", fs, nodes[0])
+	}
+	// The finish again (a retry of it): the file system row is there already, the disks keep its ID (they got 0)
+	doneTask := &model.StorageTask{}
+	must(t, f.db.Take(doneTask, task.ID).Error)
+	must(t, f.db.Transaction(func(tx *gorm.DB) error { return gpfsDeployFinish(ctx, tx, doneTask, true) }))
+	_, _, disks, _ = StorageClusters.Get(ctx, cluster.UUID)
+	for _, d := range disks {
+		if d.FsID != fs.ID {
+			t.Fatalf("disk after the finish ran again %+v, file system %d", d, fs.ID)
+		}
 	}
 
 	_, err = StorageClusters.Delete(ctx, cluster.UUID, &StorageClusterDelete{ConfirmName: "nope"})

@@ -101,20 +101,14 @@ func (gpfsBackend) TaskPlan(task string, cluster *model.StorageCluster, scope *S
 		if len(admins) == 0 || len(nsds) == 0 {
 			return nil, planError("A GPFS cluster needs an admin host and an NSD host")
 		}
-		return []*StorageStepPlan{
-			step("precheck", n, all, 10*time.Minute),
-			step("join", n, all, 10*time.Minute),
-			step("fetch_package", n, all, 30*time.Minute),
-			step("install", n, all, 30*time.Minute),
-			step("build_gpl", n, all, 15*time.Minute),
-			step("ssh_trust", n, all, 5*time.Minute),
-			step("create_cluster", a, admins, 15*time.Minute),
-			step("start", a, admins, 15*time.Minute),
-			step("resolve_disks", n, nsds, 5*time.Minute),
+		if cluster.Layout == model.StorageLayoutECE {
+			return gpfsECEDeployPlan(all, admins, nsds), nil
+		}
+		return append(gpfsDeployPrefix(all, admins, nsds),
 			step("create_nsd", a, admins, 15*time.Minute),
 			step("create_fs", a, admins, 60*time.Minute),
 			step("finish", n, all, 5*time.Minute),
-		}, nil
+		), nil
 	case StorageTaskDeleteCluster:
 		if cluster.Mode == model.StorageModeExternal {
 			// Only what CloudLand put on the hosts goes; the cluster is not CloudLand's to tear down
@@ -146,24 +140,29 @@ func (gpfsBackend) TaskPlan(task string, cluster *model.StorageCluster, scope *S
 }
 
 func init() {
+	deploySteps := map[string]*storageStepDef{
+		"precheck":      gpfsPrecheckStep,
+		"join":          {Script: "stc_join.sh", Input: gpfsJoinInput},
+		"fetch_package": {Script: "stc_fetch.sh", Input: gpfsFetchInput},
+		"install":       {Script: "gpfs_install.sh", Input: gpfsInstallInput},
+		"build_gpl":     {Script: "gpfs_build_gpl.sh"},
+		"ssh_trust":     {Script: "stc_ssh_trust.sh", Input: gpfsTrustInput},
+		// Run after the trust again on a retry: a key or known_hosts written wrong is the usual reason it fails
+		"create_cluster": {Script: "gpfs_cluster.sh", Input: gpfsCreateClusterInput, RetryFrom: "ssh_trust"},
+		"start":          {Script: "gpfs_cluster.sh", Input: gpfsActionInput("start")},
+		"resolve_disks":  {Script: "stc_resolve_disks.sh", Input: gpfsResolveInput},
+		"create_nsd":     {Script: "gpfs_nsd.sh", Input: gpfsNSDInput, RetryFrom: "resolve_disks"},
+		// A file system needs its NSDs: a retry makes sure they are there first (both steps check what exists)
+		"create_fs": {Script: "gpfs_fs.sh", Input: gpfsFSInput, RetryFrom: "resolve_disks"},
+		"finish":    {Script: "stc_finish.sh", Input: gpfsFinishInput},
+	}
+	// The erasure code layout takes the same task with its own steps after the resolved disks (§7.9)
+	for name, def := range gpfsECESteps {
+		deploySteps[name] = def
+	}
 	registerStorageTaskKind("gpfs:"+StorageTaskDeploy, &storageTaskKind{
-		Slot: storageSlotStructural,
-		Steps: map[string]*storageStepDef{
-			"precheck":      gpfsPrecheckStep,
-			"join":          {Script: "stc_join.sh", Input: gpfsJoinInput},
-			"fetch_package": {Script: "stc_fetch.sh", Input: gpfsFetchInput},
-			"install":       {Script: "gpfs_install.sh", Input: gpfsInstallInput},
-			"build_gpl":     {Script: "gpfs_build_gpl.sh"},
-			"ssh_trust":     {Script: "stc_ssh_trust.sh", Input: gpfsTrustInput},
-			// Run after the trust again on a retry: a key or known_hosts written wrong is the usual reason it fails
-			"create_cluster": {Script: "gpfs_cluster.sh", Input: gpfsCreateClusterInput, RetryFrom: "ssh_trust"},
-			"start":          {Script: "gpfs_cluster.sh", Input: gpfsActionInput("start")},
-			"resolve_disks":  {Script: "stc_resolve_disks.sh", Input: gpfsResolveInput},
-			"create_nsd":     {Script: "gpfs_nsd.sh", Input: gpfsNSDInput, RetryFrom: "resolve_disks"},
-			// A file system needs its NSDs: a retry makes sure they are there first (both steps check what exists)
-			"create_fs": {Script: "gpfs_fs.sh", Input: gpfsFSInput, RetryFrom: "resolve_disks"},
-			"finish":    {Script: "stc_finish.sh", Input: gpfsFinishInput},
-		},
+		Slot:   storageSlotStructural,
+		Steps:  deploySteps,
 		Finish: gpfsDeployFinish,
 	})
 	registerStorageTaskKind("gpfs:"+StorageTaskDeleteCluster, &storageTaskKind{
@@ -257,19 +256,23 @@ func gpfsFetchInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, s
 }
 
 func gpfsInstallInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
-	_, pkg, err := gpfsClusterPackage(db, task)
+	cluster, pkg, err := gpfsClusterPackage(db, task)
 	if err != nil {
 		return nil, err
 	}
 	manifest := map[string]string{}
 	_ = json.Unmarshal([]byte(pkg.Manifest), &manifest)
+	prefixes := gpfsDebPrefixes
+	if cluster.Layout == model.StorageLayoutECE {
+		prefixes += " " + gpfsECEDebPrefixes
+	}
 	debs := map[string]string{}
 	for name, md5 := range manifest {
 		// Release specific packages carry their release in the name (.U24.04); the ones here are common
 		if strings.Contains(name, ".U2") || !strings.HasSuffix(name, ".deb") {
 			continue
 		}
-		for _, prefix := range strings.Fields(gpfsDebPrefixes) {
+		for _, prefix := range strings.Fields(prefixes) {
 			if strings.HasPrefix(name, prefix) {
 				debs[name] = md5
 			}
@@ -277,6 +280,15 @@ func gpfsInstallInput(ctx context.Context, db *gorm.DB, task *model.StorageTask,
 	}
 	if len(debs) < 5 {
 		return nil, fmt.Errorf("the manifest of the package lists only %d of the packages a cluster needs", len(debs))
+	}
+	if cluster.Layout == model.StorageLayoutECE {
+		gnr := false
+		for name := range debs {
+			gnr = gnr || strings.HasPrefix(name, "gpfs.gnr_")
+		}
+		if !gnr {
+			return nil, fmt.Errorf("package %s has no gpfs.gnr: the erasure code layout needs the Erasure Code Edition", pkg.FileName)
+		}
 	}
 	return map[string]interface{}{"sha256": pkg.SHA256, "name": pkg.FileName, "payload_line": pkg.PayloadLine,
 		"version": gpfsDebVersion(pkg.Version), "debs": debs}, nil
@@ -393,11 +405,12 @@ func gpfsCreateClusterInput(ctx context.Context, db *gorm.DB, task *model.Storag
 	if err != nil {
 		return nil, err
 	}
-	p := &gpfsParams{}
-	_ = json.Unmarshal([]byte(cluster.Params), p)
+	p := gpfsParamsOf(cluster)
 	pagepool := p.PagepoolMiB
-	if pagepool <= 0 {
-		pagepool = 1024
+	// In the erasure code layout the pagepool of the servers is mmvdisk's to set for their node class; the cluster
+	// default stays small for the other members
+	if pagepool <= 0 || p.ece() {
+		pagepool = gpfsDefaultPagepoolMiB
 	}
 	members := []map[string]interface{}{}
 	servers, clients := []string{}, []string{}
@@ -441,7 +454,9 @@ func gpfsResolveInput(ctx context.Context, db *gorm.DB, task *model.StorageTask,
 			ids = append(ids, storageClusterDiskIdentity(d, wipe[storageDiskKey(d.Hostid, d.DiskID)]))
 		}
 	}
-	return map[string]interface{}{"cluster_uuid": cluster.UUID, "kind": cluster.Kind, "disks": ids}, nil
+	// The disks of the erasure code layout become pdisks of the recovery group, never NSDs: no nsddevices exit
+	return map[string]interface{}{"cluster_uuid": cluster.UUID, "kind": cluster.Kind, "disks": ids,
+		"nsddevices": cluster.Layout != model.StorageLayoutECE}, nil
 }
 
 // gpfsNSDName names the NSDs of a cluster: cl<cluster>h<hostid>d<n>, n counting the disks of the host from 1
@@ -528,8 +543,7 @@ func gpfsNSDInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, ste
 
 // gpfsFileSystem is the first file system of a new cluster, from its parameters
 func gpfsFileSystem(cluster *model.StorageCluster, nodes []*model.StorageClusterNode) (name, blockSize string, data, meta int) {
-	p := &gpfsParams{}
-	_ = json.Unmarshal([]byte(cluster.Params), p)
+	p := gpfsParamsOf(cluster)
 	name, blockSize = p.FsName, p.BlockSize
 	if name == "" {
 		name = "fs1"
@@ -604,6 +618,29 @@ func gpfsDeployFinish(ctx context.Context, tx *gorm.DB, task *model.StorageTask,
 	if !succeeded {
 		return tx.Model(cluster).Update("status", model.StorageClusterError).Error
 	}
+	if cluster.Layout == model.StorageLayoutECE {
+		return gpfsECEDeployFinish(ctx, tx, task, cluster, nodes, disks)
+	}
+	name, blockSize, data, meta := gpfsFileSystem(cluster, nodes)
+	fs := &model.StorageFilesystem{ClusterID: cluster.ID, Name: name, MountPoint: gpfsMountRoot + "/" + name, BlockSize: blockSize,
+		DataReplicas: int32(data), MetaReplicas: int32(meta), Status: "ready"}
+	return gpfsDeployDone(ctx, tx, task, cluster, nodes, disks, &gpfsDeployLayout{fs: fs, fsStep: "create_fs", diskNames: gpfsNSDNames(cluster, disks)})
+}
+
+// gpfsDeployLayout is what a layout gives the end of a deployment: the file system (name, mount point, block size,
+// replicas), the step whose result has its capacity, the names of the disks and attrs to add to the cluster
+type gpfsDeployLayout struct {
+	fs        *model.StorageFilesystem
+	fsStep    string
+	diskNames map[int64]string
+	attrs     map[string]interface{}
+}
+
+// gpfsDeployDone is how every managed GPFS deployment ends, whatever its layout: the file system recorded (the row
+// a run before made is taken, so the disks get its ID), the disks active under their names, the nodes active, the
+// host keys remembered, the cluster ready with its reference, and the hosts scanned once the transaction is in
+func gpfsDeployDone(ctx context.Context, tx *gorm.DB, task *model.StorageTask, cluster *model.StorageCluster,
+	nodes []*model.StorageClusterNode, disks []*model.StorageClusterDisk, l *gpfsDeployLayout) error {
 	ref := ""
 	if res, err := storageStepResults(tx, task.ID, "create_cluster"); err == nil {
 		for _, raw := range res {
@@ -616,10 +653,8 @@ func gpfsDeployFinish(ctx context.Context, tx *gorm.DB, task *model.StorageTask,
 			}
 		}
 	}
-	name, blockSize, data, meta := gpfsFileSystem(cluster, nodes)
-	fs := &model.StorageFilesystem{ClusterID: cluster.ID, Name: name, MountPoint: gpfsMountRoot + "/" + name, BlockSize: blockSize,
-		DataReplicas: int32(data), MetaReplicas: int32(meta), Status: "ready"}
-	if res, err := storageStepResults(tx, task.ID, "create_fs"); err == nil {
+	fs := l.fs
+	if res, err := storageStepResults(tx, task.ID, l.fsStep); err == nil {
 		for _, raw := range res {
 			r := struct {
 				CapacityBytes int64 `json:"capacity_bytes"`
@@ -631,15 +666,16 @@ func gpfsDeployFinish(ctx context.Context, tx *gorm.DB, task *model.StorageTask,
 		}
 	}
 	var existing int64
-	tx.Model(&model.StorageFilesystem{}).Where("cluster_id = ? AND name = ?", cluster.ID, name).Count(&existing)
+	tx.Model(&model.StorageFilesystem{}).Where("cluster_id = ? AND name = ?", cluster.ID, fs.Name).Count(&existing)
 	if existing == 0 {
 		if err := tx.Create(fs).Error; err != nil {
 			return err
 		}
+	} else if err := tx.Where("cluster_id = ? AND name = ?", cluster.ID, fs.Name).Take(fs).Error; err != nil {
+		return err
 	}
-	names := gpfsNSDNames(cluster, disks)
 	for _, d := range disks {
-		if err := tx.Model(d).Updates(map[string]interface{}{"status": model.StorageDiskActive, "name": names[d.ID], "fs_id": fs.ID}).Error; err != nil {
+		if err := tx.Model(d).Updates(map[string]interface{}{"status": model.StorageDiskActive, "name": l.diskNames[d.ID], "fs_id": fs.ID}).Error; err != nil {
 			return err
 		}
 	}
@@ -649,10 +685,19 @@ func gpfsDeployFinish(ctx context.Context, tx *gorm.DB, task *model.StorageTask,
 	if err := gpfsRememberHosts(tx, task, nodes); err != nil {
 		return err
 	}
-	if err := tx.Model(cluster).Updates(map[string]interface{}{"status": model.StorageClusterReady, "cluster_ref": ref}).Error; err != nil {
+	updates := map[string]interface{}{"status": model.StorageClusterReady, "cluster_ref": ref}
+	if len(l.attrs) > 0 {
+		attrs := map[string]interface{}{}
+		_ = json.Unmarshal([]byte(cluster.Attrs), &attrs)
+		for k, v := range l.attrs {
+			attrs[k] = v
+		}
+		updates["attrs"] = jsonAttrs(attrs)
+	}
+	if err := tx.Model(cluster).Updates(updates).Error; err != nil {
 		return err
 	}
-	// The disks now show as GPFS NSDs: scan once the transaction is in
+	// The disks now show as GPFS disks: scan once the transaction is in
 	go func(ctx context.Context, ids []int32) {
 		time.Sleep(3 * time.Second)
 		scanStorageHosts(ctx, ids)
@@ -697,12 +742,19 @@ func gpfsTeardownInput(ctx context.Context, db *gorm.DB, task *model.StorageTask
 	for _, f := range fss {
 		fsNames = append(fsNames, f.Name)
 	}
+	in := map[string]interface{}{"action": "teardown", "cluster_uuid": cluster.UUID, "cluster_name": cluster.Name, "filesystems": fsNames}
+	if cluster.Layout == model.StorageLayoutECE {
+		// The disks are pdisks of the recovery group, which goes with the erasure code layer
+		in["nsds"], in["ece"] = []string{}, gpfsECETeardown(cluster)
+		return in, nil
+	}
 	names := gpfsNSDNames(cluster, disks)
 	nsds := []string{}
 	for _, d := range disks {
 		nsds = append(nsds, names[d.ID])
 	}
-	return map[string]interface{}{"action": "teardown", "cluster_uuid": cluster.UUID, "cluster_name": cluster.Name, "filesystems": fsNames, "nsds": nsds}, nil
+	in["nsds"] = nsds
+	return in, nil
 }
 
 func gpfsLeaveInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
@@ -749,4 +801,24 @@ func gpfsDeleteFinish(ctx context.Context, tx *gorm.DB, task *model.StorageTask,
 		scanStorageHosts(ctx, ids)
 	}(context.WithoutCancel(ctx), nodeHostids(nodes, ""))
 	return nil
+}
+
+// gpfsDeployPrefix is how a managed GPFS cluster starts, whatever its layout: the packages on every host, the cluster
+// made and started, the disks of the NSD hosts resolved. The layout adds its own steps after it, and finish
+func gpfsDeployPrefix(all, admins, nsds []int32) []*StorageStepPlan {
+	step := func(name, scope string, hosts []int32, timeout time.Duration) *StorageStepPlan {
+		return &StorageStepPlan{Name: name, Scope: scope, Hostids: hosts, Timeout: timeout}
+	}
+	n, a := model.StorageStepScopeNodes, model.StorageStepScopeAdmin
+	return []*StorageStepPlan{
+		step("precheck", n, all, 10*time.Minute),
+		step("join", n, all, 10*time.Minute),
+		step("fetch_package", n, all, 30*time.Minute),
+		step("install", n, all, 30*time.Minute),
+		step("build_gpl", n, all, 15*time.Minute),
+		step("ssh_trust", n, all, 5*time.Minute),
+		step("create_cluster", a, admins, 15*time.Minute),
+		step("start", a, admins, 15*time.Minute),
+		step("resolve_disks", n, nsds, 5*time.Minute),
+	}
 }
