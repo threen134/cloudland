@@ -152,6 +152,21 @@
 > WSL：通过（单节点）
 > work-x：通过（带卸载软件包 91 秒；中止的部署也能删，回归点 11）
 
+## CEPH-15 内存耗尽时 Ceph 守护进程不被杀
+
+守护进程节点上，mon / mgr / OSD 由 drop-in `cloudland-oom.conf` 在每次启动后设成 `oom_score_adj -900`，容器的 `memory.low` 等于各自的预留（设计 §6.7.2）
+
+1. 静态：每台守护进程节点上 `for c in mon mgr osd; do p=$(pgrep -x ceph-$c | head -1); echo "$c $(cat /proc/$p/oom_score_adj) $(cat /sys/fs/cgroup$(cut -d: -f3 /proc/$p/cgroup)/memory.low)"; done; cat /sys/fs/cgroup/system.slice/memory.low`
+2. 排序：所有进程按 `/proc/<pid>/oom_score` 排序，Ceph 守护进程排在每个 QEMU 之后
+3. `systemctl daemon-reload` 后再看第 1 步；`kill -9` 一个 OSD，systemd 拉起后（保护在之后几秒内落地）再看；`systemctl restart` 一个 OSD 单元，应立即返回、单元立即 active
+4. （破坏性，只在临时云服务器里做）真实耗尽内存：压力由多个小进程构成、每个比守护进程小、每个把自己设为 adj 0；先不加保护跑一次对照；同时看守护进程的页缓存（`memory.stat` 的 `file`）是否保住
+
+**预期**：第 1 步每个都是 -900，`memory.low` 为 mon 2147483648、mgr 1073741824、OSD（`osd_memory_target_mib`+512）× 1048576，`system.slice` 是本机部署的守护进程之和；第 2 步通过；第 3 步不变；第 4 步只杀压力进程，Ceph 守护进程 PID 不变、单元 `NRestarts` 为 0，HEALTH_OK（对照组里 mgr、OSD 先于压力进程被杀）
+
+> 临时云服务器（Ceph 19.2.3，手工加的同等保护，当时没给 `system.slice` 设保护）：第 4 步的 OOM 部分通过，对照组杀了两个 mgr 与 OSD（2026-10-07，设计 §6.7.2「验证结果」）；页缓存当时没保住（OSD RSS 67 → 45 MiB），原因是回归点 18，修后没在真实 Ceph 上重做
+> WSL：第 1、3 步通过（Ceph 20.2，`TestStorageCephWSL`）；`gpfs-spike/stc-test9-oom.sh` 22 项、`stc-test10-memlow.sh` 通过
+> work-x：没跑（部署前 work-01/02/03 第 1、2 层不通过，adj 都是 0）
+
 ## CEPH-14 界面
 
 `pw/stc-ui-ceph.js`（接口模拟）：向导的 Ceph 部署与导入、集群详情、两种集群上的共享池弹窗，41 项
@@ -178,6 +193,11 @@
 | 14 | 删 RBD 卷时 `rbd info` 的任何失败（超时、集群暂时连不上）都被当成「镜像不在」，脚本报删除成功，clapi 删掉卷记录，镜像留在池里占容量和配额（2026-10-03 代码审查） | 直接 `rbd rm`，只有 `No such file or directory`（镜像或池不在）才算已删；超时报「timed out」（WSL `gpfs-spike/stc-test4.sh` 第 4 组用替身 `rbd` 测各种返回） |
 | 15 | 导入集群登记已有 RBD 池时按 `LIKE '%"ceph_pool":"名字"%'` 查重，名字里的 `_` 是通配符，`rbd_a` 会被当成已登记的 `rbdXa`（代码审查） | 用 `dbs.Contains` 转义（PG `TestStorageCephImportPG`：登记了 `vms` 后 `v_s` 不算重复） |
 | 16 | 导入不占槽，导入的检查还在跑时就能删除（forget）集群，检查跑完又把客户端配置写回去（代码审查） | 有在跑或等重试的导入时删除返回 409（同上）；另见 TC-20 回归点 16–26 里两种存储共用的修复 |
+| 17 | Ceph 守护进程没有 OOM 保护，评分（672–681）比小云服务器（670）还高，节点内存耗尽时 mgr、OSD 先于云服务器被杀（2026-10-06 核对 work-x，临时云服务器里实测）；cephadm 用 docker，单元上的 `OOMScoreAdjust` / `MemoryMin` 碰不到真实进程 | drop-in `cloudland-oom.conf` + `ceph_oom_protect.sh`（CEPH-15）；`memory.low` 经 `docker update` 写，直接写 cgroup 文件会在 `daemon-reload` 后变回 0（`stc-test9-oom.sh` 第 2 项） |
+| 18 | 容器的 `memory.low` 被上层封顶成 0：cgroup v2 的保护逐层生效，容器在 `system.slice` 下，而 `system.slice` 的 `memory.low` 是 0（代码审查，2026-10-07） | 保护脚本把 `system.slice` 的 `MemoryLow` 设成本机已部署守护进程之和（`stc-test9-oom.sh` 第 8、12、13 项；`stc-test10-memlow.sh`：上层 0 时页缓存 301 → 42 MiB，上层有保护时不动；`TestStorageCephWSL` 核对总和与删除后归零） |
+| 19 | 保护脚本在 `ExecStartPost` 里同步等容器（最多约 190 秒，`docker inspect` 无超时），cephadm 单元的启动超时 200 秒把它算进去：容器起得慢时单元被判启动失败、守护进程被停掉并反复重启（代码审查） | drop-in 经 `systemd-run --no-block` 把脚本放进独立的临时单元，`docker` 调用加 `timeout`，心跳每 5 分钟巡检兜底（`stc-test9-oom.sh` 第 10 项：单元启动超时 10 秒、容器 20 秒后才起，单元保持 active、不重启、随后受保护；旧写法同样条件下 `start-post operation timed out`，40 秒内重启 3 次） |
+| 20 | drop-in 与手工补跑都直接执行脚本文件，漏了可执行位时保护静默失效（`ExecStartPost=-` 吞掉 EACCES）（代码审查） | 一律 `/bin/bash <脚本>`（`stc-test9-oom.sh` 第 11 项：去掉可执行位后仍受保护） |
+| 21 | 加盘、移除盘不重算内存预留：`reserved_mem_mb` 只在建集群、加节点、改角色时算，给已有节点加 OSD 后数据库与节点上的预留都还按原来的盘数（每个 OSD 少扣 `osd_memory_target`+512 MiB），调度器多分内存给云服务器（2026-10-07 核对代码发现） | 加盘、移除盘、换盘的开始与收尾 `storageRefreshReserve`，Ceph 加盘、移除盘最后对相关节点跑 `finish`（PG `TestStorageCephDeployPG`：加盘后 h[1] 3584 → 5120 且 `finish` 下发 5120，移除后回到 3584，换盘不变）。CEPH-09 在真实节点上加盘、移除盘后看节点的 `/opt/cloudland/run/storage/<集群>/reserved_mb` |
 
 ## 清理
 
