@@ -3099,12 +3099,28 @@ export default {
             later: 'later release',
             ece: 'GPFS erasure code (ECE)',
             eceHint:
-                'Needs 64 GB of memory and 25 Gbit/s per host, 3–32 hosts of one configuration: in a later release.',
+                'The disks of the NSD hosts form an erasure code recovery group (4+2p and others) and the file system lives on a vdisk set. Needs the IBM Storage Scale Erasure Code Edition package; IBM supports physical servers with 64 GB of memory and 25 Gbit/s only.',
+            eceHostsIntro:
+                'The NSD hosts that give disks are the servers of the recovery group: 3–32 of them, each with the same number and media of disks, at least 12 disks in all. An odd number of quorum hosts (at least 3) and 1–2 admin hosts; the other hosts are clients. The disks you select are claimed on submit; tick "Wipe" for disks with old data.',
+            eceParamsIntro:
+                'The file system lives on a vdisk set: the erasure code protects the data, so it keeps one copy. Making the recovery group formats the log home vdisk of every log group, which can take an hour or two on hard disks.',
+            eceCode: 'Erasure code',
+            eceCodeHint:
+                '4+2p: 2 parity strips for 4 data strips, the data survives 2 failed disks; 8+2p and 8+3p use the space better but need more disks',
+            eceBlockSizeHint: 'The block sizes depend on the code',
+            eceSetSize: 'Vdisk set size (%)',
+            eceSetSizeHint: 'Share of the free space of the recovery group the vdisk set takes',
+            ecePagepoolHint:
+                'Pagepool of the recovery group servers, at least 8192 MiB (mmvdisk refuses less); the clients keep the default. Reserved from the host memory, so leave room for the instances',
+            eceNoSlotMap: 'No slot map (tests only)',
+            eceNoSlotMapHint:
+                'Virtual machines and emulated disks have no enclosure slots: this turns the slot check and the volatile write cache check of the recovery group off. IBM does not support it, never tick it in production; on real servers run ecedrivemapping on each first.',
             softwareTitle: 'Choose the software package',
             softwareIntro:
                 'Packages are uploaded on the Software packages page; only a verified one with its license accepted can be chosen.',
             noPackage: 'No package yet; upload one on',
             licenseNotAccepted: 'License not accepted',
+            eceEditionNeeded: 'Erasure code layout needs the Erasure Code Edition',
             hostsTitle: 'Hosts, roles and disks',
             hostsIntro:
                 'Quorum hosts come in an odd number, at least 3; every host with disks is a failure group, at least 3 of them. The disks are claimed when you submit; a disk with data on it must be marked to wipe.',
@@ -3241,6 +3257,12 @@ export default {
             unsupportedBanner: 'The cluster runs on a system or kernel outside the support matrix: for tests only.',
             busy: 'busy',
             layout: 'Layout',
+            layouts: { replica: 'Replica', ece: 'Erasure code' },
+            noSlotMap: 'No slot map',
+            noSlotMapHint:
+                'The slot and write cache checks of the recovery group are off (virtual machines or emulated disks): for tests only',
+            recoveryGroup: 'Recovery group',
+            vdiskSet: 'Vdisk set',
             version: 'Version',
             clusterRef: 'Cluster id',
             counts: 'Hosts / disks / pools',

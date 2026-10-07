@@ -131,6 +131,13 @@ export interface StorageClusterHealth {
     alarms: StorageClusterAlarm[]
 }
 
+/**
+ * What the layout of a cluster is made of; the keys are the kind's own. GPFS erasure code: code (4+2p, 8+3p...),
+ * no_slot_map (the slot check is off: virtual machines or emulated disks, only for tests), recovery_group, vdisk_set,
+ * node_class
+ */
+export type StorageClusterLayoutInfo = Record<string, string | number | boolean>
+
 export interface StorageCluster {
     id: string
     name: string
@@ -139,6 +146,10 @@ export interface StorageCluster {
     kind: StorageKind
     mode: 'managed' | 'external'
     layout?: string
+    /** What this cluster supports: its kind's operations, fewer in some layouts (gpfs erasure code) */
+    capabilities?: StorageCapabilities
+    /** What the layout is made of (gpfs erasure code: the code, the recovery group, the vdisk set) */
+    layout_info?: StorageClusterLayoutInfo
     status: string
     health: string
     version?: string

@@ -2990,11 +2990,28 @@ export default {
             },
             later: '後續版本',
             ece: 'GPFS 糾刪碼（ECE）',
-            eceHint: '每台節點至少 64 GB 記憶體、25 Gbit/s 網路，3–32 台同配置的節點，在後續版本提供。',
+            eceHint:
+                '把 NSD 節點的磁碟組成糾刪碼復原群組（4+2p 等），檔案系統建在糾刪碼卷上。要用 IBM Storage Scale 糾刪碼版的安裝包；IBM 只支援每台 64 GB 記憶體、25 Gbit/s 網路的實體伺服器。',
+            eceHostsIntro:
+                '提供磁碟的 NSD 節點就是復原群組的伺服器：3–32 台，每台磁碟的數量與介質相同，合計至少 12 塊。仲裁節點要奇數個（至少 3 個），管理節點 1–2 個；其餘節點作為用戶端。選中的磁碟在提交時就被認領，有舊資料的磁碟要勾選「清除舊資料」。',
+            eceParamsIntro:
+                '檔案系統建在糾刪碼卷上，資料由糾刪碼保護，只存一份。建復原群組時要格式化每個日誌群組的日誌盤，機械硬碟上可能要一兩個小時。',
+            eceCode: '糾刪碼',
+            eceCodeHint:
+                '4+2p：每 4 份資料加 2 份校驗，同時壞 2 塊磁碟資料仍完整；8+2p、8+3p 空間利用率更高，但要更多磁碟',
+            eceBlockSizeHint: '可選的區塊大小由糾刪碼決定',
+            eceSetSize: '糾刪碼卷佔用（%）',
+            eceSetSizeHint: '糾刪碼卷佔復原群組可用空間的百分比',
+            ecePagepoolHint:
+                '復原群組伺服器的 pagepool，至少 8192 MiB（程式的硬性要求），用戶端節點用預設值；會從節點記憶體裡預留，和雲端伺服器混跑時要留夠',
+            eceNoSlotMap: '不要求槽位對應（僅用於測試）',
+            eceNoSlotMapHint:
+                '虛擬機器和模擬磁碟沒有機箱槽位，勾選後關閉復原群組的槽位檢查和磁碟揮發性寫入快取檢查。IBM 不支援這種用法，正式環境不要勾選；實體伺服器要先在每台上執行 ecedrivemapping 產生槽位對應。',
             softwareTitle: '選擇軟體包',
             softwareIntro: '安裝包在「軟體包」頁上傳；只能選擇校驗通過並已接受授權條款的包。',
             noPackage: '還沒有可用的安裝包，先到這裡上傳：',
             licenseNotAccepted: '授權條款未接受',
+            eceEditionNeeded: '糾刪碼佈局要用糾刪碼版',
             hostsTitle: '節點、角色和磁碟',
             hostsIntro:
                 '仲裁節點要奇數個（至少 3 個）；提供磁碟的每台節點是一個故障組，至少要 3 台。選中的磁碟在提交時就被認領，有舊資料的磁碟要勾選「清除舊資料」。',
@@ -3124,6 +3141,11 @@ export default {
             unsupportedBanner: '這個叢集部署在不受支援的系統或核心上，只能用於測試。',
             busy: '任務中',
             layout: '佈局',
+            layouts: { replica: '副本', ece: '糾刪碼' },
+            noSlotMap: '無槽位對應',
+            noSlotMapHint: '復原群組的槽位檢查和寫入快取檢查已關閉（虛擬機器或模擬磁碟），只能用於測試',
+            recoveryGroup: '復原群組',
+            vdiskSet: '糾刪碼卷',
             version: '版本',
             clusterRef: '叢集識別碼',
             counts: '節點 / 磁碟 / 儲存池',

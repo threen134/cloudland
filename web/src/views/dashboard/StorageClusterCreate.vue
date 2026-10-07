@@ -6,7 +6,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { ArrowLeft, Check, ServerCog, Download, ClipboardCheck, Lock } from 'lucide-vue-next'
+import { ArrowLeft, Check, ServerCog, Download, ClipboardCheck } from 'lucide-vue-next'
 import {
     storageClustersApi,
     TASK_LIVE_STATUSES,
@@ -36,6 +36,9 @@ const backends = ref<StorageBackend[]>([])
 const loadError = ref('')
 const kind = ref('')
 const mode = ref<Mode>('managed')
+// gpfs: replica, or ece (the erasure code layout: a recovery group on the disks of the NSD hosts)
+const layout = ref('replica')
+const ece = computed(() => kind.value === 'gpfs' && mode.value === 'managed' && layout.value === 'ece')
 const backend = computed(() => backends.value.find((b) => b.kind === kind.value))
 
 // ---- the steps ----
@@ -53,6 +56,7 @@ const step = computed(() => steps.value[stepIndex.value])
 interface TypeOption {
     kind: string
     mode: Mode
+    layout?: string
     enabled: boolean
     later?: boolean
     label: string
@@ -70,6 +74,16 @@ const typeOptions = computed<TypeOption[]>(() => {
             label: t('storage.wizard.managed', { kind: storageKindText(t, te, b.kind) }),
             hint: hintOf(`storage.wizard.managedHints.${b.kind}`) || hintOf(`storage.cluster.kindHints.${b.kind}`),
         })
+        if (b.kind === 'gpfs' && b.capabilities?.managed) {
+            list.push({
+                kind: b.kind,
+                mode: 'managed',
+                layout: 'ece',
+                enabled: true,
+                label: t('storage.wizard.ece'),
+                hint: t('storage.wizard.eceHint'),
+            })
+        }
         if (b.capabilities?.external) {
             list.push({
                 kind: b.kind,
@@ -86,19 +100,31 @@ const chooseType = (o: TypeOption) => {
     if (!o.enabled) return
     kind.value = o.kind
     mode.value = o.mode
+    layout.value = o.layout || 'replica'
+    // The erasure code layout has no single host test layout
+    if (layout.value === 'ece') testLayout.value = false
 }
+const typeChosen = (o: TypeOption) =>
+    kind.value === o.kind && mode.value === o.mode && layout.value === (o.layout || 'replica')
 
 // ---- software ----
 const packages = ref<StoragePackage[]>([])
 const packagesLoading = ref(false)
 const packageId = ref('')
 const kindPackages = computed(() => packages.value.filter((p) => p.kind === kind.value && p.status === 'ready'))
+// The erasure code layout runs on the erasure code edition only (the backend refuses others)
+const editionFits = (p: StoragePackage) => !ece.value || p.edition === 'erasure_code'
+const packageFits = (p: StoragePackage) => !!p.accepted_by && editionFits(p)
+const pickPackage = () => {
+    const usable = kindPackages.value.filter(packageFits)
+    if (!usable.some((p) => p.id === packageId.value)) packageId.value = usable[0]?.id || ''
+}
+watch(ece, pickPackage)
 const loadPackages = async () => {
     packagesLoading.value = true
     try {
         packages.value = (await storagePackagesApi.list({ limit: 500 })).storage_packages || []
-        const usable = kindPackages.value.filter((p) => p.accepted_by)
-        if (!usable.some((p) => p.id === packageId.value)) packageId.value = usable[0]?.id || ''
+        pickPackage()
     } catch (err) {
         loadError.value = errorMessage(err, t('messages.error'))
     } finally {
@@ -112,7 +138,7 @@ const editionText = (e?: string) =>
 // ---- hosts ----
 const pick = ref<HostPick>({ roles: {}, disks: {} })
 const picker = ref<InstanceType<typeof StorageHostPicker> | null>(null)
-watch([kind, mode], () => {
+watch([kind, mode, layout], () => {
     pick.value = { roles: {}, disks: {} }
 })
 const hostCount = computed(() => Object.keys(pick.value.roles).length)
@@ -120,6 +146,24 @@ const diskCount = computed(() => Object.keys(pick.value.disks).length)
 
 // ---- params ----
 const gpfs = ref({ fs_name: 'fs1', block_size: '4M', data_replicas: 2, pagepool_mib: 1024 })
+// The erasure code layout: the code of the vdisk set and the block sizes it takes (what the backend accepts)
+const eceBlocks: Record<string, string[]> = {
+    '4+2p': ['1M', '2M', '4M', '8M'],
+    '4+3p': ['1M', '2M', '4M', '8M'],
+    '8+2p': ['1M', '2M', '4M', '8M', '16M'],
+    '8+3p': ['1M', '2M', '4M', '8M', '16M'],
+    '3WayReplication': ['1M', '2M'],
+    '4WayReplication': ['1M', '2M'],
+}
+const eceForm = ref({ code: '4+2p', block_size: '4M', set_size: 80, pagepool_mib: 8192, no_slot_map: false })
+watch(
+    () => eceForm.value.code,
+    (code) => {
+        const blocks = eceBlocks[code] || []
+        if (!blocks.includes(eceForm.value.block_size))
+            eceForm.value.block_size = blocks.includes('4M') ? '4M' : blocks[blocks.length - 1]
+    }
+)
 const ceph = ref({ osd_memory_target_mib: 2048, image: '', cluster_network: '' })
 const importParams = ref({ fs_name: '', mount_point: '' })
 const cephImport = ref({ fsid: '', mon_addrs: '', client_user: 'cloudland', client_key: '' })
@@ -153,6 +197,17 @@ const params = computed<StorageParams | null>(() => {
             osd_memory_target_mib: Number(ceph.value.osd_memory_target_mib) || undefined,
             image: ceph.value.image.trim() || undefined,
             cluster_network: ceph.value.cluster_network.trim() || undefined,
+        }
+    }
+    if (ece.value) {
+        return {
+            layout: 'ece',
+            fs_name: gpfs.value.fs_name.trim() || undefined,
+            block_size: eceForm.value.block_size,
+            pagepool_mib: Number(eceForm.value.pagepool_mib) || undefined,
+            ece_code: eceForm.value.code,
+            ece_set_size: Number(eceForm.value.set_size) || undefined,
+            no_slot_map: eceForm.value.no_slot_map || undefined,
         }
     }
     if (kind.value === 'gpfs') {
@@ -197,8 +252,21 @@ const paramsValid = computed(() => {
             (!c.cluster_network.trim() || /^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(c.cluster_network.trim()))
         )
     }
-    if (kind.value === 'gpfs')
-        return !gpfs.value.fs_name.trim() || /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(gpfs.value.fs_name.trim())
+    const fsNameOk = !gpfs.value.fs_name.trim() || /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(gpfs.value.fs_name.trim())
+    if (ece.value) {
+        const e = eceForm.value
+        const pagepool = Number(e.pagepool_mib)
+        const setSize = Number(e.set_size)
+        return (
+            fsNameOk &&
+            pagepool >= 8192 &&
+            pagepool <= 65536 &&
+            setSize >= 10 &&
+            setSize <= 100 &&
+            (eceBlocks[e.code] || []).includes(e.block_size)
+        )
+    }
+    if (kind.value === 'gpfs') return fsNameOk
     return true
 })
 watch(testLayout, (test) => {
@@ -384,10 +452,10 @@ onMounted(async () => {
                 <div class="type-grid">
                     <button
                         v-for="o in typeOptions"
-                        :key="`${o.kind}-${o.mode}`"
+                        :key="`${o.kind}-${o.mode}-${o.layout || ''}`"
                         type="button"
                         class="type-card"
-                        :class="{ active: kind === o.kind && mode === o.mode, disabled: !o.enabled }"
+                        :class="{ active: typeChosen(o), disabled: !o.enabled }"
                         :disabled="!o.enabled"
                         @click="chooseType(o)"
                     >
@@ -399,14 +467,6 @@ onMounted(async () => {
                         </span>
                         <span class="type-card-hint">{{ o.hint }}</span>
                     </button>
-                    <div v-if="backends.some((b) => b.kind === 'gpfs')" class="type-card disabled">
-                        <span class="type-card-head">
-                            <Lock :size="18" />
-                            <span class="type-card-title">{{ t('storage.wizard.ece') }}</span>
-                            <span class="badge badge-secondary">{{ t('storage.wizard.later') }}</span>
-                        </span>
-                        <span class="type-card-hint">{{ t('storage.wizard.eceHint') }}</span>
-                    </div>
                 </div>
             </template>
 
@@ -426,9 +486,9 @@ onMounted(async () => {
                         v-for="p in kindPackages"
                         :key="p.id"
                         class="package-row"
-                        :class="{ disabled: !p.accepted_by, active: packageId === p.id }"
+                        :class="{ disabled: !packageFits(p), active: packageId === p.id }"
                     >
-                        <input v-model="packageId" type="radio" :value="p.id" :disabled="!p.accepted_by" />
+                        <input v-model="packageId" type="radio" :value="p.id" :disabled="!packageFits(p)" />
                         <span class="package-text">
                             <span class="name">{{ p.file_name }}</span>
                             <span class="sub"
@@ -438,6 +498,9 @@ onMounted(async () => {
                         </span>
                         <span v-if="!p.accepted_by" class="badge badge-warning">{{
                             t('storage.wizard.licenseNotAccepted')
+                        }}</span>
+                        <span v-else-if="!editionFits(p)" class="badge badge-secondary">{{
+                            t('storage.wizard.eceEditionNeeded')
                         }}</span>
                     </label>
                 </div>
@@ -456,7 +519,9 @@ onMounted(async () => {
                             mode === 'external'
                                 ? hintOf(`storage.wizard.importHostsIntros.${kind}`) ||
                                   t('storage.wizard.importHostsIntro')
-                                : hintOf(`storage.wizard.hostsIntros.${kind}`) || t('storage.wizard.hostsIntro')
+                                : ece
+                                  ? t('storage.wizard.eceHostsIntro')
+                                  : hintOf(`storage.wizard.hostsIntros.${kind}`) || t('storage.wizard.hostsIntro')
                         }}
                     </p>
                     <StorageHostPicker
@@ -525,6 +590,61 @@ onMounted(async () => {
                             />
                         </div>
                     </div>
+                </template>
+                <template v-else-if="ece">
+                    <p class="intro">{{ t('storage.wizard.eceParamsIntro') }}</p>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.fsName') }}</label>
+                            <input v-model="gpfs.fs_name" type="text" class="form-input" maxlength="32" />
+                            <span class="form-hint">{{ t('storage.wizard.fsNameHint') }}</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.eceCode') }}</label>
+                            <select v-model="eceForm.code" class="form-input">
+                                <option v-for="c in Object.keys(eceBlocks)" :key="c" :value="c">{{ c }}</option>
+                            </select>
+                            <span class="form-hint">{{ t('storage.wizard.eceCodeHint') }}</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.blockSize') }}</label>
+                            <select v-model="eceForm.block_size" class="form-input">
+                                <option v-for="b in eceBlocks[eceForm.code] || []" :key="b" :value="b">{{ b }}</option>
+                            </select>
+                            <span class="form-hint">{{ t('storage.wizard.eceBlockSizeHint') }}</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.eceSetSize') }}</label>
+                            <input
+                                v-model.number="eceForm.set_size"
+                                type="number"
+                                min="10"
+                                max="100"
+                                step="5"
+                                class="form-input"
+                            />
+                            <span class="form-hint">{{ t('storage.wizard.eceSetSizeHint') }}</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.pagepool') }}</label>
+                            <input
+                                v-model.number="eceForm.pagepool_mib"
+                                type="number"
+                                min="8192"
+                                max="65536"
+                                step="1024"
+                                class="form-input"
+                            />
+                            <span class="form-hint">{{ t('storage.wizard.ecePagepoolHint') }}</span>
+                        </div>
+                    </div>
+                    <label class="checkbox-inline" :title="t('storage.wizard.eceNoSlotMapHint')">
+                        <input v-model="eceForm.no_slot_map" type="checkbox" />
+                        {{ t('storage.wizard.eceNoSlotMap') }}
+                    </label>
+                    <span v-if="eceForm.no_slot_map" class="form-hint warn-hint">{{
+                        t('storage.wizard.eceNoSlotMapHint')
+                    }}</span>
                 </template>
                 <template v-else-if="kind === 'gpfs'">
                     <div class="form-grid">
@@ -606,7 +726,11 @@ onMounted(async () => {
                         <textarea v-model="rawParams" class="form-input mono" rows="6" />
                     </div>
                 </template>
-                <label v-if="mode === 'managed'" class="checkbox-inline" :title="t('storage.cluster.testLayoutHint')">
+                <label
+                    v-if="mode === 'managed' && !ece"
+                    class="checkbox-inline"
+                    :title="t('storage.cluster.testLayoutHint')"
+                >
                     <input v-model="testLayout" type="checkbox" />
                     {{ t('storage.cluster.testLayout') }}
                 </label>
@@ -672,7 +796,7 @@ onMounted(async () => {
                 </div>
                 <dl class="summary">
                     <dt>{{ t('storage.cluster.kind') }}</dt>
-                    <dd>{{ typeOptions.find((o) => o.kind === kind && o.mode === mode)?.label }}</dd>
+                    <dd>{{ typeOptions.find(typeChosen)?.label }}</dd>
                     <template v-if="chosenPackage && mode === 'managed'">
                         <dt>{{ t('storage.wizard.package') }}</dt>
                         <dd>{{ chosenPackage.file_name }} ({{ chosenPackage.version }})</dd>

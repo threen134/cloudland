@@ -2989,11 +2989,27 @@ export default {
             },
             later: '后续版本',
             ece: 'GPFS 纠删码（ECE）',
-            eceHint: '每台节点至少 64 GB 内存、25 Gbit/s 网络，3–32 台同配置的节点，在后续版本提供。',
+            eceHint:
+                '把 NSD 节点的盘组成纠删码恢复组（4+2p 等），文件系统建在纠删码卷上。要用 IBM Storage Scale 纠删码版的安装包；IBM 只支持每台 64 GB 内存、25 Gbit/s 网络的物理服务器。',
+            eceHostsIntro:
+                '提供磁盘的 NSD 节点就是恢复组的服务器：3–32 台，每台盘的数量与介质相同，合计至少 12 块。仲裁节点要奇数个（至少 3 个），管理节点 1–2 个；其余节点作为客户端。选中的磁盘在提交时就被认领，有旧数据的盘要勾选「清除旧数据」。',
+            eceParamsIntro:
+                '文件系统建在纠删码卷上，数据由纠删码保护，只存一份。建恢复组时要格式化每个日志组的日志盘，机械盘上可能要一两个小时。',
+            eceCode: '纠删码',
+            eceCodeHint: '4+2p：每 4 份数据加 2 份校验，同时坏 2 块盘数据仍完整；8+2p、8+3p 空间利用率更高，但要更多盘',
+            eceBlockSizeHint: '可选的块大小由纠删码决定',
+            eceSetSize: '纠删码卷占用（%）',
+            eceSetSizeHint: '纠删码卷占恢复组可用空间的百分比',
+            ecePagepoolHint:
+                '恢复组服务器的 pagepool，至少 8192 MiB（程序的硬性要求），客户端节点用默认值；会从节点内存里预留，和云服务器混跑时要留够',
+            eceNoSlotMap: '不要求槽位映射（仅用于测试）',
+            eceNoSlotMapHint:
+                '虚拟机和模拟盘没有机箱槽位，勾选后关闭恢复组的槽位检查和磁盘易失写缓存检查。IBM 不支持这种用法，生产环境不要勾选；实体服务器要先在每台上运行 ecedrivemapping 生成槽位映射。',
             softwareTitle: '选择软件包',
             softwareIntro: '安装包在「软件包」页上传；只能选择校验通过并已接受许可证的包。',
             noPackage: '还没有可用的安装包，先到这里上传：',
             licenseNotAccepted: '许可证未接受',
+            eceEditionNeeded: '纠删码布局要用纠删码版',
             hostsTitle: '节点、角色和磁盘',
             hostsIntro:
                 '仲裁节点要奇数个（至少 3 个）；提供磁盘的每台节点是一个故障组，至少要 3 台。选中的磁盘在提交时就被认领，有旧数据的盘要勾选「清除旧数据」。',
@@ -3123,6 +3139,11 @@ export default {
             unsupportedBanner: '这个集群部署在不受支持的系统或内核上，只能用于测试。',
             busy: '任务中',
             layout: '布局',
+            layouts: { replica: '副本', ece: '纠删码' },
+            noSlotMap: '无槽位映射',
+            noSlotMapHint: '恢复组的槽位检查和写缓存检查已关闭（虚拟机或模拟盘），只能用于测试',
+            recoveryGroup: '恢复组',
+            vdiskSet: '纠删码卷',
             version: '版本',
             clusterRef: '集群标识',
             counts: '节点 / 磁盘 / 存储池',

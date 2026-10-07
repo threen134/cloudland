@@ -87,7 +87,10 @@ const loading = ref(true)
 const error = ref('')
 
 const backend = computed(() => backends.value.find((b) => b.kind === cluster.value?.kind))
-const caps = computed(() => backend.value?.capabilities)
+// What this cluster supports: its kind's operations, fewer in some layouts (the gpfs erasure code layout)
+const caps = computed(() => cluster.value?.capabilities || backend.value?.capabilities)
+const layoutText = (layout: string) =>
+    te(`storage.clusterDetail.layouts.${layout}`) ? t(`storage.clusterDetail.layouts.${layout}`) : layout
 const managed = computed(() => cluster.value?.mode === 'managed')
 const ready = computed(() => cluster.value?.status === 'ready')
 // Changing the structure needs a ready managed cluster no task holds
@@ -558,9 +561,26 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
                     <div class="info-rows">
                         <InfoRow :label="t('storage.cluster.kind')">{{ storageKindText(t, te, cluster.kind) }}</InfoRow>
                         <InfoRow :label="t('storage.cluster.mode')">{{ modeText(cluster.mode) }}</InfoRow>
-                        <InfoRow v-if="cluster.layout" :label="t('storage.clusterDetail.layout')">{{
-                            cluster.layout
-                        }}</InfoRow>
+                        <InfoRow v-if="cluster.layout" :label="t('storage.clusterDetail.layout')">
+                            {{ layoutText(cluster.layout) }}
+                            <template v-if="cluster.layout_info?.code">· {{ cluster.layout_info.code }}</template>
+                            <span
+                                v-if="cluster.layout_info?.no_slot_map"
+                                class="badge badge-warning"
+                                :title="t('storage.clusterDetail.noSlotMapHint')"
+                                >{{ t('storage.clusterDetail.noSlotMap') }}</span
+                            >
+                        </InfoRow>
+                        <InfoRow
+                            v-if="cluster.layout_info?.recovery_group"
+                            :label="t('storage.clusterDetail.recoveryGroup')"
+                        >
+                            <span class="mono-cell">{{ cluster.layout_info.recovery_group }}</span>
+                            <span v-if="cluster.layout_info.vdisk_set" class="text-secondary">
+                                · {{ t('storage.clusterDetail.vdiskSet') }}
+                                <span class="mono-cell">{{ cluster.layout_info.vdisk_set }}</span></span
+                            >
+                        </InfoRow>
                         <InfoRow v-if="cluster.version" :label="t('storage.clusterDetail.version')">{{
                             cluster.version
                         }}</InfoRow>
