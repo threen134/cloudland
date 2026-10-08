@@ -165,7 +165,7 @@
 
 > 临时云服务器（Ceph 19.2.3，手工加的同等保护，当时没给 `system.slice` 设保护）：第 4 步的 OOM 部分通过，对照组杀了两个 mgr 与 OSD（2026-10-07，设计 §6.7.2「验证结果」）；页缓存当时没保住（OSD RSS 67 → 45 MiB），原因是回归点 18，修后没在真实 Ceph 上重做
 > WSL：第 1、3 步通过（Ceph 20.2，`TestStorageCephWSL`）；`gpfs-spike/stc-test9-oom.sh` 22 项、`stc-test10-memlow.sh` 通过
-> work-x：没跑（部署前 work-01/02/03 第 1、2 层不通过，adj 都是 0）
+> work-x（2026-10-07，部署 `6a69e161`，执行记录 `runs/2026-10-07-6a69e161+OOM保护.md`）：部署前第 1、2 层不通过（adj 0、评分 672–681）；部署并对 `ceph1` 补执行 `ceph_unit_oom` 后第 1、2 层通过（-900、评分 74–82、`system.slice` 4608 / 4608 / 3584 MiB）；第 3 步 `systemctl restart` OSD 4.9 秒返回、单元立即 active、12 秒后受保护；心跳巡检 5 分钟内补回被改掉的保护；第 4 步没在 work-x 上做
 
 ## CEPH-14 界面
 
@@ -224,7 +224,7 @@
 | 18 | 容器的 `memory.low` 被上层封顶成 0：cgroup v2 的保护逐层生效，容器在 `system.slice` 下，而 `system.slice` 的 `memory.low` 是 0（代码审查，2026-10-07） | 保护脚本把 `system.slice` 的 `MemoryLow` 设成本机已部署守护进程之和（`stc-test9-oom.sh` 第 8、12、13 项；`stc-test10-memlow.sh`：上层 0 时页缓存 301 → 42 MiB，上层有保护时不动；`TestStorageCephWSL` 核对总和与删除后归零） |
 | 19 | 保护脚本在 `ExecStartPost` 里同步等容器（最多约 190 秒，`docker inspect` 无超时），cephadm 单元的启动超时 200 秒把它算进去：容器起得慢时单元被判启动失败、守护进程被停掉并反复重启（代码审查） | drop-in 经 `systemd-run --no-block` 把脚本放进独立的临时单元，`docker` 调用加 `timeout`，心跳每 5 分钟巡检兜底（`stc-test9-oom.sh` 第 10 项：单元启动超时 10 秒、容器 20 秒后才起，单元保持 active、不重启、随后受保护；旧写法同样条件下 `start-post operation timed out`，40 秒内重启 3 次） |
 | 20 | drop-in 与手工补跑都直接执行脚本文件，漏了可执行位时保护静默失效（`ExecStartPost=-` 吞掉 EACCES）（代码审查） | 一律 `/bin/bash <脚本>`（`stc-test9-oom.sh` 第 11 项：去掉可执行位后仍受保护） |
-| 21 | 加盘、移除盘不重算内存预留：`reserved_mem_mb` 只在建集群、加节点、改角色时算，给已有节点加 OSD 后数据库与节点上的预留都还按原来的盘数（每个 OSD 少扣 `osd_memory_target`+512 MiB），调度器多分内存给云服务器（2026-10-07 核对代码发现） | 加盘、移除盘、换盘的开始与收尾 `storageRefreshReserve`，Ceph 加盘、移除盘最后对相关节点跑 `finish`（PG `TestStorageCephDeployPG`：加盘后 h[1] 3584 → 5120 且 `finish` 下发 5120，移除后回到 3584，换盘不变）。CEPH-09 在真实节点上加盘、移除盘后看节点的 `/opt/cloudland/run/storage/<集群>/reserved_mb` |
+| 21 | 加盘、移除盘不重算内存预留：`reserved_mem_mb` 只在建集群、加节点、改角色时算，给已有节点加 OSD 后数据库与节点上的预留都还按原来的盘数（每个 OSD 少扣 `osd_memory_target`+512 MiB），调度器多分内存给云服务器（2026-10-07 核对代码发现） | 加盘、移除盘、换盘的开始与收尾 `storageRefreshReserve`，Ceph 加盘、移除盘最后对相关节点跑 `finish`（PG `TestStorageCephDeployPG`：加盘后 h[1] 3584 → 5120 且 `finish` 下发 5120，移除后回到 3584，换盘不变）。work-x 2026-10-07：work-02 加一块回环盘后数据库、节点 `reserved_mb`、`storage_reserved_memory` 4608 → 6144 MiB，新 OSD 自动受保护；移除后回到 4608，`system.slice` 由下一轮巡检调回 |
 
 ## 清理
 
