@@ -2409,6 +2409,10 @@ export default {
             noInstanceOnNode: 'No instances on this node',
             typeAutoHint:
                 'Live or cold migration is decided automatically from the instance state; no choice is needed.',
+            forcedHint:
+                'Source node {host} is offline: the migration runs as a forced migration (evacuation). The source node is fenced first, then the instance is started on the target node from its disks in the shared storage pools. All its disks must be in shared storage pools.',
+            confirmFenced:
+                'The source node is confirmed powered off (required when it has been offline for less than 5 minutes)',
             starting: 'Starting...',
         },
         hypervisorStatus: {
@@ -2980,6 +2984,39 @@ export default {
         },
     },
     storage: {
+        imageCopies: {
+            title: 'Copies in storage pools',
+            intro: 'The copies of the image in the shared storage pools. Instances with their boot disk in a shared pool are cloned from the copy there; where a pool has none yet, the first instance waits for it to be imported. The image can be imported into pools ahead of time (preheat).',
+            pool: 'Storage pool',
+            host: 'Host',
+            bootDisks: 'Boot disks cloned',
+            none: 'No copies yet',
+            preheat: 'Preheat into pools',
+            preheatTitle: 'Preheat the image into storage pools',
+            preheatIntro:
+                'A copy of the image is imported into each shared storage pool chosen, so instances created there later do not wait for it. A host runs a few imports at a time; the ones queued show "Waiting for an import slot".',
+            noSharedPool: 'No shared storage pool is available',
+            hasCopy: 'has a copy',
+            preheatStarted: 'Import started',
+            preheatFailed: 'Preheat failed',
+            notAvailable: 'The image can be preheated once it is available',
+            drop: 'Remove copy',
+            dropStarted: 'Removing the copy',
+            dropFailed: 'Failed to remove the copy',
+            inUse: '{n} boot disks are cloned from it, it can not be removed',
+            importing: 'Being imported; it can be removed once that is done',
+            status: {
+                syncing: 'Importing',
+                synced: 'Available',
+                error: 'Import failed',
+                deleting: 'Removing',
+            },
+            phase: {
+                wait: 'Waiting for an import slot',
+                download: 'Downloading to the host',
+                write: 'Writing into the pool',
+            },
+        },
         recovery: {
             title: 'Recovery from a host failure',
             offlineSince: 'Offline since',
@@ -3100,6 +3137,13 @@ export default {
             ece: 'GPFS erasure code (ECE)',
             eceHint:
                 'The disks of the NSD hosts form an erasure code recovery group (4+2p and others) and the file system lives on a vdisk set. Needs the IBM Storage Scale Erasure Code Edition package; IBM supports physical servers with 64 GB of memory and 25 Gbit/s only.',
+            san: 'GPFS shared disks (SAN)',
+            sanHint:
+                'The NSDs are shared LUNs of a SAN (FC, iSCSI, multipath), each served by the hosts that see it. The storage array protects the data, so the file system keeps one copy.',
+            sanHostsIntro:
+                'Tick the same shared LUN (the same id) under every host that is to serve it: those hosts are its NSD servers, at most 8. Only disks marked "may be shared" can be chosen; for a multipath LUN choose the multipath device, not one of its paths. An odd number of quorum hosts (at least 3, 1 in the test layout) and 1–2 admin hosts.',
+            sanParamsIntro:
+                'Every LUN is an NSD served by the hosts it was ticked under. The storage array keeps the data redundant, so the file system keeps one copy of data and metadata.',
             eceHostsIntro:
                 'The NSD hosts that give disks are the servers of the recovery group: 3–32 of them, each with the same number and media of disks, at least 12 disks in all. An odd number of quorum hosts (at least 3) and 1–2 admin hosts; the other hosts are clients. The disks you select are claimed on submit; tick "Wipe" for disks with old data.',
             eceParamsIntro:
@@ -3112,6 +3156,21 @@ export default {
             eceSetSizeHint: 'Share of the free space of the recovery group the vdisk set takes',
             ecePagepoolHint:
                 'Pagepool of the recovery group servers, at least 8192 MiB (mmvdisk refuses less); the clients keep the default. Reserved from the host memory, so leave room for the instances',
+            eceSlotMode: 'Slot map',
+            eceSlotModeNone: 'Made on the servers',
+            eceSlotModeHint:
+                'Recovery groups of real servers need a slot map: with lmr (SAS disks behind an LSI controller) or nvme the platform runs ecedrivemapping on every server; with "Made on the servers" it must be there already',
+            eceSlotRange: 'User slots',
+            eceSlotRangeHint: 'The first and last user slot ecedrivemapping maps (it asks for them otherwise)',
+            eceMetaTitle: 'Metadata vdisk set (mixed media)',
+            eceMetaIntro:
+                'When the servers have SSD or NVMe beside their HDDs, the recovery group has two declustered arrays: the metadata vdisk set goes on the solid state disks, the data vdisk set on the HDDs (the code, block size and share above are for the data). Unused with disks of one media.',
+            eceMetaCode: 'Metadata code',
+            eceMetaBlockSize: 'Metadata block size',
+            eceMetaSetSize: 'Metadata vdisk set size (%)',
+            eceStrict: 'Strict readiness check',
+            eceStrictHint:
+                'The precheck fails on what IBM supports only (16 cores, 25 Gbit/s, bare metal servers) instead of warning. Whether the memory takes the pagepool, and whether the memory of the servers differs by more than 10%, are always checked',
             eceNoSlotMap: 'No slot map (tests only)',
             eceNoSlotMapHint:
                 'Virtual machines and emulated disks have no enclosure slots: this turns the slot check and the volatile write cache check of the recovery group off. IBM does not support it, never tick it in production; on real servers run ecedrivemapping on each first.',
@@ -3161,6 +3220,15 @@ export default {
                 "Empty: the image of the Ceph release of the hosts' distribution (quay.io/ceph/ceph:v<version>); it may not be newer than the hosts' Ceph",
             cephClusterNetwork: 'Cluster network',
             cephClusterNetworkHint: 'The network the OSDs replicate over; empty: the public network',
+            cephRegistry: 'Private registry',
+            cephRegistryHint:
+                'When the image needs a login to be pulled: the registry (host[:port]); the image above must come from it. Empty when no login is needed',
+            cephRegistryUser: 'Registry user',
+            cephRegistryPassword: 'Registry password',
+            cephRegistryPasswordHint:
+                'Kept encrypted with the cluster; sent to the hosts only to pull the image and deploy',
+            cephRegistryIncomplete:
+                'Give the registry, the user and the password; the image must start with "<registry>/"',
             hostsIntros: {
                 ceph: 'An odd number of monitors (at least 3), 1–2 managers, and OSDs on at least 3 hosts (the 3 replicas of the data go to different hosts). The chosen disks are claimed on submit; disks with data on them need "wipe".',
             },
@@ -3222,7 +3290,7 @@ export default {
             tab: 'Monitoring',
             title: 'Cluster metrics',
             empty: 'No data for this period. Curves appear a few minutes after the cluster is deployed.',
-            hint: 'For looking at only: alarms come from the health check. GPFS curves come from the node_exporter of each member, Ceph curves from the prometheus module of the active mgr.',
+            hint: 'For looking at only: alarms come from the health check. GPFS curves come from the node_exporter of each member; a Ceph cluster CloudLand deployed from the prometheus module of its active mgr, an imported one from the hosts that use it, as its client.',
             opsPerSecond: 'ops/s',
             charts: {
                 pools: 'Pool usage',
@@ -3231,6 +3299,8 @@ export default {
                 iops: 'IOPS',
                 nodes: 'Hosts',
                 osds: 'OSDs',
+                gpfs_pools: 'GPFS storage pools',
+                inodes: 'Inodes of the shared pools',
             },
             series: {
                 used: 'Used',
@@ -3257,12 +3327,14 @@ export default {
             unsupportedBanner: 'The cluster runs on a system or kernel outside the support matrix: for tests only.',
             busy: 'busy',
             layout: 'Layout',
-            layouts: { replica: 'Replica', ece: 'Erasure code' },
+            layouts: { replica: 'Replica', ece: 'Erasure code', san: 'Shared disks' },
             noSlotMap: 'No slot map',
             noSlotMapHint:
                 'The slot and write cache checks of the recovery group are off (virtual machines or emulated disks): for tests only',
             recoveryGroup: 'Recovery group',
             vdiskSet: 'Vdisk set',
+            slotMode: 'Slot map: {mode}',
+            metaCode: 'metadata {code}',
             version: 'Version',
             clusterRef: 'Cluster id',
             counts: 'Hosts / disks / pools',
@@ -3293,6 +3365,10 @@ export default {
             autoJoinHosts: 'Hosts',
             autoJoinRetry: 'Try the failed hosts again',
             autoJoinSaved: 'Saved',
+            autoJoinNewOnly: 'Only hosts registered from now on',
+            autoJoinNewOnlyHint:
+                'The hosts in the zones now are left as they are; only the hosts registered later join on their own.',
+            autoJoinNewSince: 'Only hosts registered after {time}',
             pendingStatus: {
                 pending: 'Waiting',
                 joining: 'Joining',
@@ -3368,6 +3444,17 @@ export default {
             addNodesIntro:
                 'The new hosts are prechecked, get the software and join; their disks go into the file system. Rebalance by hand afterwards.',
             addDisksTitle: 'Add disks',
+            createFs: 'New file system',
+            fsStatus: { ready: 'Ready', creating: 'Creating', deleting: 'Deleting', error: 'Error' },
+            createFsTitle: 'New file system',
+            createFsIntro:
+                'A new file system on free disks of the members, mounted at /gpfs/<name>. The disks are on at least 3 hosts (one failure group each, but in the test layout). Pools can be made on it afterwards.',
+            fsNameHint: 'Starts with a letter, letters, digits and _ only, at most 32',
+            targetFs: 'File system',
+            deleteFs: 'Delete file system',
+            deleteFsLast: 'The only file system goes with the cluster',
+            deleteFsMessage:
+                'Unmount and delete file system {fs}; its disks are wiped and given back to their hosts. Not while a storage pool is on it.',
             addDisksIntro: 'Choose free disks of the members to go into the file system. Rebalance by hand afterwards.',
             deleteTitle: 'Delete cluster {name}',
             deleteIntro:
@@ -3524,6 +3611,8 @@ export default {
                 selftest: 'Task path selftest',
                 replace_disk: 'Replace a disk',
                 change_roles: 'Change roles',
+                create_fs: 'New file system',
+                delete_fs: 'Delete file system',
             },
             taskStatus: {
                 running: 'Running',
@@ -3599,6 +3688,25 @@ export default {
                 replace_osd: 'Replace the OSD',
                 set_labels: 'Set the labels',
                 change_roles: 'Change the roles',
+                mon_addrs: 'Read the mon addresses',
+                client_refresh: 'Refresh the client configuration',
+                delete_fs: 'Delete the file system',
+                ece_configure: 'Configure the recovery group servers',
+                ece_slots: 'Map and check the slots',
+                ece_create_rg: 'Create the recovery group',
+                ece_create_vs: 'Create the vdisk sets',
+                ece_create_fs: 'Create the file system on the vdisk sets',
+                ece_add_servers: 'Add the servers to the recovery group',
+                ece_remove_server: 'Take the server out of the recovery group',
+                ece_replace: 'Replace the pdisk',
+                ece_resize: 'Add the disks to the recovery group',
+                san_servers: 'Change the servers of the shared LUNs',
+                remote_owner_key: 'Read the key of the owner',
+                remote_access_key: 'Read the key of the cluster that mounts',
+                remote_grant: 'Grant the cluster that mounts',
+                remote_mount: 'Mount on the cluster that mounts',
+                remote_unmount: 'Unmount on the cluster that mounted',
+                remote_revoke: 'Revoke the grant',
             },
             cluster: 'Cluster',
             noCluster: 'No cluster',
@@ -3712,6 +3820,7 @@ export default {
             scannedAt: 'Scanned {time}',
             wipe: 'Wipe old data',
             wipeNeeded: 'Disks with old data can only be used with "Wipe old data"',
+            lunInUse: 'The cluster uses this LUN already: the host only becomes one of its servers, nothing is wiped',
             start: 'Start',
             startPrecheck: 'Start precheck',
             starting: 'Starting…',
@@ -3796,6 +3905,25 @@ export default {
             linear: 'Linear (no redundancy)',
             raid1: 'RAID1',
             builtin: 'Built-in',
+        },
+        remoteMounts: {
+            title: 'Remote mounts',
+            hint: 'Once another GPFS cluster of the platform mounts a file system of this one under its name and mount point, the shared pools on it are usable on those hosts too. Mounting and unmounting are tasks of the cluster that mounts.',
+            empty: 'No remote mounts',
+            loadFailed: 'Failed to load the remote mounts',
+            filesystem: 'File system',
+            direction: 'Direction',
+            mountPoint: 'Mount point',
+            status: 'Status',
+            mountedBy: 'mounted by {cluster}',
+            mountedFrom: 'mounted from {cluster}',
+            create: 'Mount on another cluster',
+            createIntro: 'The hosts of the target cluster mount this file system under the same name and mount point; the target must have no file system of that name or mount point.',
+            target: 'Cluster that mounts',
+            noTarget: 'No cluster to choose: another ready cluster of the kind deployed by the platform is needed',
+            delete: 'Stop the remote mount',
+            deleteMessage: 'The hosts of {cluster} unmount file system {fs} and its grant goes. Instances on those hosts using volumes on it must be moved or deleted first.',
+            statuses: { mounting: 'Mounting', ready: 'Mounted', unmounting: 'Unmounting', error: 'Error' },
         },
         diskStates: {
             free: 'Free',

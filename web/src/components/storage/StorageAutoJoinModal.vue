@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The zones whose hosts join a storage cluster as clients on their own (shared-storage-design.md §6.3): every online
 // host of those zones that is not in the cluster, the ones there now included, joins with a task of its own once the
-// cluster is free. No zone turns it off.
+// cluster is free; with new only, just the hosts registered from then on. No zone turns it off.
 import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseModal from '../modals/BaseModal.vue'
@@ -15,6 +15,7 @@ const { t } = useI18n()
 
 const zones = ref<Zone[]>([])
 const chosen = ref<string[]>([])
+const newOnly = ref(false)
 const loading = ref(false)
 const loadError = ref('')
 const submitting = ref(false)
@@ -25,6 +26,7 @@ watch(
     async (show) => {
         if (!show) return
         chosen.value = (props.cluster?.auto_join?.zones || []).map((z) => z.id || '').filter(Boolean)
+        newOnly.value = !!props.cluster?.auto_join?.new_only
         submitError.value = ''
         loading.value = true
         loadError.value = ''
@@ -44,14 +46,24 @@ const before = computed(() =>
         .sort()
         .join(',')
 )
-const unchanged = computed(() => [...chosen.value].sort().join(',') === before.value)
+const unchanged = computed(
+    () =>
+        [...chosen.value].sort().join(',') === before.value &&
+        (newOnly.value && chosen.value.length > 0) === !!props.cluster?.auto_join?.new_only
+)
 
 const submit = async () => {
     if (!props.cluster || unchanged.value) return
     submitting.value = true
     submitError.value = ''
     try {
-        emit('saved', await storageClustersApi.update(props.cluster.id, { auto_join_zones: chosen.value }))
+        emit(
+            'saved',
+            await storageClustersApi.update(props.cluster.id, {
+                auto_join_zones: chosen.value,
+                auto_join_new_only: newOnly.value && chosen.value.length > 0,
+            })
+        )
     } catch (err) {
         submitError.value = errorMessage(err, t('storage.cluster.actionFailed'))
     } finally {
@@ -80,6 +92,13 @@ const submit = async () => {
                     {{ z.name }}
                 </label>
             </div>
+            <label v-if="!loading && !loadError" class="checkbox-inline">
+                <input v-model="newOnly" type="checkbox" :disabled="!chosen.length" />
+                {{ t('storage.clusterDetail.autoJoinNewOnly') }}
+            </label>
+            <small v-if="newOnly && chosen.length" class="text-secondary">{{
+                t('storage.clusterDetail.autoJoinNewOnlyHint')
+            }}</small>
         </div>
         <template #footer>
             <span v-if="submitError" class="footer-error text-error">{{ submitError }}</span>
@@ -127,6 +146,14 @@ const submit = async () => {
 .zone-chip.active {
     border-color: var(--primary-color);
     background: var(--primary-light);
+}
+
+.checkbox-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: var(--font-size-sm);
 }
 
 .footer-error {

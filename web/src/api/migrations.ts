@@ -115,16 +115,19 @@ export interface MigrationListResponse {
     migrations: Migration[]
 }
 
-// 对应 migration.go 的 MigrationPayload
+// MigrationPayload of migration.go
 export interface CreateMigrationPayload {
-    // 2-32 字符
+    // 2-32 characters
     name: string
     instances: { id: string }[]
-    // 节点 hostid；省略则由调度器选择
+    // hostid of the target node; the scheduler picks one when omitted
     target_hyper?: number
-    // 源节点已离线时强行迁移（需要共享存储，本地存储下后端直接拒绝）。
-    // 不是冷迁移开关：热 / 冷由后端按虚拟机当前状态自行决定
+    // Move off a source node that is offline (an evacuation: the disks must be in shared pools, the backend refuses
+    // local storage; the instances must be on one host). Not a cold migration switch: warm or cold is up to the
+    // backend, by the current state of the instance
     force?: boolean
+    // With force: the source node is confirmed powered off, so the grace period is not waited for
+    confirm_fenced?: boolean
     // Target pool per disk; needs target_hyper and a single instance
     disks?: { volume: { id: string }; storage_pool: { id: string } }[]
     // Replace a pool the target lacks by one of the same fallback group (default true)

@@ -49,7 +49,8 @@ const candidates = computed(() =>
 )
 const external = computed(() => detail.value?.mode === 'external')
 const isCeph = computed(() => detail.value?.kind === 'ceph')
-const filesystems = computed(() => detail.value?.filesystems || [])
+// Only a ready file system takes a pool: one being made or deleted is left out
+const filesystems = computed(() => (detail.value?.filesystems || []).filter((f) => !f.status || f.status === 'ready'))
 // Media a pool can ask for: those of the disks of the cluster (the backend checks the file system has them)
 const mediaChoices = computed(() =>
     [...new Set((detail.value?.disks || []).map((d) => d.media).filter(Boolean))].sort()
@@ -78,7 +79,7 @@ const loadDetail = async (id: string) => {
     if (!id) return
     try {
         detail.value = await storageClustersApi.get(id)
-        form.value.filesystem = detail.value.filesystems?.[0]?.name || ''
+        form.value.filesystem = filesystems.value[0]?.name || ''
         if (external.value && !form.value.path && detail.value.filesystems?.[0]) {
             form.value.path = `${detail.value.filesystems[0].mount_point}/`
         }

@@ -88,4 +88,38 @@ export const imagesApi = {
         const response = await client.delete<void>(`/images/${id}`)
         return response.data
     },
+
+    /** The copies of the image in the shared storage pools (system admins) */
+    async storageCopies(id: string): Promise<ImageStorageCopiesResponse> {
+        const response = await client.get<ImageStorageCopiesResponse>(`/images/${id}/storage_copies`)
+        return response.data
+    },
+
+    /** Import the image into shared pools ahead of the first boot disk there (system admins) */
+    async preheat(id: string, payload: { storage_pools: { id: string }[] }): Promise<ImageStorageCopiesResponse> {
+        const response = await client.post<ImageStorageCopiesResponse>(`/images/${id}/storage_copies`, payload)
+        return response.data
+    },
+
+    /** Remove the copy of the image in a pool no boot disk is cloned from (system admins) */
+    async dropStorageCopy(id: string, poolId: string): Promise<void> {
+        await client.delete(`/images/${id}/storage_copies/${poolId}`)
+    },
+}
+
+/** The copy of an image in a shared storage pool (shared-storage-design.md §9.6) */
+export interface ImageStorageCopy {
+    storage_pool: { id: string; name: string }
+    status: 'syncing' | 'synced' | 'error' | 'deleting'
+    reason?: string
+    /** Of an import running: wait (for an import slot of the host), download, write */
+    phase?: 'wait' | 'download' | 'write'
+    progress: number
+    host?: string
+    boot_disks: number
+    updated_at: string
+}
+
+export interface ImageStorageCopiesResponse {
+    copies: ImageStorageCopy[]
 }

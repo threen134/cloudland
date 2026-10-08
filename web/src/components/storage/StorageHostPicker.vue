@@ -35,8 +35,15 @@ const props = withDefaults(
         exclude?: string[]
         /** The only hosts offered (members of the cluster, when adding disks) */
         only?: string[]
+        /**
+         * The shared LUNs of a SAN are the disks to choose, and only those (GPFS shared disk layout): the same LUN
+         * ticked under every host that is to serve it
+         */
+        sharedDisks?: boolean
+        /** The LUNs (disk ids) the cluster uses already: a host only becomes one more server of them, never wipes them */
+        usedDisks?: string[]
     }>(),
-    { mode: 'roles', exclude: () => [], only: undefined, backend: undefined }
+    { mode: 'roles', exclude: () => [], only: undefined, backend: undefined, sharedDisks: false, usedDisks: () => [] }
 )
 const emit = defineEmits<{ 'update:modelValue': [value: HostPick] }>()
 const { t, te } = useI18n()
@@ -171,7 +178,12 @@ const scan = async (uuid: string) => {
 onUnmounted(() => scanTimers.forEach(clearTimeout))
 
 const diskKey = (uuid: string, d: HostDisk) => `${uuid}/${d.disk_id}`
-const selectable = (d: HostDisk) => d.state === 'free' || d.state === 'dirty'
+const selectable = (d: HostDisk) =>
+    props.sharedDisks ? d.state === 'shared' : d.state === 'free' || d.state === 'dirty'
+// A shared LUN may hold data the scan can not tell: it can be wiped like a dirty disk, unless the cluster uses it
+// already (it holds the file system's data; the backend refuses wiping it)
+const lunInUse = (d: HostDisk) => props.sharedDisks && props.usedDisks.includes(d.disk_id)
+const wipeable = (d: HostDisk) => d.state === 'dirty' || (props.sharedDisks && d.state === 'shared' && !lunInUse(d))
 const toggleDisk = (uuid: string, d: HostDisk) => {
     const key = diskKey(uuid, d)
     const next = { ...chosen.value }
@@ -184,7 +196,7 @@ const setWipe = (uuid: string, d: HostDisk, wipe: boolean) => {
 }
 
 const diskStateVariant = (state: string): StatusVariant => {
-    if (state === 'free') return 'success'
+    if (state === 'free' || (props.sharedDisks && state === 'shared')) return 'success'
     if (state === 'dirty') return 'warning'
     return 'neutral'
 }
@@ -323,7 +335,7 @@ defineExpose({ missingWipe, payload, selectedHosts, hostByUUID, loadHosts })
                     <span class="disk-media">{{ (d.media || '-').toUpperCase() }}</span>
                     <StatusBadge :variant="diskStateVariant(d.state)" :label="diskStateText(d.state)" />
                     <label
-                        v-if="d.state === 'dirty' && diskKey(h.uuid, d) in chosen"
+                        v-if="wipeable(d) && diskKey(h.uuid, d) in chosen"
                         class="checkbox-inline wipe"
                         :title="d.detail"
                     >
@@ -334,6 +346,9 @@ defineExpose({ missingWipe, payload, selectedHosts, hostByUUID, loadHosts })
                         />
                         {{ t('storage.cluster.wipe') }}
                     </label>
+                    <span v-else-if="lunInUse(d) && diskKey(h.uuid, d) in chosen" class="wipe text-secondary">{{
+                        t('storage.cluster.lunInUse')
+                    }}</span>
                 </div>
                 <div
                     v-if="disks[h.uuid]?.disks?.length"

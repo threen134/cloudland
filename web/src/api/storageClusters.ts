@@ -40,8 +40,9 @@ export interface StorageCapabilities {
     /** CloudLand deploys clusters of the kind / imports clusters set up by others */
     managed: boolean
     external: boolean
-    /** File systems between the cluster and the pools (gpfs) */
+    /** File systems between the cluster and the pools (gpfs); create_filesystem: more of them are made and deleted */
     filesystems: boolean
+    create_filesystem?: boolean
     pools: boolean
     add_nodes: boolean
     remove_node: boolean
@@ -57,6 +58,21 @@ export interface StorageCapabilities {
     /** Rolling upgrade of a managed cluster; finalize: a separate, irreversible step afterwards (gpfs) */
     upgrade?: boolean
     finalize?: boolean
+    /** The hosts of another managed cluster of the kind mount a file system of this one (gpfs multi-cluster) */
+    remote_mount?: boolean
+}
+
+/** A file system of one cluster mounted by the hosts of another, under the same name and mount point */
+export interface StorageRemoteMount {
+    id: string
+    name: string
+    owner: StorageRef
+    access: StorageRef
+    filesystem: string
+    mount_point: string
+    status: 'mounting' | 'ready' | 'unmounting' | 'error' | string
+    reason?: string
+    created_at: string
 }
 
 export interface StorageClusterNode {
@@ -112,6 +128,9 @@ export interface StoragePendingClient {
 /** The zones whose hosts join as clients on their own, and the hosts on their way in (detail only) */
 export interface StorageAutoJoin {
     zones: StorageRef[]
+    /** Only the hosts registered after since join; those of the zones registered before are left as they are */
+    new_only?: boolean
+    since?: string
     pending: StoragePendingClient[]
 }
 
@@ -309,6 +328,8 @@ export interface ExpandPayload {
     nodes?: { hypervisor: string; roles: StorageRole[] }[]
     disks?: { hypervisor: string; disk_id: string; media?: string; wipe?: boolean }[]
     allow_unsupported?: boolean
+    /** add disks: the file system they go into, the first one when empty */
+    filesystem?: string
 }
 
 export interface SelftestPayload {
@@ -417,7 +438,12 @@ export const storageClustersApi = {
     /** Description and the zones whose hosts join as clients on their own; retry_auto_join forgets the failed ones */
     update: async (
         id: string,
-        payload: { description?: string; auto_join_zones?: string[]; retry_auto_join?: boolean }
+        payload: {
+            description?: string
+            auto_join_zones?: string[]
+            auto_join_new_only?: boolean
+            retry_auto_join?: boolean
+        }
     ): Promise<StorageCluster> => {
         const response = await client.patch<StorageCluster>(`/storage_clusters/${id}`, payload)
         return response.data
@@ -446,6 +472,37 @@ export const storageClustersApi = {
         payload: { package?: string; finalize?: boolean; image?: string }
     ): Promise<StorageTask> => {
         const response = await client.post<StorageTask>(`/storage_clusters/${id}/upgrade`, payload)
+        return response.data
+    },
+    /** A new file system on new disks of the members (gpfs) */
+    createFilesystem: async (
+        id: string,
+        payload: { name: string; block_size?: string; data_replicas?: number; disks: ExpandPayload['disks'] }
+    ): Promise<StorageTask> => {
+        const response = await client.post<StorageTask>(`/storage_clusters/${id}/filesystems`, payload)
+        return response.data
+    },
+    /** The remote mounts a cluster has a part in: its file systems others mount, the ones of others it mounts */
+    remoteMounts: async (id: string): Promise<StorageRemoteMount[]> => {
+        const response = await client.get<{ remote_mounts: StorageRemoteMount[] }>(
+            `/storage_clusters/${id}/remote_mounts`
+        )
+        return response.data.remote_mounts || []
+    },
+    /** Another cluster mounts a file system of this one: a task of that cluster */
+    createRemoteMount: async (id: string, payload: { filesystem: string; cluster: string }): Promise<StorageTask> => {
+        const response = await client.post<StorageTask>(`/storage_clusters/${id}/remote_mounts`, payload)
+        return response.data
+    },
+    deleteRemoteMount: async (id: string, mountId: string): Promise<StorageTask> => {
+        const response = await client.delete<StorageTask>(`/storage_clusters/${id}/remote_mounts/${mountId}`)
+        return response.data
+    },
+    /** Deletes a file system no pool is on, with its disks */
+    deleteFilesystem: async (id: string, name: string): Promise<StorageTask> => {
+        const response = await client.delete<StorageTask>(
+            `/storage_clusters/${id}/filesystems/${encodeURIComponent(name)}`
+        )
         return response.data
     },
     rebalance: async (id: string, filesystem = ''): Promise<StorageTask> => {

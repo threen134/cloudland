@@ -39,6 +39,8 @@ const mode = ref<Mode>('managed')
 // gpfs: replica, or ece (the erasure code layout: a recovery group on the disks of the NSD hosts)
 const layout = ref('replica')
 const ece = computed(() => kind.value === 'gpfs' && mode.value === 'managed' && layout.value === 'ece')
+// gpfs san: the NSDs are shared LUNs, each ticked under every host that serves it
+const san = computed(() => kind.value === 'gpfs' && mode.value === 'managed' && layout.value === 'san')
 const backend = computed(() => backends.value.find((b) => b.kind === kind.value))
 
 // ---- the steps ----
@@ -82,6 +84,14 @@ const typeOptions = computed<TypeOption[]>(() => {
                 enabled: true,
                 label: t('storage.wizard.ece'),
                 hint: t('storage.wizard.eceHint'),
+            })
+            list.push({
+                kind: b.kind,
+                mode: 'managed',
+                layout: 'san',
+                enabled: true,
+                label: t('storage.wizard.san'),
+                hint: t('storage.wizard.sanHint'),
             })
         }
         if (b.capabilities?.external) {
@@ -155,7 +165,37 @@ const eceBlocks: Record<string, string[]> = {
     '3WayReplication': ['1M', '2M'],
     '4WayReplication': ['1M', '2M'],
 }
-const eceForm = ref({ code: '4+2p', block_size: '4M', set_size: 80, pagepool_mib: 8192, no_slot_map: false })
+const eceForm = ref({
+    code: '4+2p',
+    block_size: '4M',
+    set_size: 80,
+    pagepool_mib: 8192,
+    no_slot_map: false,
+    // The metadata vdisk set of servers with solid state disks beside their HDDs (unused with one media)
+    meta_code: '3WayReplication',
+    meta_block_size: '1M',
+    meta_set_size: 80,
+    // Real servers: the slot map ecedrivemapping makes ('' = made by hand already), for the user slots given
+    slot_mode: '' as '' | 'lmr' | 'nvme',
+    slot_min: 0,
+    slot_max: 23,
+    strict: false,
+})
+watch(
+    () => eceForm.value.meta_code,
+    (code) => {
+        const blocks = eceBlocks[code] || []
+        if (!blocks.includes(eceForm.value.meta_block_size)) eceForm.value.meta_block_size = blocks[0]
+    }
+)
+// The modes of ecedrivemapping: SAS disks behind an LSI controller, or NVMe
+const slotModes = ['lmr', 'nvme']
+watch(
+    () => eceForm.value.no_slot_map,
+    (off) => {
+        if (off) eceForm.value.slot_mode = ''
+    }
+)
 watch(
     () => eceForm.value.code,
     (code) => {
@@ -164,7 +204,28 @@ watch(
             eceForm.value.block_size = blocks.includes('4M') ? '4M' : blocks[blocks.length - 1]
     }
 )
-const ceph = ref({ osd_memory_target_mib: 2048, image: '', cluster_network: '' })
+const ceph = ref({
+    osd_memory_target_mib: 2048,
+    image: '',
+    cluster_network: '',
+    // A private registry the image comes from, logged in to with a user and a password (kept encrypted by clapi)
+    registry: '',
+    registry_user: '',
+    registry_password: '',
+})
+// An example of a registry address for the placeholder
+const registryExample = 'registry.example.com:5000'
+const cephRegistryOk = computed(() => {
+    const c = ceph.value
+    const reg = c.registry.trim()
+    if (!reg && !c.registry_user.trim() && !c.registry_password) return true
+    return (
+        /^[a-z0-9]([a-z0-9.-]{0,252}[a-z0-9])?(:\d{2,5})?$/.test(reg) &&
+        !!c.registry_user.trim() &&
+        !!c.registry_password &&
+        c.image.trim().startsWith(reg + '/')
+    )
+})
 const importParams = ref({ fs_name: '', mount_point: '' })
 const cephImport = ref({ fsid: '', mon_addrs: '', client_user: 'cloudland', client_key: '' })
 const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -197,6 +258,9 @@ const params = computed<StorageParams | null>(() => {
             osd_memory_target_mib: Number(ceph.value.osd_memory_target_mib) || undefined,
             image: ceph.value.image.trim() || undefined,
             cluster_network: ceph.value.cluster_network.trim() || undefined,
+            registry: ceph.value.registry.trim() || undefined,
+            registry_user: ceph.value.registry.trim() ? ceph.value.registry_user.trim() : undefined,
+            registry_password: ceph.value.registry.trim() ? ceph.value.registry_password : undefined,
         }
     }
     if (ece.value) {
@@ -208,6 +272,24 @@ const params = computed<StorageParams | null>(() => {
             ece_code: eceForm.value.code,
             ece_set_size: Number(eceForm.value.set_size) || undefined,
             no_slot_map: eceForm.value.no_slot_map || undefined,
+            ece_meta_code: eceForm.value.meta_code,
+            ece_meta_block_size: eceForm.value.meta_block_size,
+            ece_meta_set_size: Number(eceForm.value.meta_set_size) || undefined,
+            slot_mode: eceForm.value.slot_mode || undefined,
+            slot_range: eceForm.value.slot_mode
+                ? [Number(eceForm.value.slot_min), Number(eceForm.value.slot_max)]
+                : undefined,
+            ece_strict: eceForm.value.strict || undefined,
+        }
+    }
+    if (san.value) {
+        // The storage array protects the data: one copy, no replicas to choose
+        return {
+            layout: 'san',
+            test: testLayout.value || undefined,
+            fs_name: gpfs.value.fs_name.trim() || undefined,
+            block_size: gpfs.value.block_size,
+            pagepool_mib: Number(gpfs.value.pagepool_mib) || undefined,
         }
     }
     if (kind.value === 'gpfs') {
@@ -249,7 +331,8 @@ const paramsValid = computed(() => {
             mem >= 896 &&
             mem <= 65536 &&
             (!c.image.trim() || /^[a-z0-9][a-z0-9./:_@-]{0,199}$/.test(c.image.trim())) &&
-            (!c.cluster_network.trim() || /^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(c.cluster_network.trim()))
+            (!c.cluster_network.trim() || /^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(c.cluster_network.trim())) &&
+            cephRegistryOk.value
         )
     }
     const fsNameOk = !gpfs.value.fs_name.trim() || /^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(gpfs.value.fs_name.trim())
@@ -257,13 +340,25 @@ const paramsValid = computed(() => {
         const e = eceForm.value
         const pagepool = Number(e.pagepool_mib)
         const setSize = Number(e.set_size)
+        const metaSize = Number(e.meta_set_size)
+        const slotOk =
+            !e.slot_mode ||
+            (Number.isInteger(Number(e.slot_min)) &&
+                Number.isInteger(Number(e.slot_max)) &&
+                Number(e.slot_min) >= 0 &&
+                Number(e.slot_max) >= Number(e.slot_min) &&
+                Number(e.slot_max) <= 9999)
         return (
             fsNameOk &&
             pagepool >= 8192 &&
             pagepool <= 65536 &&
             setSize >= 10 &&
             setSize <= 100 &&
-            (eceBlocks[e.code] || []).includes(e.block_size)
+            metaSize >= 10 &&
+            metaSize <= 100 &&
+            (eceBlocks[e.code] || []).includes(e.block_size) &&
+            (eceBlocks[e.meta_code] || []).includes(e.meta_block_size) &&
+            slotOk
         )
     }
     if (kind.value === 'gpfs') return fsNameOk
@@ -521,7 +616,9 @@ onMounted(async () => {
                                   t('storage.wizard.importHostsIntro')
                                 : ece
                                   ? t('storage.wizard.eceHostsIntro')
-                                  : hintOf(`storage.wizard.hostsIntros.${kind}`) || t('storage.wizard.hostsIntro')
+                                  : san
+                                    ? t('storage.wizard.sanHostsIntro')
+                                    : hintOf(`storage.wizard.hostsIntros.${kind}`) || t('storage.wizard.hostsIntro')
                         }}
                     </p>
                     <StorageHostPicker
@@ -529,6 +626,7 @@ onMounted(async () => {
                         v-model="pick"
                         :backend="backend"
                         :mode="mode === 'external' ? 'hosts' : 'roles'"
+                        :shared-disks="san"
                     />
                     <p v-if="picker?.missingWipe" class="text-secondary">{{ t('storage.cluster.wipeNeeded') }}</p>
                 </div>
@@ -638,6 +736,66 @@ onMounted(async () => {
                             <span class="form-hint">{{ t('storage.wizard.ecePagepoolHint') }}</span>
                         </div>
                     </div>
+                    <h4 class="sub-title">{{ t('storage.wizard.eceMetaTitle') }}</h4>
+                    <p class="form-hint">{{ t('storage.wizard.eceMetaIntro') }}</p>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.eceMetaCode') }}</label>
+                            <select v-model="eceForm.meta_code" class="form-input">
+                                <option v-for="c in Object.keys(eceBlocks)" :key="c" :value="c">{{ c }}</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.eceMetaBlockSize') }}</label>
+                            <select v-model="eceForm.meta_block_size" class="form-input">
+                                <option v-for="b in eceBlocks[eceForm.meta_code] || []" :key="b" :value="b">
+                                    {{ b }}
+                                </option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.eceMetaSetSize') }}</label>
+                            <input
+                                v-model.number="eceForm.meta_set_size"
+                                type="number"
+                                min="10"
+                                max="100"
+                                step="5"
+                                class="form-input"
+                            />
+                        </div>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.eceSlotMode') }}</label>
+                            <select v-model="eceForm.slot_mode" class="form-input" :disabled="eceForm.no_slot_map">
+                                <option value="">{{ t('storage.wizard.eceSlotModeNone') }}</option>
+                                <option v-for="m in slotModes" :key="m" :value="m">{{ m }}</option>
+                            </select>
+                            <span class="form-hint">{{ t('storage.wizard.eceSlotModeHint') }}</span>
+                        </div>
+                        <div v-if="eceForm.slot_mode" class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.eceSlotRange') }}</label>
+                            <div class="range-inputs">
+                                <input
+                                    v-model.number="eceForm.slot_min"
+                                    type="number"
+                                    min="0"
+                                    max="9999"
+                                    class="form-input"
+                                />
+                                <span>–</span>
+                                <input
+                                    v-model.number="eceForm.slot_max"
+                                    type="number"
+                                    min="0"
+                                    max="9999"
+                                    class="form-input"
+                                />
+                            </div>
+                            <span class="form-hint">{{ t('storage.wizard.eceSlotRangeHint') }}</span>
+                        </div>
+                    </div>
                     <label class="checkbox-inline" :title="t('storage.wizard.eceNoSlotMapHint')">
                         <input v-model="eceForm.no_slot_map" type="checkbox" />
                         {{ t('storage.wizard.eceNoSlotMap') }}
@@ -645,6 +803,41 @@ onMounted(async () => {
                     <span v-if="eceForm.no_slot_map" class="form-hint warn-hint">{{
                         t('storage.wizard.eceNoSlotMapHint')
                     }}</span>
+                    <label class="checkbox-inline" :title="t('storage.wizard.eceStrictHint')">
+                        <input v-model="eceForm.strict" type="checkbox" />
+                        {{ t('storage.wizard.eceStrict') }}
+                    </label>
+                    <span class="form-hint">{{ t('storage.wizard.eceStrictHint') }}</span>
+                </template>
+                <template v-else-if="san">
+                    <p class="intro">{{ t('storage.wizard.sanParamsIntro') }}</p>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.fsName') }}</label>
+                            <input v-model="gpfs.fs_name" type="text" class="form-input" maxlength="32" />
+                            <span class="form-hint">{{ t('storage.wizard.fsNameHint') }}</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.blockSize') }}</label>
+                            <select v-model="gpfs.block_size" class="form-input">
+                                <option v-for="b in ['1M', '2M', '4M', '8M', '16M']" :key="b" :value="b">
+                                    {{ b }}
+                                </option>
+                            </select>
+                            <span class="form-hint">{{ t('storage.wizard.blockSizeHint') }}</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.pagepool') }}</label>
+                            <input
+                                v-model.number="gpfs.pagepool_mib"
+                                type="number"
+                                min="256"
+                                step="256"
+                                class="form-input"
+                            />
+                            <span class="form-hint">{{ t('storage.wizard.pagepoolHint') }}</span>
+                        </div>
+                    </div>
                 </template>
                 <template v-else-if="kind === 'gpfs'">
                     <div class="form-grid">
@@ -718,6 +911,35 @@ onMounted(async () => {
                             />
                             <span class="form-hint">{{ t('storage.wizard.cephClusterNetworkHint') }}</span>
                         </div>
+                        <div class="form-group">
+                            <label class="form-label">{{ t('storage.wizard.cephRegistry') }}</label>
+                            <input
+                                v-model="ceph.registry"
+                                type="text"
+                                class="form-input mono"
+                                :placeholder="registryExample"
+                            />
+                            <span class="form-hint">{{ t('storage.wizard.cephRegistryHint') }}</span>
+                        </div>
+                        <template v-if="ceph.registry.trim()">
+                            <div class="form-group">
+                                <label class="form-label">{{ t('storage.wizard.cephRegistryUser') }}</label>
+                                <input v-model="ceph.registry_user" type="text" class="form-input" autocomplete="off" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">{{ t('storage.wizard.cephRegistryPassword') }}</label>
+                                <input
+                                    v-model="ceph.registry_password"
+                                    type="password"
+                                    class="form-input"
+                                    autocomplete="new-password"
+                                />
+                                <span class="form-hint">{{ t('storage.wizard.cephRegistryPasswordHint') }}</span>
+                            </div>
+                            <span v-if="!cephRegistryOk" class="text-error">{{
+                                t('storage.wizard.cephRegistryIncomplete')
+                            }}</span>
+                        </template>
                     </div>
                 </template>
                 <template v-else>
@@ -1024,6 +1246,18 @@ onMounted(async () => {
 
 .warn-hint {
     color: var(--warning-dark);
+}
+
+.sub-title {
+    margin: var(--spacing-5) 0 0;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+}
+
+.range-inputs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .checkbox-inline {

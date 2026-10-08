@@ -13,6 +13,7 @@ import StatusBadge from '../../components/base/StatusBadge.vue'
 import InfoRow from '../../components/base/InfoRow.vue'
 import { useCopyId } from '../../composables/useCopyId'
 import { useGoBack } from '../../composables/useGoBack'
+import ImageStorageCopies from '../../components/image/ImageStorageCopies.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -245,6 +246,12 @@ onMounted(fetchImage)
                     </div>
                 </div>
             </div>
+            <ImageStorageCopies
+                v-if="isSuperuser"
+                :image-id="image.id"
+                :image-available="image.status === 'available'"
+                class="copies-card"
+            />
         </div>
 
         <DeleteModal
@@ -384,6 +391,10 @@ onMounted(fetchImage)
 }
 
 /* Info Cards */
+.copies-card {
+    margin-top: var(--spacing-4);
+}
+
 .info-card {
     padding: var(--spacing-5);
 }

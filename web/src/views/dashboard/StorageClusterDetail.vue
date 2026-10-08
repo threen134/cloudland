@@ -62,6 +62,7 @@ import DetailTabs, { type Tab } from '../../components/base/DetailTabs.vue'
 import DataTable, { type Column } from '../../components/base/DataTable.vue'
 import BaseModal from '../../components/modals/BaseModal.vue'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import StorageRemoteMounts from '../../components/storage/StorageRemoteMounts.vue'
 import CapacityBar from '../../components/storage/CapacityBar.vue'
 import StorageExpandModal from '../../components/storage/StorageExpandModal.vue'
 import SharedPoolModal from '../../components/storage/SharedPoolModal.vue'
@@ -331,9 +332,30 @@ const fsColumns = computed<Column[]>(() => [
     { key: 'mount', label: t('storage.wizard.mountPoint') },
     { key: 'block', label: t('storage.wizard.blockSize'), hideBelow: 1280 },
     { key: 'replicas', label: t('storage.clusterDetail.replicas') },
+    { key: 'status', label: t('storage.status') },
     { key: 'capacity', label: t('storage.capacity') },
-    { key: 'actions', label: t('dashboard.table.actions'), width: '80px', align: 'right' },
+    { key: 'actions', label: t('dashboard.table.actions'), width: '96px', align: 'right' },
 ])
+// A file system that can go: not being made, and not the only ready one (the last goes with the cluster)
+const fsDeletable = (f: StorageFilesystem) =>
+    f.status !== 'creating' &&
+    f.status !== 'deleting' &&
+    (cluster.value?.filesystems || []).filter((x) => x.status === 'ready' && x.id !== f.id).length > 0
+const deletingFs = ref<StorageFilesystem | null>(null)
+const deleteFsBusy = ref(false)
+const deleteFs = async () => {
+    if (!deletingFs.value || !cluster.value) return
+    deleteFsBusy.value = true
+    try {
+        const task = await storageClustersApi.deleteFilesystem(cluster.value.id, deletingFs.value.name)
+        deletingFs.value = null
+        started(task)
+    } catch (err) {
+        toast.error(errorMessage(err, t('storage.cluster.actionFailed')))
+    } finally {
+        deleteFsBusy.value = false
+    }
+}
 const rebalancing = ref<StorageFilesystem | null>(null)
 const rebalanceBusy = ref(false)
 const rebalance = async () => {
@@ -360,6 +382,8 @@ const poolColumns = computed<Column[]>(() => [
     { key: 'capacity', label: t('storage.capacity') },
     { key: 'actions', label: t('dashboard.table.actions'), width: '100px', align: 'right' },
 ])
+const fsStatusText = (s: string) =>
+    te(`storage.clusterDetail.fsStatus.${s}`) ? t(`storage.clusterDetail.fsStatus.${s}`) : s
 const poolStatusText = (s: string) => (te(`storage.poolStatus.${s}`) ? t(`storage.poolStatus.${s}`) : s)
 const showPoolCreate = ref(false)
 const poolCreated = (result: StoragePoolTask) => {
@@ -415,7 +439,7 @@ const taskColumns = computed<Column[]>(() => [
 ])
 
 // ---- expansion, deletion ----
-const expandMode = ref<'nodes' | 'disks' | null>(null)
+const expandMode = ref<'nodes' | 'disks' | 'filesystem' | null>(null)
 const expanded = (task: StorageTask) => {
     expandMode.value = null
     started(task)
@@ -564,12 +588,19 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
                         <InfoRow v-if="cluster.layout" :label="t('storage.clusterDetail.layout')">
                             {{ layoutText(cluster.layout) }}
                             <template v-if="cluster.layout_info?.code">· {{ cluster.layout_info.code }}</template>
+                            <template v-if="cluster.layout_info?.meta_code">
+                                ·
+                                {{ t('storage.clusterDetail.metaCode', { code: cluster.layout_info.meta_code }) }}
+                            </template>
                             <span
                                 v-if="cluster.layout_info?.no_slot_map"
                                 class="badge badge-warning"
                                 :title="t('storage.clusterDetail.noSlotMapHint')"
                                 >{{ t('storage.clusterDetail.noSlotMap') }}</span
                             >
+                            <span v-else-if="cluster.layout_info?.slot_mode" class="badge badge-secondary">{{
+                                t('storage.clusterDetail.slotMode', { mode: cluster.layout_info.slot_mode })
+                            }}</span>
                         </InfoRow>
                         <InfoRow
                             v-if="cluster.layout_info?.recovery_group"
@@ -689,7 +720,15 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
                             <span v-if="!autoJoin?.zones.length" class="text-secondary">{{
                                 t('storage.clusterDetail.autoJoinOff')
                             }}</span>
-                            <span v-else>{{ autoJoin.zones.map((z) => z.name).join(', ') }}</span>
+                            <span v-else
+                                >{{ autoJoin.zones.map((z) => z.name).join(', ')
+                                }}<template v-if="autoJoin.new_only && autoJoin.since">
+                                    ·
+                                    {{
+                                        t('storage.clusterDetail.autoJoinNewSince', { time: autoJoin.since })
+                                    }}</template
+                                ></span
+                            >
                         </InfoRow>
                         <InfoRow v-if="autoJoin?.pending.length" :label="t('storage.clusterDetail.autoJoinHosts')">
                             <ul class="alarm-list">
@@ -818,46 +857,65 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
             </DataTable>
 
             <!-- File systems -->
-            <DataTable
-                v-else-if="activeTab === 'filesystems'"
-                :columns="fsColumns"
-                :rows="cluster.filesystems || []"
-                row-key="id"
-            >
-                <template #cell-name="{ row: f }"
-                    ><span class="resource-name">{{ f.name }}</span></template
-                >
-                <template #cell-mount="{ row: f }"
-                    ><span class="mono-cell">{{ f.mount_point }}</span></template
-                >
-                <template #cell-block="{ row: f }">{{ f.block_size || '-' }}</template>
-                <template #cell-replicas="{ row: f }">{{
-                    f.data_replicas
-                        ? t('storage.clusterDetail.replicasValue', { data: f.data_replicas, meta: f.meta_replicas })
-                        : '-'
-                }}</template>
-                <template #cell-capacity="{ row: f }">
-                    <CapacityBar
-                        v-if="f.capacity_bytes"
-                        :capacity="f.capacity_bytes"
-                        :used="f.capacity_bytes - f.free_bytes"
-                    />
-                    <span v-else class="text-secondary">-</span>
-                </template>
-                <template #cell-actions="{ row: f }">
-                    <div class="row-actions">
-                        <button
-                            v-if="caps?.rebalance && managed"
-                            class="icon-btn-table"
-                            :title="t('storage.clusterDetail.rebalance')"
-                            :disabled="!canChange"
-                            @click="rebalancing = f"
-                        >
-                            <Shuffle :size="16" />
-                        </button>
-                    </div>
-                </template>
-            </DataTable>
+            <template v-else-if="activeTab === 'filesystems'">
+                <div v-if="caps?.create_filesystem && managed" class="tab-actions">
+                    <button class="btn btn-primary btn-sm" :disabled="!canChange" @click="expandMode = 'filesystem'">
+                        <Plus :size="14" /> {{ t('storage.clusterDetail.createFs') }}
+                    </button>
+                </div>
+                <DataTable :columns="fsColumns" :rows="cluster.filesystems || []" row-key="id">
+                    <template #cell-status="{ row: f }"
+                        ><StatusBadge :status="f.status" :label="fsStatusText(f.status)"
+                    /></template>
+                    <template #cell-name="{ row: f }"
+                        ><span class="resource-name">{{ f.name }}</span></template
+                    >
+                    <template #cell-mount="{ row: f }"
+                        ><span class="mono-cell">{{ f.mount_point }}</span></template
+                    >
+                    <template #cell-block="{ row: f }">{{ f.block_size || '-' }}</template>
+                    <template #cell-replicas="{ row: f }">{{
+                        f.data_replicas
+                            ? t('storage.clusterDetail.replicasValue', { data: f.data_replicas, meta: f.meta_replicas })
+                            : '-'
+                    }}</template>
+                    <template #cell-capacity="{ row: f }">
+                        <CapacityBar
+                            v-if="f.capacity_bytes"
+                            :capacity="f.capacity_bytes"
+                            :used="f.capacity_bytes - f.free_bytes"
+                        />
+                        <span v-else class="text-secondary">-</span>
+                    </template>
+                    <template #cell-actions="{ row: f }">
+                        <div class="row-actions">
+                            <button
+                                v-if="caps?.rebalance && managed"
+                                class="icon-btn-table"
+                                :title="t('storage.clusterDetail.rebalance')"
+                                :disabled="!canChange"
+                                @click="rebalancing = f"
+                            >
+                                <Shuffle :size="16" />
+                            </button>
+                            <button
+                                v-if="caps?.create_filesystem && managed"
+                                class="icon-btn-table icon-danger"
+                                :title="
+                                    fsDeletable(f)
+                                        ? t('storage.clusterDetail.deleteFs')
+                                        : t('storage.clusterDetail.deleteFsLast')
+                                "
+                                :disabled="!canChange || !fsDeletable(f)"
+                                @click="deletingFs = f"
+                            >
+                                <Trash2 :size="16" />
+                            </button>
+                        </div>
+                    </template>
+                </DataTable>
+                <StorageRemoteMounts v-if="caps?.remote_mount && managed" :cluster="cluster" :can-change="canChange" />
+            </template>
 
             <!-- Pools -->
             <template v-else-if="activeTab === 'pools'">
@@ -1060,6 +1118,14 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
             :loading="removeDiskBusy"
             @close="removingDisk = null"
             @confirm="removeDisk"
+        />
+        <DeleteModal
+            :show="deletingFs !== null"
+            :title="t('storage.clusterDetail.deleteFs')"
+            :message="t('storage.clusterDetail.deleteFsMessage', { fs: deletingFs?.name })"
+            :loading="deleteFsBusy"
+            @close="deletingFs = null"
+            @confirm="deleteFs"
         />
         <DeleteModal
             :show="rebalancing !== null"

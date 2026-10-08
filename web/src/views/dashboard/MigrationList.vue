@@ -129,7 +129,19 @@ const selectedInstanceHyper = computed(() => {
 const selectedGroup = computed(
     () => availableInstances.value.find((i) => i.id === newMigrationForm.value.instance_id)?.placement_group || null
 )
-const canIgnorePlacement = computed(() => isSystemAdmin.value && !!selectedGroup.value?.strict)
+// The source host of the chosen instance is offline: the migration is an evacuation (force), the disks stay in their
+// shared pools and the host is fenced first; within the grace period the admin confirms it is powered off
+const sourceOffline = computed(
+    () => availableHypervisors.value.find((h) => h.hostname === selectedInstanceHyper.value)?.status === 10
+)
+const confirmFenced = ref(false)
+watch(
+    () => newMigrationForm.value.instance_id,
+    () => {
+        confirmFenced.value = false
+    }
+)
+const canIgnorePlacement = computed(() => isSystemAdmin.value && !!selectedGroup.value?.strict && !sourceOffline.value)
 const placementIgnored = computed(() => canIgnorePlacement.value && ignorePlacement.value)
 
 // A strict pack group migrates as a whole: the server refuses one member alone while others stay on its host. The
@@ -314,15 +326,20 @@ const handleCreateMigration = async () => {
 
     creatingMigration.value = true
     try {
-        // 接口要求 name 与 instances 数组；目标节点用 hostid。
-        // 不传 force：它是「源节点已离线时强行迁移」，不是冷迁移开关，本地存储下还会被直接拒绝。
-        // 热迁移 / 冷迁移由后端按虚拟机当前状态自行决定，不由用户选择
+        // The API takes a name and an instances array; the target node is a hostid.
+        // force only when the source node is offline: it moves off an offline source node (an evacuation), it is not a
+        // cold migration switch and local storage is refused. Warm or cold is up to the backend, not the user
         const inst = availableInstances.value.find((i) => i.id === newMigrationForm.value.instance_id)
         const payload: CreateMigrationPayload = {
             name: `ui-${(inst?.hostname || 'migration').slice(0, 20)}-${Date.now().toString().slice(-6)}`,
             instances: [{ id: newMigrationForm.value.instance_id }, ...companions.value.map((m) => ({ id: m.id }))],
         }
-        if (newMigrationForm.value.target_hyper !== '') {
+        if (sourceOffline.value) {
+            payload.force = true
+            if (confirmFenced.value) payload.confirm_fenced = true
+            if (newMigrationForm.value.target_hyper !== '')
+                payload.target_hyper = Number(newMigrationForm.value.target_hyper)
+        } else if (newMigrationForm.value.target_hyper !== '') {
             payload.target_hyper = Number(newMigrationForm.value.target_hyper)
             // Only the disks leaving their pool are named; the others stay or follow the fallback rules
             const moved = (selectedTarget.value?.disks || []).filter((d) => {
@@ -339,9 +356,11 @@ const handleCreateMigration = async () => {
             }
         }
 
-        payload.allow_pool_fallback = allowFallback.value
-        if (ignoreCapacity.value) payload.ignore_capacity = true
-        if (placementIgnored.value) payload.ignore_placement = true
+        if (!sourceOffline.value) {
+            payload.allow_pool_fallback = allowFallback.value
+            if (ignoreCapacity.value) payload.ignore_capacity = true
+            if (placementIgnored.value) payload.ignore_placement = true
+        }
         const created = await migrationsApi.createMigration(payload)
         // A best-effort placement group the migration breaks: created anyway, but say so
         const warnings = new Set((created || []).map((m) => m.placement_warning).filter((w): w is string => !!w))
@@ -582,8 +601,17 @@ onUnmounted(() => {
                     }}</small>
                 </div>
 
+                <div v-if="sourceOffline" class="form-group row-gap">
+                    <small class="field-note note-warning">{{
+                        $t('dashboard.migrationForm.forcedHint', { host: selectedInstanceHyper })
+                    }}</small>
+                    <label class="checkbox-inline">
+                        <input v-model="confirmFenced" type="checkbox" />
+                        {{ $t('dashboard.migrationForm.confirmFenced') }}
+                    </label>
+                </div>
                 <div
-                    v-if="selectedTarget && selectedTarget.disks.length && companions.length"
+                    v-else-if="selectedTarget && selectedTarget.disks.length && companions.length"
                     class="form-group row-gap"
                 >
                     <small class="text-secondary">{{ $t('dashboard.placementGroup.movingTogetherDisks') }}</small>
@@ -615,7 +643,7 @@ onUnmounted(() => {
                     }}</small>
                 </div>
                 <div v-if="targetsLoading" class="text-secondary">{{ $t('messages.loading') }}</div>
-                <div class="form-group row-gap">
+                <div v-if="!sourceOffline" class="form-group row-gap">
                     <label class="checkbox-inline">
                         <input v-model="allowFallback" type="checkbox" /> {{ $t('storage.allowFallback') }}
                     </label>
@@ -633,7 +661,7 @@ onUnmounted(() => {
                     </template>
                 </div>
 
-                <div class="form-group row-gap">
+                <div v-if="!sourceOffline" class="form-group row-gap">
                     <small class="text-secondary">{{ $t('dashboard.migrationForm.typeAutoHint') }}</small>
                 </div>
             </div>
