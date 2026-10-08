@@ -1505,7 +1505,7 @@ clapi（`services/instance.go` 的 `Create`）：
 }
 ```
 
-~~本地系统盘同样用这个结构（`driver=local`，没有 `image_base`）。~~ 实现里本地系统盘仍走原来的位置参数，只有共享池的系统盘带 `boot_disk`（S4）。`existing=true` 只用于宕机恢复（§11.3）：跳过克隆和扩容，直接用已有的盘（S6 再做）。
+~~本地系统盘同样用这个结构（`driver=local`，没有 `image_base`）。~~ 实现里本地系统盘仍走原来的位置参数，只有共享池的系统盘带 `boot_disk`（S4）。**决定不统一**（S4 定下，2026-10-07 第二轮再次确认）：改成一种传法用户看到的行为不变，却要动绝大多数云服务器走的默认路径——创建之外，重装、救援、迁移、扩容、删除也都读系统盘位置，改错一处影响几乎所有云服务器。将来本来就要大改本地系统盘流程时再顺带合并。`existing=true` 只用于宕机恢复（§11.3）：跳过克隆和扩容，直接用已有的盘（S6 再做）。
 
 节点（`launch_vm.sh`）按驱动：可用性检查（失败就回调 `error`，实例进入 `error`）→ **目标已存在就失败**（`qemu-img convert` 会静默覆盖已存在的文件，不能让它发生；`existing=true` 时反过来要求目标存在）→ 克隆或复制 → 校验镜像虚拟大小不超过规格后扩到规格大小 → NVRAM → 定义并启动域 → 回调。回调 `create_boot_shared '<卷 ID>' 'attached|error|nocopy' '<克隆来源的副本 ID，整盘复制为 0；nocopy 时是找不到的副本>' '<原因>'`（实现里是独立的回调，不与数据卷的 `create_volume_shared` 共用），clapi 据此写 `base_image_storage_id`。磁盘元素由驱动的 `drv_disk_xml` 生成，换掉模板里的文件盘、保留它的 PCI 地址（`storage_lib.sh` 的 `xml_replace_disk`，只改这一个元素，其余逐字节不变）。**克隆或复制开始之后**任何一步失败，删掉这次生成的系统盘（路径唯一，不会误删）；`existing=true` 时绝不删盘。
 
