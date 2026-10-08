@@ -169,6 +169,8 @@ export interface StorageCluster {
     capabilities?: StorageCapabilities
     /** What the layout is made of (gpfs erasure code: the code, the recovery group, the vdisk set) */
     layout_info?: StorageClusterLayoutInfo
+    /** Made in the test layout of its kind: one copy of the data */
+    test_layout?: boolean
     status: string
     health: string
     version?: string

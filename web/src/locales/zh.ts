@@ -2944,6 +2944,11 @@ export default {
                 '确认已在存储集群上手工解除了对 {host} 的隔离？这里只删除记录（导入的 Ceph 集群只能由它的管理员解除黑名单）。',
             unfenceStarted: '已开始解除隔离',
             forgotten: '已删除隔离记录',
+            cleanups: '待补清理',
+            cleanupsHint:
+                '这些存储集群是在节点离线时删除的。节点上线后会自动补做当时错过的清理（停掉存储软件、擦掉集群认领过的盘），失败了过一会儿再试；清理完成前这台节点不能加入任何存储集群。',
+            cleanupWaiting: '等待节点上线',
+            cleanupAttempts: '已尝试 {n} 次',
             evacuate: '疏散',
             evacuateTitle: '疏散 {host}',
             evacuateIntro:
@@ -3032,7 +3037,8 @@ export default {
                 'NSD 用 SAN 上的共享 LUN（FC、iSCSI、多路径），一个 LUN 由能看到它的多台节点共同服务。数据由存储阵列保护，文件系统只存一份。',
             sanHostsIntro:
                 '在每台要服务某个 LUN 的节点下勾选同一个共享 LUN（同一个标识）：这些节点就是它的 NSD 服务器，最多 8 台。只有标为「疑似共享」的盘可选；多路径盘请选多路径设备，不要选它的某条路径。仲裁节点要奇数个（至少 3 个，测试布局可 1 个），管理节点 1–2 个。',
-            sanParamsIntro: '每个 LUN 是一个 NSD，服务器列表就是勾选了它的节点。存储阵列负责数据冗余，文件系统的数据和元数据都只存一份。',
+            sanParamsIntro:
+                '每个 LUN 是一个 NSD，服务器列表就是勾选了它的节点。存储阵列负责数据冗余，文件系统的数据和元数据都只存一份。',
             eceHostsIntro:
                 '提供磁盘的 NSD 节点就是恢复组的服务器：3–32 台，每台盘的数量与介质相同，合计至少 12 块。仲裁节点要奇数个（至少 3 个），管理节点 1–2 个；其余节点作为客户端。选中的磁盘在提交时就被认领，有旧数据的盘要勾选「清除旧数据」。',
             eceParamsIntro:
@@ -3203,6 +3209,7 @@ export default {
             taskStarted: '任务已开始',
             taskHolds: '有任务正在占用这个集群：',
             unsupportedBanner: '这个集群部署在不受支持的系统或内核上，只能用于测试。',
+            testLayoutBanner: '这个集群是测试布局：数据只有一份，坏一块盘或一台节点就会丢数据，只能用于功能测试。',
             busy: '任务中',
             layout: '布局',
             layouts: { replica: '副本', ece: '纠删码', san: '共享磁盘' },
@@ -3477,6 +3484,7 @@ export default {
                 import: '导入集群',
                 precheck: '节点预检',
                 selftest: '链路自检',
+                cleanup: '补清理',
                 replace_disk: '换盘',
                 change_roles: '改角色',
                 create_fs: '新建文件系统',
@@ -3775,11 +3783,13 @@ export default {
             mountedBy: '由 {cluster} 挂载',
             mountedFrom: '挂载自 {cluster}',
             create: '远程挂载到其他集群',
-            createIntro: '目标集群的节点会以同样的名字和挂载点挂载这个文件系统；目标集群不能已有同名或同挂载点的文件系统。',
+            createIntro:
+                '目标集群的节点会以同样的名字和挂载点挂载这个文件系统；目标集群不能已有同名或同挂载点的文件系统。',
             target: '挂载方集群',
             noTarget: '没有可用的集群：要另一个平台部署、就绪的同类集群',
             delete: '取消远程挂载',
-            deleteMessage: '{cluster} 的节点将卸载文件系统 {fs}，授权随之撤销。那些节点上还在用这个文件系统上的卷的云服务器要先迁走或删除。',
+            deleteMessage:
+                '{cluster} 的节点将卸载文件系统 {fs}，授权随之撤销。那些节点上还在用这个文件系统上的卷的云服务器要先迁走或删除。',
             statuses: { mounting: '挂载中', ready: '已挂载', unmounting: '卸载中', error: '出错' },
         },
         diskStates: {

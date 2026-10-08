@@ -537,6 +537,12 @@ func (gpfsBackend) CheckLayout(nodes []*StorageNodePlan, disks []*StorageDiskPla
 	return nil
 }
 
+// TestLayout: fewer than three failure groups, one data replica allowed (§6.3)
+func (gpfsBackend) TestLayout(params interface{}) bool {
+	p, _ := params.(*gpfsParams)
+	return p != nil && p.Test
+}
+
 // A host belongs to one GPFS cluster at most (§4.1)
 func (gpfsBackend) HostConflict(roles, otherRoles []string) string {
 	return "is in another GPFS cluster already"

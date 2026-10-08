@@ -1,7 +1,7 @@
 # 共享存储设计：在 CloudLand 里部署与使用 GPFS、Ceph
 
-- **状态**：S1–S6 已实施，在 work-x 上验收通过，代码已提交并推送到 `origin/stage-01`。各阶段的完成时间：S1–S3 2026-10-03（S3 先在本机 WSL 沙箱里用单节点 Ceph 跑通，再在三台上用回环盘验收），S4 2026-10-03，S5 2026-10-04，S6 2026-10-06。S7 的纠删码第一版 2026-10-06 / 07 实现，在试验虚拟机与 work-x 物理机（LIO 模拟盘）上验收通过，2026-10-07 提交并推送（同日按代码审查改的部分没在 work-x 上整套重跑，见 §16 S7；§7.9）。**2026-10-07 第二轮把剩下没做的在代码层面都做了**：纠删码的加减服务器 / 加盘 / 换盘 / 升级 / 混合介质 / 槽位映射 / 就绪检查，SAN 共享 LUN（§7.10），多集群远程挂载（§7.11），以及 S1–S6 留下的小项（单台强制疏散、自动加入只加新节点、镜像副本预热与进度、Ceph 私有仓库与 mon 刷新、GPFS 第二个文件系统、存储池 / inode 曲线与 Grafana 看板）。**这一轮只有单元、PostgreSQL、WSL 沙箱（替身命令）和本机界面测试，一项都没有在真实节点上跑过**，没做的实验见 §16 S7「第二轮」的表。各阶段的实施记录在 §16，阶段 S0 的 GPFS 内核编译验证见 §2.2。2026-10-01 做过一轮三路评审（代码事实核对、对抗式设计审查、内部一致性），正文已按结论修改，每条发现的处置见附录 H
-- **日期**：2026-10-01，基于 `stage-01` 分支 `0778bb2a`（文中行号均以此为准）
+- **状态**：S1–S6 已实施，在 work-x 上验收通过，代码已提交并推送到 `origin/stage-01`。各阶段的完成时间：S1–S3 2026-10-03（S3 先在本机 WSL 沙箱里用单节点 Ceph 跑通，再在三台上用回环盘验收），S4 2026-10-03，S5 2026-10-04，S6 2026-10-06。S7 的纠删码第一版 2026-10-06 / 07 实现，在试验虚拟机与 work-x 物理机（LIO 模拟盘）上验收通过，2026-10-07 提交并推送（同日按代码审查改的部分没在 work-x 上整套重跑，见 §16 S7；§7.9）。**2026-10-07 第二轮把剩下没做的在代码层面都做了**：纠删码的加减服务器 / 加盘 / 换盘 / 升级 / 混合介质 / 槽位映射 / 就绪检查，SAN 共享 LUN（§7.10），多集群远程挂载（§7.11），以及 S1–S6 留下的小项（单台强制疏散、自动加入只加新节点、镜像副本预热与进度、Ceph 私有仓库与 mon 刷新、GPFS 第二个文件系统、存储池 / inode 曲线与 Grafana 看板）。第二轮连同它的代码审查修复已提交并推送（`88c36ce8` 后端、`db119d88` 节点脚本、`b62e310a` 前端、`4b77eb6d` Grafana 看板、`e8c96655` 文档与用例，另有 `7072b00f` 系统盘放哪的说明），**没有部署**；**这一轮只有单元、PostgreSQL、WSL 沙箱（替身命令）和本机界面测试，一项都没有在真实节点上跑过**，没做的实验（E1–E17）见 §16 S7「第二轮」的表。2026-10-07 按代码复查本文后修了复查发现的 4 个缺陷（SAN 预检、有成员离线时删集群、Ceph mgr 指标端口、确认页明文口令），补了 4 项、定下 9 项决定不做（§16 末尾「设计复查发现的缺陷」），**未提交、未部署**。各阶段的实施记录在 §16，阶段 S0 的 GPFS 内核编译验证见 §2.2。2026-10-01 做过一轮三路评审（代码事实核对、对抗式设计审查、内部一致性），正文已按结论修改，每条发现的处置见附录 H
+- **日期**：2026-10-01 起草，基于 `stage-01` 分支 `0778bb2a`（文中没改过的行号引用以它为准）；2026-10-07 按 `7072b00f` 对照代码复查过一遍，挪了位置的行号引用改成了函数名 / 文件名
 - **涉及**：clapi（`api/`）、节点脚本（`scripts/`）、cpgateway 代理白名单、前端（`web/`）、部署脚本（`deploy/`）
 - **相关文档**：
   - 本文由 `gpfs-shared-storage-design.md`（2026-09-22）改写而来并**取代**它。原文的定位是「CloudLand 只使用 GPFS，集群由存储管理员装」；2026-10-01 需求改为在 CloudLand 界面上部署、配置、创建 GPFS 与 Ceph 集群（§1.1），整体重写并改名。原文各章节的去向见附录 G
@@ -15,7 +15,7 @@
 - **CloudLand 自己部署和管理存储集群**：系统管理员在界面上上传 GPFS 安装包、选节点和角色、选磁盘、填参数，CloudLand 经现有的命令通道（clapi → cland → cloudlet）在节点上完成安装、建集群、建文件系统（GPFS）或建池（Ceph）；之后的加节点、加盘、删节点、删集群也在界面上做。已有的外部集群可以「导入」，只用不管
 - **四层模型**：存储集群（GPFS 集群 / Ceph 集群）→ 文件系统（仅 GPFS，Ceph 没有这一层）→ CloudLand 存储池（GPFS 的一个独立 fileset，或 Ceph 的一个 RBD 池）→ 卷。存储池以下沿用原设计的思路：按卷选驱动、clapi 下发路径、节点可用性、容量准入、共享迁移、宕机恢复
   - **为什么 Ceph 没有文件系统层**：GPFS 是并行文件系统，磁盘（NSD）要先建成文件系统（如 `fs1`）并挂到各节点（`/gpfs/fs1`），存储池是其中的 fileset，卷是 fileset 里的 qcow2 文件。Ceph 的层次是集群 → OSD → 池，CloudLand 的存储池直接对应一个 RBD 池，卷就是池里的 RBD 镜像，QEMU 经 librbd 直接访问，不经过文件系统。Ceph 自带的文件系统 CephFS 没有用：虚拟机磁盘走 RBD，快照与克隆（格式 v2）更合适
-  - 框架里不按类型分支：Ceph 后端只是没有文件系统相关的步骤和接口（`LayoutCapabilities` 等按集群能力判断）
+  - 框架里不按类型分支：Ceph 后端只是没有文件系统相关的步骤和接口（它的 `Capabilities().Filesystems` 为 false；接口和界面按每个集群的能力开放操作，§4.5.1）
 
     | 层 | GPFS | Ceph |
     |---|---|---|
@@ -23,10 +23,11 @@
     | 文件系统 | `fs1` | 无 |
     | 存储池 | 独立 fileset（带配额） | RBD 池 |
     | 卷 | qcow2 文件 | RBD 镜像 |
+  - **GPFS 托管集群有三种布局**（`storage_clusters.layout`）：副本（`replica`，节点本地盘、每台一个故障组，§7.1、§7.2）、纠删码（`ece`，恢复组 + 纠删码卷，§7.9）、SAN 共享 LUN（`san`，多台节点共同服务一个 LUN，§7.10）。两个平台部署的 GPFS 集群之间可以远程挂载文件系统（§7.11）
 - **新做的通用部分**：多步骤任务引擎（每步每节点的状态与日志、重试、中止，节点上有持久的作业记录，重启、丢回调、重复下发都能收敛）、节点角色与磁盘认领（用到盘的那一刻按稳定 ID 和序列号核对身份）、部署前预检、每个集群独立的 SSH 密钥、存储进程的内存预留；软件包仓库（安装包上传到 S3、许可证确认、节点按预签名地址下载）只有 GPFS 用，随 S2 做
-- **通用接口**（§4.5）：GPFS、Ceph 和以后的共享存储都经同一套接口接入。集群一层是「存储后端」（每种存储一个 clapi 文件加一个节点钩子文件，类型专用的数据放进 JSON 列）；存储池一层是「驱动」（分文件型、块型两类，节点上每个操作一个通用脚本、每个驱动一个函数文件）。S1 的代码已按这个接口改好
-- **GPFS 节点必须是 Ubuntu 24.04**：手上的安装包（6.0.0.2）对 work-x 的 26.04 / 7.0 内核**编译失败，65 个错误**（§2.2）。IBM 也只支持到 24.04。GPFS 的真实环境测试要先解决「哪来的 24.04 节点」（§18 决策 D1）；Ceph 在现有节点上没有障碍。开发阶段先用本机 WSL 做沙箱（§2.5），不占 work-x
-- **测试环境的限制**：三台节点各有两块 2 TB 的 SATA 机械盘，`sda` 是系统盘，`sdb` 给了 GPFS 集群 gpfs1；内存 31 GB、网络 2 Gbit/s。只够做功能测试（Ceph 用 `sda` 根文件系统上的回环盘）。GPFS 纠删码版（ECE）在物理机上建不起来（盘数达不到程序的硬性要求），但 2026-10-06 已在 work-x 上的三台 KVM 虚拟机里跑通了完整流程，可以做功能开发与验证（§2.3、§7.9）。2026-10-02 起 work-01 / 02 / 03 已重装为 Ubuntu 24.04（原有环境清空）
+- **通用接口**（§4.5）：GPFS、Ceph 和以后的共享存储都经同一套接口接入。集群一层是「存储后端」（每种存储一个 clapi 文件加一个节点钩子文件，类型专用的数据放进 JSON 列）；存储池一层是「驱动」（分文件型、块型两类，节点上每个操作一个通用脚本、每个驱动一个函数文件）。S1–S7 的代码都按这个接口实现（后端 `gpfs`、`ceph`，驱动 `gpfs`、`ceph_rbd`）
+- **GPFS 节点必须是 Ubuntu 24.04**：手上的安装包（6.0.0.2）对 26.04 / 7.0 内核**编译失败，65 个错误**（§2.2）。IBM 也只支持到 24.04。work-01 / 02 / 03 已于 2026-10-02 重装为 Ubuntu 24.04（决策 D1，原有环境清空），GPFS 与 Ceph 都在上面做过真机验收；本机 WSL 只作沙箱（§2.5）
+- **测试环境的限制**：三台节点各有两块 2 TB 的 SATA 机械盘，`sda` 是系统盘；内存 31 GB、网络 2 Gbit/s。只够做功能测试。Ceph 集群 `ceph1`（池 `rp1`）用 `sda` 根文件系统上的回环盘，现在还在；`sdb` 先给了 GPFS 集群 gpfs1，**2026-10-07 gpfs1 已删除**，`sdb` 现在建了 xfs、放着每台 5 块 LIO 模拟盘（纠删码测试用），要测副本布局得先清掉 LIO 配置、擦盘后重建。GPFS 纠删码版（ECE）用真实盘建不起来（每台盘数达不到程序的硬性要求），但 2026-10-06 在三台 KVM 虚拟机里、2026-10-07 在物理机的 LIO 模拟盘上都跑通了完整流程（§2.3、§7.9）
 - **从用户角度看完整流程**（管理员搭建、维护，普通用户使用）：GPFS 见 §19，Ceph 见 §20
 
 ---
@@ -56,10 +57,10 @@
 
 ### 1.3 非目标
 
-- **GPFS 纠删码（ECE 的 `mmvdisk` 恢复组）放在后面**（阶段 S7）：IBM 支持的硬件门槛高，测试环境的物理机达不到（§2.3）；功能流程已在 KVM 虚拟机里验证过（§7.9）。第一版用副本模式，ECE 安装包的许可证覆盖副本模式（§2.1）
+- ~~**GPFS 纠删码（ECE 的 `mmvdisk` 恢复组）放在后面**（阶段 S7）~~ **已不是非目标**：S7 实现了纠删码布局（`layout=ece`，§7.9）。第一版（部署、删除、建池、轮换密钥）在虚拟机与物理机的 LIO 模拟盘上验收过；第二轮的加减服务器、加盘、换盘、改角色、升级、远程挂载只写了代码、没在真机跑过（E1–E9）。IBM 支持的硬件门槛高，测试环境的物理机达不到（§2.3），只能验证功能。ECE 安装包的许可证覆盖副本模式（§2.1）
 - **GPFS 的协议服务**（NFS / SMB / S3 / HDFS / AFM）、IBM 的图形界面（`gpfs.gui`）和 REST 接口（`gpfs.scaleapi`）、性能采集（zimon）：都不装。CloudLand 的界面替代图形界面，管理命令走节点脚本（§4.3）
 - **Ceph 的 CephFS、RGW（对象存储）、iSCSI / NVMe-oF 网关**：都不做，只用 RBD
-- **SAN 共享 LUN 做 GPFS 的 NSD**：第一版只用节点本地盘（无共享副本模式）。磁盘扫描现在会把多路径、FC、iSCSI 盘判为 `shared` 并拒绝（`scripts/kvm/storage_lib.sh:271` 的 `classify_disk`），以后要支持时再放开（阶段 S7）
+- ~~**SAN 共享 LUN 做 GPFS 的 NSD**~~ **已不是非目标**：S7 第二轮实现了布局 `san`（§7.10）。磁盘扫描仍把多路径、FC、iSCSI 盘判为 `shared`（`scripts/kvm/storage_lib.sh` 的 `classify_disk`），只有 SAN 布局认领这类盘（后端可选接口 `TakesSharedDisks`），副本、纠删码布局照旧拒绝。没有 SAN 环境，没在真机跑过（E10）。设计复查发现预检把共享 LUN 判失败（SAN 布局的部署和加节点都过不了预检），2026-10-07 已修（§6.5）
 - **不经 cloudlet 管理的节点**：CloudLand 只能经 cloudlet 在节点上执行命令。专用的存储节点也要按计算节点注册，再设为不调度云服务器（§6.3）
 - **操作系统升级**：CloudLand 不负责把节点从 26.04 换成 24.04，也不升级内核（§7.7）
 - 卷在存储池之间搬迁、按存储池分别计配额：与原设计相同，不做
@@ -123,7 +124,7 @@ GPFS 有内核模块（「可移植层」，`gpfs.gpl` 带源码，`mmbuildgpl` 
 
 CloudLand 在部署前做硬性预检（§6.5）：操作系统和内核不在支持范围内默认拒绝。系统管理员可以勾选「允许不受支持的系统（仅用于测试）」强制继续——这对 24.04 上比支持表新一点的内核有用，对 26.04 没用（编译那一步一定失败）。这个选择记入审计，并在集群详情页上一直显示警告。
 
-**Ceph 没有这个问题**：Ubuntu 26.04 自带 Ceph 20.2.0（Tentacle），`cephadm`、`ceph-common` 都在官方源里；云服务器访问 RBD 走 QEMU 里的 librbd（用户态），节点上 `librbd1` 和 QEMU 的 RBD 块驱动（`qemu-block-extra` 里的 `block-rbd.so`）三台都**已经装好**，不需要内核模块。
+**Ceph 没有这个问题**：Ubuntu 26.04 自带 Ceph 20.2.0（Tentacle），24.04 自带 19.2.3（Squid），`cephadm`、`ceph-common` 都在官方源里；云服务器访问 RBD 走 QEMU 里的 librbd（用户态），不需要内核模块。`ceph-common` 和 QEMU 的 RBD 块驱动（`qemu-block-extra` 里的 `block-rbd.so`）由安装步骤按需装（`storage/ceph_install.sh`，导入集群时是 `storage/ceph_client.sh`），不靠节点预装。
 
 ### 2.3 GPFS 纠删码版（ECE）的硬件门槛
 
@@ -137,56 +138,51 @@ IBM 的要求（[最低硬件预检](https://www.ibm.com/docs/en/storage-scale-e
 | CPU | 16 核以上 | 不检查 | 64 线程 |
 | 网络 | 25 Gbit/s 以上、延迟低于 1 毫秒、Mellanox ConnectX 网卡 | 不检查 | 2 Gbit/s（bond） |
 | 盘的类型 | SAS / NL-SAS 盘接在 LSI 等 SAS 卡上（直通模式），或直连的 U.2 NVMe；**不支持 SATA、SMR**；每台至少一块 SSD / NVMe 放日志（合计 500 GB 以上）；盘要有唯一 WWN、能热插拔 | 代码里没找到拒绝 SATA 的检查（发现磁盘时 SAS 与 SATA 走同一条路），没实测；没有 SSD 时日志放在 HDD 那组盘上（实测如此）；**每块盘要有槽位位置**，实体机由 `ecedrivemapping` 从 storcli 或 NVMe 读出生成，没有就拒绝建恢复组，除非设隐藏参数 `nsdRAIDStrictPdiskSlotLocation=0` | 希捷 2 TB SATA 机械盘（ST2000NM0055，有 WWN），接在主板芯片组的 SATA 口（Intel C620，AHCI），没有 SAS 卡 |
-| 盘的数量 | 每台盘数和型号相同；至少一组（declustered array）12 块以上，每组至少 4 块 | **强制**：各台磁盘拓扑和盘数相同；至少一组达到规定块数；每组非备用盘的块数不少于纠删码宽度（4+2p 是 6，8+2p 是 10，8+3p 是 11） | **每台 2 块：`sda` 是系统盘，`sdb` 给了 gpfs1** |
-| 就绪检查工具 | 用 IBM 安装工具装时必跑（`ece_os_readiness`，不达标报 FATAL；[原仓库](https://github.com/IBM/SpectrumScale_ECE_OS_READINESS) 2024 年已归档，5.2.2 文档改指 IBM 的 SpectrumScaleTools） | 只有安装工具调用它；单独运行有 `--no-mem-check`、`--no-net-check` 等跳过开关；手工用 `mmvdisk` 装时根本不经过它 | — |
+| 盘的数量 | 每台盘数和型号相同；至少一组（declustered array）12 块以上，每组至少 4 块 | **强制**：各台磁盘拓扑和盘数相同；至少一组达到规定块数；每组非备用盘的块数不少于纠删码宽度（4+2p 是 6，8+2p 是 10，8+3p 是 11） | **每台 2 块：`sda` 是系统盘，`sdb` 原先给了 gpfs1（2026-10-07 已删，现在放 5 块 LIO 模拟盘）** |
+| 就绪检查工具 | 用 IBM 安装工具装时必跑（`ece_os_readiness`，不达标报 FATAL；[原仓库](https://github.com/IBM/SpectrumScale_ECE_OS_READINESS) 2024 年已归档，5.2.2 文档改指 IBM 的 SpectrumScaleTools） | 只有安装工具调用它；单独运行有 `--no-mem-check`、`--no-net-check` 等跳过开关；手工用 `mmvdisk` 装时根本不经过它。**CloudLand 的预检有自己的就绪检查**（S7 第二轮，`backends/gpfs.sh` 的 `backend_readiness`，后端 `ReadinessInput` 给出门槛）：恢复组服务器内存不够 pagepool 时失败；CPU 少于 16 核、链路低于 25 Gbit/s、不是物理机默认只警告，参数 `ece_strict` 时也算失败。物理机上没测（E8） | 网络一项会报警告 |
 
 结论：
 
-- **物理机上建不起来**，卡在盘数这条硬性检查上；回环盘大概率也凑不了数（`mmgetpdisktopology` 没有回环设备的分支，没实测）。另外 GPFS 一台节点只能属于一个集群，在物理机上做还得先拆掉 gpfs1
-- **功能验证可以在虚拟机里做**：2026-10-06 在 work-x 上用三台 KVM 虚拟机（每台 12 GB 内存、5 块带 WWN 的 virtio-scsi 虚拟盘）跑通了建集群、恢复组、4+2p 纠删码卷、文件系统，坏盘和停节点也按预期处理（§7.9）。IBM 不支持这种形态，2 Gbit/s 网络下的性能也没有参考意义，只证明功能流程对
-- 第一版仍用「无共享副本模式」：每台节点的本地盘作为它自己的 NSD，每台节点一个故障组，数据和元数据都存 2 或 3 份。这是 Storage Scale 的基本功能，三台节点就够
+- **物理机的真实盘建不起来**，卡在盘数这条硬性检查上；回环盘大概率也凑不了数（`mmgetpdisktopology` 没有回环设备的分支，没实测）
+- **功能验证可以用虚拟盘或模拟盘做**：2026-10-06 在 work-x 上用三台 KVM 虚拟机（每台 12 GB 内存、5 块带 WWN 的 virtio-scsi 虚拟盘）跑通了建集群、恢复组、4+2p 纠删码卷、文件系统，坏盘和停节点也按预期处理；2026-10-07 删掉 gpfs1、在三台物理机的 `sdb` 上各建 5 块 256 GiB 的 LIO fileio 模拟盘，经界面到节点完整部署了纠删码集群 `gece` 并测完删除（§7.9「物理机端到端」）。IBM 不支持这些形态，2 Gbit/s 网络下的性能也没有参考意义，只证明功能流程对
+- 默认布局仍是「无共享副本模式」（`replica`）：每台节点的本地盘作为它自己的 NSD，每台节点一个故障组，数据和元数据都存 2 或 3 份。这是 Storage Scale 的基本功能，三台节点就够。纠删码（`ece`，§7.9）与 SAN 共享 LUN（`san`，§7.10）是另两种布局
 
 ### 2.4 Ceph
 
-- **部署工具用 `cephadm`**（Ceph 官方的编排工具）：守护进程跑在容器里，节点上只装 `cephadm` 和 `ceph-common`。三台节点都已经装了 docker（cephadm 支持 docker 和 podman）
-- **容器镜像**要能拉到（默认 `quay.io/ceph/ceph:v20.2.x`）。私有化环境要提供镜像仓库地址（§8.1）
+- **部署工具用 `cephadm`**（Ceph 官方的编排工具）：守护进程跑在容器里。安装步骤（`storage/ceph_install.sh`）给每台节点装 `ceph-common`、`qemu-block-extra`，跑守护进程的节点再装 `cephadm`、`lvm2`、`python3-jinja2`（24.04 的 cephadm 要用 jinja2 却没声明依赖）。三台节点都已经装了 docker（cephadm 支持 docker 和 podman）
+- **容器镜像**要能拉到。默认是 `quay.io/ceph/ceph` 里与节点发行版的 `ceph-common` 同一版本的镜像（24.04 是 `v19.2.3`，26.04 是 `v20.2.0`），比节点新的镜像安装步骤会拒绝（§8.1）。私有化环境可以填私有仓库（参数 `registry`、`registry_user`、`registry_password`，口令加密存进 `secrets`，S7 第二轮，没在真机跑过，E13）
 - 三台节点刚好够 3 副本的最小形态：3 个 mon、2 个 mgr、每台若干 OSD、副本数 3。但坏一台节点后没有地方补第三份副本，要等它回来（§8.5），所以只适合测试；正式使用建议 OSD 节点不少于 4 台
 - 内存：mon、mgr 各 1–2 GB，每个 OSD 默认按 4 GB 预算（`osd_memory_target`），在 30 GB 的节点上与云服务器混跑要调小并做内存预留（§6.7）
 
 ### 2.5 测试环境
 
-**磁盘**：三台节点各有两块 1.8 TB 的 HDD：`sda` 是系统盘（根文件系统还剩 1.6–1.7 TB），`sdb` 整块被保留的测试存储池 `local-hdd` 占着（LVM，卷组没有剩余空间）。可选的做法：
+**节点**：work-01 / 02 / 03 在 2026-10-02 按用户决定（D1）重装为 Ubuntu 24.04.5（内核 `6.8.0-146-generic`），原有环境（含保留的测试存储池 `local-hdd`）全部清空，CloudLand 在上面重新部署。GPFS、Ceph 都在这三台上做过真机验收（§16）。
 
-| 做法 | 优点 | 缺点 |
+**磁盘**：三台节点各有两块 1.8 TB 的 HDD：`sda` 是系统盘（根文件系统还剩 1.6–1.7 TB），`sdb` 是数据盘。各种测试实际用的盘（D2）：
+
+| 用途 | 用的盘 | 说明 |
 |---|---|---|
-| **在 `sda` 的根文件系统上建大文件，做成回环设备**（推荐先用） | 不动保留环境；每台可以做几块 100 GB 的盘 | 性能没有参考意义；开机后回环设备要先建好（加一个 systemd 单元）；GPFS 要加 `nsddevices` 用户出口才认回环设备；Ceph 不收回环设备，要在上面建 LVM 逻辑卷再交给它 |
-| 删掉某台或全部节点上的 `local-hdd`，腾出 `sdb` | 真实磁盘，可以测性能 | `local-hdd` 是保留的测试环境，**要用户同意** |
-| 新租带空盘的机器 | 不影响现有环境 | 要花钱，要用户决定 |
+| GPFS 副本布局（gpfs1） | 擦掉的 `sdb`（用户同意） | 2026-10-02 起用作 NSD；**2026-10-07 为纠删码测试删掉了 gpfs1**，要再测副本布局得先清 LIO 配置、卸载 `sdb`、擦盘后重建 |
+| GPFS 加盘 / 移除盘 | `sda` 根文件系统上的稀疏文件做回环设备 | GPFS 要 `nsddevices` 用户出口才认回环设备（已做，§6.4） |
+| Ceph（`ceph1`，池 `rp1`，现在还在） | `sda` 上的 16 GiB 稀疏文件做回环设备，上面建 LVM 逻辑卷（卷组 `clceph-*`） | Ceph 不收回环设备本身；开机由测试环境专用的 `cl-s3test-loop.service` 先挂回回环设备 |
+| GPFS 纠删码（`gece`，已删） | `sdb` 上建 xfs，每台 5 块 256 GiB 的 LIO fileio 模拟盘 | 只用于功能验证，模拟盘要 `emulate_write_cache=1`（§7.9） |
 
-本地存储池的测试已经用过回环设备（`cloudrc.local` 的 `storage_allow_loop`），CloudLand 的磁盘扫描对它有现成的开关。
+性能都没有参考意义。回环设备由 `cloudrc.local` 的 `storage_allow_loop` 打开（本地存储池的测试就用过），CloudLand 的磁盘扫描对它有现成的开关。
 
-**GPFS 还要 24.04 的节点**（§2.2），现有三台都是 26.04：
-
-| 做法 | 说明 |
-|---|---|
-| **新租 2–3 台 Ubuntu 24.04 的裸金属，按计算节点加入 work-01 的区域**（推荐） | 最接近真实形态，带空盘的话磁盘问题一起解决；要花钱 |
-| 把 work-02、work-03 重装成 24.04 | 不花钱，但上面的保留环境（`ibmx` / `ibmr` / `aax` 的云服务器、`rb-be3`、VPN 网关的一端）全部要先迁走或重建，**要用户同意** |
-| 在 CloudLand 里开 24.04 的云服务器当节点（嵌套虚拟化） | 不推荐：云服务器要作为计算节点接入 cland，没有浮动 IP 时出网限速约 1 Mbit/s（待办 C2），装 1.7 GB 的包就要几小时；公网地址只剩一个 |
-
-Ceph 可以直接在 work-x 上用回环盘测，但**在 work-x 上安装任何东西都要用户决定**（CLAUDE.md：不直接部署）。
+**在 work-x 上安装任何东西都要用户决定**（CLAUDE.md：不直接部署）。
 
 **本机 WSL 沙箱**（开发阶段用，不占 work-x，不需要用户决定）：本机的 WSL（Ubuntu 26.04，内核 6.6.114.1，16 核、31 GB 内存、900 GB 空闲）有 systemd、docker、回环设备和 device-mapper，可以：
 
 - 起单机 Ceph（cephadm + docker，OSD 放在回环设备上的 LVM 逻辑卷），验证 §8 的部署步骤和 §18.2 里 Ceph 的大部分待验证项
-- ~~为 WSL 内核编译 GPFS 的内核模块、起单节点 GPFS 集群~~ **试过，不行**（2026-10-01，V22）：模块能编译，用开了 BTF 重编的内核树拿到对得上的 `Module.symvers` 后版本校验也能过、`tracedev` 能加载，但加载 `mmfslinux` 时内核报 `jump_label: Fatal kernel bug, unexpected op at cxiUnlockAndPutPage`，WSL 的虚拟机随即崩溃重启（`%LOCALAPPDATA%\Temp\wsl-crashes` 有记录）。WSL 也没有嵌套虚拟化（没有 `/dev/kvm`），不能在里面再开 24.04 虚拟机。**GPFS 的一切验证只能等 24.04 节点**（D1）；GPFS 的节点脚本可以先写，命令行为照 IBM 文档与附录 C
+- ~~为 WSL 内核编译 GPFS 的内核模块、起单节点 GPFS 集群~~ **试过，不行**（2026-10-01，V22）：模块能编译，用开了 BTF 重编的内核树拿到对得上的 `Module.symvers` 后版本校验也能过、`tracedev` 能加载，但加载 `mmfslinux` 时内核报 `jump_label: Fatal kernel bug, unexpected op at cxiUnlockAndPutPage`，WSL 的虚拟机随即崩溃重启（`%LOCALAPPDATA%\Temp\wsl-crashes` 有记录）。WSL 也没有嵌套虚拟化（没有 `/dev/kvm`），不能在里面再开 24.04 虚拟机。**GPFS 的验证只能在 24.04 节点上做**（D1，现在是 work-x）；WSL 里只用替身命令测 GPFS 节点脚本的逻辑（`gpfs-spike/stc-test*.sh`）
 - 直接执行节点脚本，把输出的回调行喂给 clapi 的 PostgreSQL 测试（本机 WSL 里已有 PostgreSQL 18），验证任务引擎（S1 已做：`api/src/rpcs/storage_task_wsl_test.go`）
 
 WSL 没有 cloudlet，所以不能端到端（界面 → clapi → cland → 节点）；S1 的测试用一个假 cland 在 WSL 里按 cloudlet 的方式执行命令（每台节点一个串行队列、`bash -c` 执行、回调行交给 clapi 的解析器），覆盖到节点脚本为止，cloudlet 与 cland 本身要在真实节点上测。⚠️ WSL 的会话结束时会杀掉它留下的后台进程，模拟 cloudlet 时每条命令要放进自己的会话（`setsid --wait`）；没有任何 `wsl.exe` 会话时虚拟机也可能被停掉，在 WSL 里的 PostgreSQL 随之重启。
 
 ### 2.6 结论
 
-- 技术上可以做。Ceph 在现有节点上没有障碍；**GPFS 只能跑在 24.04 节点上**，测试要先有 24.04 的机器
-- 测试环境只够验证功能和流程，不够验证性能；ECE 只能在虚拟机里验证功能（§2.3、§7.9）
+- 技术上可以做，S1–S7 都已实现。Ceph 在 24.04、26.04 节点上都没有障碍；**GPFS 只能跑在 24.04 节点上**，测试节点 work-x 已重装为 24.04
+- 测试环境只够验证功能和流程，不够验证性能；ECE 只能用虚拟盘或 LIO 模拟盘验证功能（§2.3、§7.9），SAN 没有环境（§7.10）
 - 下面的设计不依赖「GPFS 节点在哪」：操作系统支持做成预检，同一区域混用 24.04 / 26.04 节点时，GPFS 存储池只在 24.04 节点上可用
 
 ---
@@ -200,7 +196,7 @@ WSL 没有 cloudlet，所以不能端到端（界面 → clapi → cland → 节
 | 磁盘 | NSD 直接用整块盘，盘上没有 `blkid` 认得的签名 | OSD 在盘上建 LVM（卷组 `ceph-*`，逻辑卷带 `ceph.osd_id` 标签） | **会**：同一块盘只能给一方。靠磁盘认领（§6.4）保证；还要让磁盘扫描认出 GPFS 的 NSD，否则它在扫描结果里是「空闲」，可能被拿去建本地池（§6.4） |
 | 内核 | 自己的内核模块（mmfs26、mmfslinux、tracedev） | 不用内核模块（云服务器经 QEMU 的 librbd 访问，不用 krbd） | 不冲突 |
 | 操作系统 | 只能 22.04 / 24.04（§2.2） | 24.04、26.04 都行 | 不冲突，但同时用两者的节点只能是 24.04 |
-| 端口 | 1191（守护进程）；不装图形界面就没有别的固定端口 | mon 3300 / 6789，OSD / mgr 6800–7300，mgr 的 prometheus 9283，面板 8443 | 两者之间不冲突。**cephadm 默认还会装一套监控**（prometheus 9095、grafana 3000、alertmanager 9093、node-exporter 9100），和 CloudLand 自己的监控冲突（work-01 的 3000、9093 已被占用），所以 bootstrap 一律带 `--skip-monitoring-stack`（§8.2） |
+| 端口 | 1191（守护进程）；不装图形界面就没有别的固定端口 | mon 3300 / 6789，OSD / mgr 6800–7300，mgr 的 prometheus 9283（托管集群在部署时打开这个模块，健康看护发现关了会再打开）；不装面板（bootstrap 带 `--skip-dashboard`，没有 8443） | 两者之间不冲突。**cephadm 默认还会装一套监控**（prometheus 9095、grafana 3000、alertmanager 9093、node-exporter 9100），和 CloudLand 自己的监控冲突（work-01 的 3000、9093 已被占用），所以 bootstrap 一律带 `--skip-monitoring-stack`（§8.2）。每个 mgr 的 prometheus 模块只监听所在主机的内网地址（`mgr/prometheus/<mgr 名>/server_addr`，2026-10-07 修复：原来监听所有接口） |
 | 时钟 | 要求节点时间同步 | mon 之间时差超过 0.05 秒就告警 | 不冲突，节点已有 ntpsec / chrony |
 | SSH | 管理命令要求管理节点能免密 root 登录其他成员 | cephadm 要能从 mgr 所在主机免密 root 登录其他主机 | 不冲突，各用各的密钥（§6.6） |
 | 容器 | 不用 | 用 docker / podman | 不冲突 |
@@ -214,7 +210,7 @@ WSL 没有 cloudlet，所以不能端到端（界面 → clapi → cland → 节
 
 - **没有冲突**，可以在同一批节点上同时部署。硬约束只有两条：磁盘不能共用；cephadm 不能装它自带的监控
 - **约六成的工作是两者共用的**：软件包仓库、任务引擎、节点角色与磁盘认领、预检、SSH 密钥、内存预留、存储池上的通用规则（可用性检查、容量准入、迁移矩阵、宕机恢复）、界面框架
-- 所以按「共用框架 → GPFS → Ceph」的顺序做（§16），共用部分只做一次。GPFS 在等 24.04 节点的时候，Ceph 可以先在现有节点上把共用框架验证掉
+- 所以按「共用框架 → GPFS → Ceph」的顺序做（§16），共用部分只做一次。实际就是这样做的：S1 共用框架、S2 GPFS、S3 Ceph，之后的 S4–S7 两者一起
 
 ---
 
@@ -233,7 +229,7 @@ WSL 没有 cloudlet，所以不能端到端（界面 → clapi → cland → 节
 
 - **存储集群是区域级资源**，只有系统管理员能看到和操作
 - 一个区域里可以有多个集群，GPFS 和 Ceph 可以同时存在；一台节点可以同时是一个 GPFS 集群和一个 Ceph 集群的成员（磁盘不能共用，§6.4）
-- **一台节点最多属于一个 GPFS 集群**（GPFS 的限制：要访问别的 GPFS 集群只能走多集群远程挂载，放在阶段 S7）
+- **一台节点最多属于一个 GPFS 集群**（GPFS 的限制）：要用别的 GPFS 集群的文件系统，只能走多集群远程挂载（§7.11，S7 第二轮实现，只支持两个平台部署的集群之间，没在真机跑过，E11）
 - **一台节点最多为一个托管 Ceph 集群运行守护进程**（mon、mgr、OSD）：两个集群的 mon 会争 3300 / 6789 端口，OSD 的端口段也会冲突。作为客户端可以同时用多个 Ceph 集群
 - 普通成员只看得到存储池（名称、类型、是否共享），看不到集群
 
@@ -242,11 +238,11 @@ WSL 没有 cloudlet，所以不能端到端（界面 → clapi → cland → 节
 | 组件 | 职责 |
 |---|---|
 | 前端 | 软件包、存储集群的列表 / 详情 / 创建向导、任务进度与日志；存储池页面增加「所属集群」 |
-| cpgateway | 代理白名单加入新接口（除 `GET /storage_pools` 外都是系统管理员专用）；配额不变 |
+| cpgateway | 代理白名单加入新接口（除 `GET /storage_pools`、`GET /storage_pools/:id` 外都是系统管理员专用）；配额不变 |
 | clapi | 集群、节点、磁盘、文件系统、存储池的记录；**任务编排器**（把一次操作拆成步骤，下发到节点，按回调推进，超时处理）；预检；凭据加密保存；容量采集与准入；集群健康的后台看护。两台 clapi（HA）时，后台循环用 PostgreSQL 的 `pg_try_advisory_lock` 选一台执行，另一台空转。类型相关的部分全部经存储后端与存储池驱动两个接口（§4.5） |
-| cland | **不改**。按 `inter=` / `toall=` 转发命令。注意 `toall=` 的成员列表为空时会发给**所有**节点（`cland/dispatcher.go:243-254`），编排器下发前必须确认列表非空 |
+| cland | **不改**。编排器只用 `inter=<hostid>` 逐台下发（`storage_task.go` 里的 `HyperExecute`），不用 `toall=`：`toall=` 的成员列表为空时会发给**所有**节点（`api/src/cland/dispatcher.go` 的 `resolveTargets`） |
 | cloudlet | **不改**。每个节点默认串行执行命令（`CLOUDLET_CONCURRENCY=1`），所以所有耗时的步骤都用 `async_exec` 在后台跑，不占命令队列（§6.2） |
-| 节点脚本 | 新目录 `scripts/kvm/storage/`：`stc_*.sh`（通用：预检、下载、密钥、磁盘擦除、日志）、`backends/<类型>.sh`（每种存储的钩子）、`drivers/<驱动>.sh`（每个存储池驱动的函数）、`gpfs_*.sh`、`ceph_*.sh`（各自的步骤）；存储池的通用操作脚本（`*_volume_shared.sh`、`import_image_shared.sh`）放在 `scripts/kvm/` 下，与 `*_volume_local.sh` 并列（§4.5.2）。脚本清单见附录 B |
+| 节点脚本 | 新目录 `scripts/kvm/storage/`：`stc_*.sh`（通用：预检、下载、密钥、磁盘擦除、日志）、`backends/<类型>.sh`（每种存储的钩子）、`drivers/<驱动>.sh`（每个存储池驱动的函数）、`gpfs_*.sh`、`ceph_*.sh`（各自的步骤）；存储池的通用操作脚本（`*_volume_shared.sh`、`import_image_shared.sh`、`delete_image_shared.sh`、`shared_pool_probe.sh`、`sync_shared_pools.sh`）放在 `scripts/kvm/` 下，与 `*_volume_local.sh` 并列（§4.5.2）。脚本清单见附录 B |
 
 ### 4.3 管理命令走哪条路
 
@@ -271,9 +267,10 @@ WSL 没有 cloudlet，所以不能端到端（界面 → clapi → cland → 节
 ```
 界面 → cpgateway → clapi：建任务（storage_tasks + 步骤）
                      │
-                     ├─ 每台节点的步骤：inter=<hostid> 或 toall=<成员>，脚本 async_exec 后台执行
+                     ├─ 每台节点的步骤：每台一条 inter=<hostid>，脚本 async_exec 后台执行
                      │      └─ 结束后经心跳带回 |:-COMMAND-:| storage_task_run.sh ...（1–20 秒内）
                      ├─ 集群级的步骤：inter=<管理节点>
+                     ├─ clapi 自己做的步骤（storageStepDef.Control，如 GPFS 升级前迁走云服务器）：每次推进和每轮看护都调用，直到完成
                      └─ 长步骤运行中：编排器每 15 秒下发一次 stc_poll.sh（同步、很快），取回日志尾部和进度
 
 clapi 收到回调 → 更新这一步这台节点的结果 → 本步全部成功则下发下一步；有失败则任务停在「失败」，等管理员重试或中止
@@ -291,29 +288,48 @@ clapi 收到回调 → 更新这一步这台节点的结果 → 本步全部成�
 
 #### 4.5.1 集群后端 `StorageBackend`
 
-clapi 里每种存储一个文件（`services/storage_backend_<类型>.go`），在 `init` 里注册；框架只经这个接口取类型相关的信息。方法在第一次用到的阶段加上：
+clapi 里每种存储一组文件（`services/storage_backend_<类型>*.go`），在 `init` 里注册（`registerStorageBackend`）；框架只经这个接口取类型相关的信息（`services/storage_backend.go`）。接口里的方法每种存储都要实现：
 
 | 方法 | 作用 | 阶段 |
 |---|---|---|
-| `Kind`、`Roles`、`DiskRole`、`DefaultRoles` | 类型名；角色（每种都有 `client`，即只使用存储的节点）；贡献磁盘的角色（不收磁盘的类型为空）；表单里给新选的节点建议的角色 | S1（已实现） |
-| `Requirements` | 支持的系统与内核、节点之间的端口、数据目录与所需空间、是否要编译内核模块、是否要容器 | S1（已实现） |
-| `ParseParams` | 解析并校验这种存储的参数（`storage_clusters.params`），不认识的键直接拒绝（拼错的参数否则会被悄悄忽略、用了默认值） | S1（已实现） |
-| `CheckLayout` | 角色规则（§6.3） | S1（已实现） |
-| `HostConflict` | 一台节点能否同时在同类型的另一个集群里（§4.1） | S1（已实现） |
-| `ReserveMB` | 每台节点要为存储进程预留的内存（§6.7） | S1（已实现） |
-| `Capabilities` | 支持哪些模式和操作：托管 / 外部、文件系统层、重新均衡、客户端、改角色、升级。接口和界面按它开放，不支持的操作返回 400、界面上不显示 | S2 |
-| `Steps` | 部署、导入、加减节点与盘、建删池、删除集群等任务的步骤列表，步骤定义注册进任务引擎（§6.2） | S2 / S3 |
-| `PoolDriver`、`PoolParams` | 这个集群上的存储池用哪个驱动；建池时这种存储的参数与校验 | S2 / S3 |
-| `ClientSpec` | 客户端节点要的配置，写进共享池清单和探测进程的输入（§9.2） | S2 / S3 |
-| `Health` | 健康检查脚本与结果解析（§14.1），统一成集群、节点、磁盘、容量四类 | S5 |
-| `Fence`、`Unfence`、`FenceStatus` | 宕机恢复时的隔离与解除（§11.2） | S6 |
-| `UpgradeSteps`、`RotateKeysSteps` | 升级、凭据轮换 | S6 |
+| `Kind`、`Roles`、`DiskRole`、`DefaultRoles` | 类型名；角色（每种都有 `client`，即只使用存储的节点）；贡献磁盘的角色（不收磁盘的类型为空）；表单里给新选的节点建议的角色（每台都给的 + 还没有节点担任时给一台的） | S1 |
+| `Requirements` | 支持的系统与内核、节点之间的端口、数据目录与所需空间、是否要编译内核模块、是否要容器、软件是否来自上传的安装包（`Package`） | S1 |
+| `ParseParams` | 解析并校验这种存储的参数（`storage_clusters.params`），不认识的键直接拒绝（拼错的参数否则会被悄悄忽略、用了默认值） | S1 |
+| `CheckLayout` | 角色规则（§6.3） | S1 |
+| `HostConflict` | 一台节点能否同时在同类型的另一个集群里（§4.1） | S1 |
+| `ReserveMB` | 每台节点要为存储进程预留的内存（§6.7） | S1 |
+| `DefaultLayout`、`InitialAttrs` | 新托管集群的默认布局（GPFS `replica`，Ceph 为空）；新集群或扩容带来的节点、盘的类型专用属性（GPFS 的故障组、NSD 的用途与所在 GPFS 存储池），写进各自的 `attrs` | S2 |
+| `TaskPlan` | 按任务名（`deploy`、`import`、`add_nodes`、`remove_disk`、`create_pool`、`upgrade`、`rotate_keys` 等）与范围 `StorageTaskScope`（任务带来的节点 / 盘标 `joining` / `claiming`、带走的标 `leaving` / `removing`，离线移除、改角色、轮换、升级的参数）排出步骤。步骤定义另行注册进任务引擎（`registerStorageTaskKind`、`registerSharedPoolTasks`、`registerStorageFenceKinds`，§6.2）；clapi 自己做的步骤用 `storageStepDef.Control` | S2 / S3 |
+| `Capabilities` | 这种存储支持哪些模式和操作（`StorageCapabilities`）：`managed`、`external`、`filesystems`、`create_filesystem`、`pools`、`add_nodes`、`remove_node`、`add_disks`、`remove_disk`、`rebalance`、`replace_disk`、`change_roles`、`rotate_keys`、`client_key`、`upgrade`、`finalize`、`remote_mount`。一个集群实际支持的是它再按布局收窄的结果（见下面的可选接口 `LayoutCapabilities`），接口和界面按集群的能力开放，不支持的操作返回 400、界面上不显示 | S2 |
+| `PoolDriver`、`PoolSetup` | 这个集群上的存储池用哪个驱动（`storage_pools.driver`）；建池时在记录池的事务里校验这种存储的参数，并填文件系统、驱动参数、根目录、系统盘克隆方式（`clone_mode`） | S2 / S3 |
+| `ParseImportParams` | 导入外部集群时 CloudLand 要知道的参数（如 Ceph 的 fsid、mon 地址、客户端用户） | S2 / S3 |
+
+设计时还列过 `ClientSpec`（客户端节点的配置）、`Health`、`Fence` / `Unfence` / `FenceStatus`、`UpgradeSteps` / `RotateKeysSteps`，**实现里没有这些方法**：客户端拿到的池清单就是驱动的 `DriverArgs`（§4.5.2），Ceph 客户端信息放进步骤输入；健康检查由节点钩子 `backend_health` 做、clapi 通用解析（`services/storage_health.go`）；隔离、升级、轮换走下面的可选接口和 `TaskPlan`。
+
+只有部分存储需要的能力用可选接口（后端实现了才生效，框架用类型断言取）：
+
+| 可选接口（方法） | 作用 | 实现的后端 |
+|---|---|---|
+| `storageLayoutChooser`（`LayoutOf`） | 按参数选布局（`replica` / `ece` / `san`） | gpfs |
+| `storageLayoutCapabilities`（`LayoutCapabilities`） | 某些布局支持得更少（纠删码不能移除盘、重新均衡、建第二个文件系统；SAN 不能换盘、建第二个文件系统） | gpfs |
+| `storageLayoutDescriber`（`LayoutInfo`） | 布局由什么组成（纠删码的编码、恢复组、纠删码卷、节点类），接口里集群返回 `layout_info` | gpfs |
+| `storagePackageChecker`（`CheckPackage`） | 某些参数只收特定版本的安装包（纠删码布局只收纠删码版） | gpfs |
+| `storageReadinessProvider`（`ReadinessInput`） | 预检里按角色加的检查（纠删码恢复组服务器的就绪检查，§2.3） | gpfs |
+| `storageSharedDiskTaker`（`TakesSharedDisks`）、`storageDiskSiblingsOf`（`DiskSiblings`） | 认领共享 LUN；一块 LUN 在多台节点上的记录一起走 | gpfs（SAN） |
+| `storageFilesystemMaker`（`NewFilesystem`） | 托管集群在新盘上建第二个文件系统 | gpfs |
+| `storageRemoteMounter`（`RemoteMountPlan`、`RemoteUnmountPlan`） | 多集群远程挂载（§7.11） | gpfs |
+| `storageClusterMaintainer`（`Maintain`） | 就绪的集群每分钟要做的事（拉起 `down` 的 NSD），集群有任务时不做 | gpfs |
+| `storageParamSecrets`（`SplitParamSecrets`）、`storageImportSecrets`（`SplitImportSecrets`） | 参数里的凭据（私有仓库口令、导入集群的客户端密钥）拆出来加密进 `secrets`，不留在 `params` | ceph |
+| `storageHealthInputer`（`HealthInput`） | 健康检查的类型专用输入（Ceph 的 fsid、客户端用户与配置；纠删码的恢复组） | gpfs、ceph |
+| `storageFencer`（`FencePlan`） | 隔离或解除隔离一台节点的步骤，在集群的另一台节点上执行；返回空加原因表示不能隔离（§11.2） | gpfs、ceph |
+| `storageUpgrader`（`UpgradeParams`） | 把升级请求转成任务参数或拒绝；步骤由 `TaskPlan` 排 | gpfs、ceph |
+| `storageMetricsSource`（`MetricQueries`）、`storageScrapeSource`（`ScrapeTargets`） | 集群曲线的查询；除节点 node_exporter 外 Prometheus 还要采集的目标（托管 Ceph 的 mgr） | 前者 gpfs、ceph，后者 ceph |
 
 **数据放在哪**：所有类型都有的字段留成表上的列；只有某一种存储才有的，放进三个 JSON 列，只由它自己的后端读写（§5.1–§5.3）：`params`（管理员选的）、`attrs`（后端发现或生成的，如 Ceph 的 mon 地址与 libvirt secret 编号、GPFS 的故障组号）、`secrets`（凭据，整体加密）。
 
-**节点侧**：每种存储一个钩子文件 `scripts/kvm/storage/backends/<类型>.sh`，通用脚本用 `stc_lib.sh` 的 `backend_load <类型>` 引入。S1 已有 `backend_existing`（节点上是否已有不归 CloudLand 管的这种软件，预检用）；以后按需加 `backend_health`、`backend_fence` 等。每种存储自己的步骤脚本（`gpfs_*.sh`、`ceph_*.sh`）照旧独立，由后端的步骤列表引用。
+**节点侧**：每种存储一个钩子文件 `scripts/kvm/storage/backends/<类型>.sh`，通用脚本用 `stc_lib.sh` 的 `backend_load <类型>` 引入，除 `backend_existing` 外的钩子都是可选的（用 `declare -F` 判断有没有）。现有的钩子：`backend_existing`（节点上是否已有不归 CloudLand 管的这种软件，预检用，必须有）、`backend_readiness`（预检里的就绪检查，gpfs）、`backend_trust_written`（写完集群 SSH 信任之后，gpfs）、`backend_disk_path`（认领盘的实际设备，ceph 的回环盘要包一层 LVM）、`backend_disks_resolved`、`backend_join`（`stc_join.sh` 里调用，现在两种存储都没实现）、`backend_leave`、`backend_forget`（ceph）、`backend_health`（健康检查，§14.1）、`backend_metrics`（指标，§14.3）。没有 `backend_fence`：隔离是后端 `FencePlan` 排出的步骤脚本。每种存储自己的步骤脚本（`gpfs_*.sh`、`ceph_*.sh`）照旧独立，由后端的步骤列表引用。
 
-**界面**：`GET /storage_backends` 返回每种类型的角色、贡献磁盘的角色、建议角色、支持的系统；预检弹窗（以及 S2 的创建向导）按它渲染，不在前端写死类型和角色。只有参数表单按类型各写一个组件（`components/storage/params/<类型>.vue`，S2）。类型名、角色名、说明文字没有翻译时直接显示原值，不显示键名。
+**界面**：`GET /storage_backends` 返回每种类型的角色、贡献磁盘的角色、建议角色、支持的系统、是否要内核模块 / 容器 / 上传的安装包、能力（`capabilities`）和存储池驱动；集群的接口另外返回这个集群按布局收窄后的 `capabilities` 和 `layout_info`。预检弹窗、创建向导、集群详情按它们渲染，不在前端写死类型和角色。参数表单原计划按类型各写一个组件（`components/storage/params/<类型>.vue`），**实际没有拆**：GPFS、Ceph 的参数块直接写在创建向导 `views/dashboard/StorageClusterCreate.vue` 里，按 `kind` 分块显示，加一种存储要在这里加一块。类型名、角色名、说明文字没有翻译时直接显示原值，不显示键名。
 
 #### 4.5.2 存储池驱动 `PoolDriver`
 
@@ -324,30 +340,40 @@ clapi 里每种存储一个文件（`services/storage_backend_<类型>.go`），
 | 文件型 | 共享文件系统上的 qcow2 文件，libvirt 的 `type='file'` 磁盘 | GPFS | NFS、CephFS、Lustre、GlusterFS |
 | 块型 | 网络块设备，raw 格式 | Ceph RBD（QEMU 自带的协议） | iSCSI / FC SAN 的 LUN |
 
-**clapi**：每个驱动实现 `PoolDriver`（S2 起）：
+**clapi**：每个驱动实现 `PoolDriver`（`services/storage_pool_driver.go`，`registerPoolDriver` 注册；现有 `gpfs` 与 `ceph_rbd`）：
 
 | 方法 | 作用 |
 |---|---|
 | `Name`、`Family`、`Format` | 驱动名（`storage_pools.driver`）、文件型还是块型、卷格式（qcow2 / raw） |
 | `VolumeRef` | 卷在池里叫什么：文件型是池内相对路径，块型是镜像名（§5.6） |
-| `DriverArgs` | 下发给节点的驱动参数：文件型是池根目录与文件系统类型；RBD 是池名、配置文件、客户端用户、libvirt secret 编号（§9.7 的 `boot_disk`） |
-| `Capacity` | 池容量从哪来（§9.5 的口径） |
-| `CloneModes` | 支持的系统盘克隆方式（§9.6） |
+| `DriverArgs` | 下发给节点的驱动参数：文件型是池根目录与文件系统类型；RBD 是池名、配置文件、客户端用户、libvirt secret 编号（§9.7 的 `boot_disk`）。也就是节点上的共享池清单（`sync_shared_pools.sh`） |
+| `CapacityGroup` | 哪些池共用一份容量、要一起准入（§9.5）：GPFS 是同一文件系统同一 GPFS 存储池里没设配额的池，RBD 是同一托管集群同一 CRUSH 规则里没设配额的池；有配额的池、导入集群的池返回空，容量自己算 |
+| `ImageBaseRef` | 镜像基础副本在池里的位置（`image_storages.path`，§9.6）：文件型是 `images/<镜像>.qcow2`，RBD 是镜像 `image-<ID>-<前缀>`（系统盘从它的快照 `base` 克隆） |
+| `QemuSource` | QEMU 工具读卷的地址（捕获镜像）：文件型是文件路径，RBD 是 `rbd:` 地址 |
 
-**节点**：每个操作一个通用脚本、每个驱动一个函数文件，而不是「操作 × 驱动」各写一个脚本。通用脚本是 `scripts/kvm/` 下的 `create_volume_shared.sh`、`attach_volume_shared.sh`、`detach_volume_shared.sh`、`resize_volume_shared.sh`、`delete_volume_shared.sh`、`import_image_shared.sh`，加上探测进程 `shared_pool_probe.sh` 和处理系统盘的 `launch_vm.sh` 等。它们从 stdin 的 JSON 里读出 `driver`，引入 `scripts/kvm/storage/drivers/<驱动>.sh`，再调用以下固定的函数：
+设计时列的 `Capacity`、`CloneModes` **没有做成驱动方法**：池容量来自节点探测进程的上报（`shared_pool_probe.sh` 调 `drv_probe`，§9.5），驱动只决定哪些池合并准入（`CapacityGroup`）；系统盘的克隆方式是池上的列 `clone_mode`（`clone` / `copy`），由后端的 `PoolSetup` 建池时设定。
+
+**节点**：每个操作一个通用脚本、每个驱动一个函数文件，而不是「操作 × 驱动」各写一个脚本。通用脚本是 `scripts/kvm/` 下的 `create_volume_shared.sh`、`attach_volume_shared.sh`、`resize_volume_shared.sh`、`delete_volume_shared.sh`、`import_image_shared.sh`、`delete_image_shared.sh`、池清单 `sync_shared_pools.sh`，加上探测进程 `shared_pool_probe.sh` 和处理系统盘的 `launch_vm.sh`、`reinstall_vm.sh` 等。**卸载没有单独的共享版本**：共享卷和本地卷都用 `detach_volume_local.sh`（`services/volume.go` 的挂载 / 卸载分支）。它们从 stdin 的 JSON 里读出 `driver`，经 `storage_lib.sh` 的 `drv_load` 引入 `scripts/kvm/storage/drivers/<驱动>.sh`，再调用以下固定的函数：
 
 | 函数 | 作用 |
 |---|---|
-| `drv_guard` | 写之前确认连的是对的池：文件型核对文件系统类型与标记文件，RBD 读标记对象（§9.1、§9.2） |
+| `drv_init`、`drv_volume` | 读入 clapi 下发的池；核对卷就是这个池里该卷的那个文件 / 镜像（路径由 clapi 定，节点写、删之前再核对一次） |
+| `drv_guard` | 写之前确认连的是对的池：文件型核对文件系统类型（`fs_type`）与标记文件，RBD 读标记对象（§9.1、§9.2） |
 | `drv_probe` | 探测进程用：池可不可用、容量多少 |
 | `drv_exists`、`drv_size` | 卷在不在、实际多大（建卷不覆盖已有的卷、扩容失败时回滚都要用） |
 | `drv_create`、`drv_resize`、`drv_delete` | 建卷、离线扩容、删卷（只删点名的那一个，§12.3） |
 | `drv_disk_xml` | 生成 libvirt 磁盘 XML（缓存模式、出错策略，§12.2） |
 | `drv_users` | 谁还开着这块盘（RBD 的监听者；文件型返回空），删卷失败时写进原因 |
-| `drv_import_image`、`drv_clone`、`drv_copy` | 导入镜像基础副本；从基础副本克隆或整盘复制出系统盘（§9.6、§9.7） |
-| `drv_source_uri` | 给 `qemu-img convert` 用的源地址（捕获镜像） |
+| `drv_base_check`、`drv_base_exists`、`drv_base_missing` | 镜像基础副本的名字是否合法、在不在、是否**确定**不在（存储超时不算不在，§9.6） |
+| `drv_import_image`、`drv_base_seal`、`drv_import_cleanup`、`drv_base_delete` | 导入基础副本（文件型在副本的锁目录里先查再 `mv` 到位）、导入完成后封存（GPFS 做成克隆父文件）、清理死掉的导入留下的临时文件、删副本 |
+| `drv_clone`、`drv_clone_fast` | 从基础副本做系统盘：`drv_clone <副本> <文件> <clone\|copy>`，克隆模式先试 `drv_clone_fast`（共享块的克隆），不行就整盘复制；没有单独的 `drv_copy` |
+| `drv_temp_of`、`drv_rename`、`drv_drop` | 重装：新系统盘先做在临时位置，域停下后替换旧盘；删系统盘或做到一半的盘（§9.8） |
+| `drv_nvram_check` | UEFI 变量文件在池里的位置是否合法（文件型放在池的 `nvram/`） |
+| `drv_list` | 列出池里所有对象，供孤儿对账（§16 S5） |
 
-文件型的公共实现放在 `drivers/file.sh`（用 `qemu-img` 和文件操作，路径一律校验在池根以内）。`drivers/gpfs.sh` 引入它，只覆盖三个函数：`drv_guard`（`stat -f` 的类型是 `gpfs`）、`drv_import_image` 与 `drv_clone`（用 `mmclone`）。回调按操作命名（`create_volume_shared` 等），不按驱动命名，rpcs 里每个操作一个处理函数。
+另外 `storage_lib.sh` 里有按驱动磁盘 XML 找域里设备的 `drv_dev_of`（在线扩容用）。设计时列的 `drv_source_uri` **没有做**：捕获镜像时的源地址由 clapi 的 `QemuSource` 给出。
+
+文件型的公共实现放在 `drivers/file.sh`（用 `qemu-img` 和文件操作，路径一律校验在池根以内，类型核对靠 `DriverArgs` 里的 `fs_type`）。`drivers/gpfs.sh` 引入它，只覆盖两个函数并改一个变量：`drv_base_seal`（`mmclone snap`）、`drv_clone_fast`（`mmclone copy`），以及 `drv_error_policy=stop`（GPFS 到配额返回 `EDQUOT`，QEMU 默认只对 `ENOSPC` 暂停）；`drv_guard` 用公共实现，按 `fs_type=gpfs` 核对。块型的 `drivers/ceph_rbd.sh` 自己实现全部函数。回调按操作命名（`create_volume_shared`、`attach_volume_shared`、`create_boot_shared` 等），不按驱动命名，rpcs 里每个操作一个处理函数。
 
 本地池（`driver=local`）的脚本与回调已实施并验证过，这一轮不并进来。它在接口里相当于「文件型、不共享」，以后要统一时再改。
 
@@ -360,10 +386,10 @@ clapi 里每种存储一个文件（`services/storage_backend_<类型>.go`），
 | 支持哪些系统和内核、要不要内核模块 | 22.04 / 24.04 的 GA 内核，要（§2.2） | 24.04 / 26.04，不要 |
 | 磁盘扫描怎么认出它的盘 | GPT 分区类型；节点装了 GPFS 时盘头有数据的空白盘判 `unknown_member`（§6.4） | LVM 标签 `ceph.osd_id`（§6.4） |
 | 开机时怎么判断存储已就绪 | 文件系统已挂上、`drv_guard` 通过（§9.9） | 能读到池的标记对象 |
-| 写满时云服务器是什么表现 | 暂停（`error_policy='stop'`，V8） | 磁盘 I/O 卡住，集群到 95% 时全部池都卡住（§9.5） |
+| 写满时云服务器是什么表现 | 暂停（`error_policy='stop'`，V8，没在真机验证） | 磁盘 I/O 卡住（池配额已实测，V8），集群到 95% 时全部池都卡住（§9.5） |
 | 怎么保证同一块盘只有一个写入者 | 状态机，加 QEMU 文件锁或 virtlockd（§12.1） | 状态机，加黑名单（§12.1） |
 | 宕机时怎么隔离、怎么解除 | `mmexpelnode`（§11.2） | `blocklist range`，有效期要设长 |
-| libvirt 是否接受这种盘的热迁移 | `cache='none'`（V6） | `cache='writeback'`（V6） |
+| libvirt 是否接受这种盘的热迁移 | `cache='none'`，接受（V6 已验证） | `cache='writeback'`，接受（V6 已验证） |
 | 容量和用量从哪来 | fileset 配额或所在的 GPFS 存储池（§9.5） | 池配额或 `stored + max_avail` |
 | 存储进程要多少内存、哪些端口、哪些目录 | §6.5、§6.7 | 同左 |
 | 有哪些凭据 | 集群 SSH 私钥 | 集群 SSH 私钥、客户端密钥、镜像仓库口令（放在 `secrets`） |
@@ -372,10 +398,10 @@ clapi 里每种存储一个文件（`services/storage_backend_<类型>.go`），
 
 以「导入外部 NFS 作为共享池」为例（只导入、不部署）：
 
-1. **clapi**：`storage_backend_nfs.go` 注册后端：角色只有 `client`，不收磁盘；`Capabilities` 只开「外部」；`Steps` 只有导入（在节点上挂载导出、检查）和取消登记
+1. **clapi**：`storage_backend_nfs.go` 注册后端：角色只有 `client`，不收磁盘；`Capabilities` 只开 `external` 与 `pools`；`TaskPlan` 只排导入（在节点上挂载导出、检查）、取消登记和池任务；`ParseImportParams`、`PoolSetup` 校验导入与建池的参数；再注册一个 `nfs` 驱动（`PoolDriver`，文件型可以照 `gpfsDriver` 嵌入 `fileDriver`）
 2. **节点**：`backends/nfs.sh`（`backend_existing` 等钩子）；`drivers/nfs.sh` 引入 `file.sh`，`drv_guard` 核对文件系统类型为 `nfs4` 并检查标记文件，系统盘只支持整盘复制
 3. **回答 §4.5.3**：NFS 自己没有隔离手段（撤销某个客户端的导出要靠 NFS 服务器那边），所以先不开放宕机恢复；写满时返回 `ENOSPC`，按本地盘的方式暂停
-4. **界面**：三种语言加类型名与说明，写一个参数表单组件（导出地址、挂载选项）
+4. **界面**：三种语言加类型名与说明，在创建向导 `StorageClusterCreate.vue` 里加一块 `nfs` 的参数（导出地址、挂载选项）
 5. **用例**：新增
 
 不用改的：任务引擎、预检框架、磁盘认领、准入、迁移矩阵、待启动列表、用户侧的接口和页面。
@@ -384,7 +410,7 @@ clapi 里每种存储一个文件（`services/storage_backend_<类型>.go`），
 
 ## 5. 数据模型
 
-表结构由启动时的 AutoMigrate 创建，不写迁移代码。零值有业务含义的字段（布尔开关、0 表示「不限」的数值）不加 GORM 的 `default` 标签。所有表都继承带软删除的 `Model`，所以**唯一约束一律建成只覆盖未删除行的部分唯一索引**（`dbs.AutoUpgrade` 里 `CREATE UNIQUE INDEX ... WHERE deleted_at IS NULL`，照中转网关的做法），否则删掉的集群、节点、盘会挡住同名重建或重新认领。
+表结构由启动时的 AutoMigrate 创建，不写迁移代码。零值有业务含义的字段（布尔开关、0 表示「不限」的数值）不加 GORM 的 `default` 标签。继承带软删除的 `Model` 的表，**唯一约束一律建成只覆盖未删除行的部分唯一索引**（`dbs.AutoUpgrade` 里 `CREATE UNIQUE INDEX ... WHERE deleted_at IS NULL`，照中转网关的做法），否则删掉的集群、节点、盘会挡住同名重建或重新认领。任务的步骤与运行（§5.9）、完整日志（§5.14）、对账结果（§5.15）这几张表不继承 `Model`、不软删除，用普通唯一索引。
 
 ### 5.1 `storage_clusters`（新增）
 
@@ -395,8 +421,8 @@ type StorageCluster struct {
 	Name       string `gorm:"type:varchar(64)"` // unique among live rows
 	Kind       string `gorm:"type:varchar(16)"` // gpfs | ceph
 	Mode       string `gorm:"type:varchar(16)"` // managed | external
-	Layout     string `gorm:"type:varchar(16)"` // gpfs: replica | ece; ceph: empty
-	Status     string `gorm:"type:varchar(16)"` // planning | deploying | ready | degraded | error | deleting
+	Layout     string `gorm:"type:varchar(16)"` // gpfs: replica | ece | san; ceph: empty
+	Status     string `gorm:"type:varchar(16)"` // deploying | ready | error | deleting
 	Health     string `gorm:"type:varchar(16)"` // healthy | warning | error | unknown
 	HealthInfo string `gorm:"type:text"`        // json summary for the detail page
 	HealthAt   *time.Time
@@ -408,11 +434,12 @@ type StorageCluster struct {
 	Params     string `gorm:"type:text"` // json: what the admin chose, kind specific (StorageBackend.ParseParams)
 	Attrs      string `gorm:"type:text"` // json: what the backend found out or generated, e.g. ceph mon addresses
 	Secrets    string `gorm:"type:text"` // json of kind specific credentials, encrypted as a whole
-	Unsupported bool  // deployed on an OS / kernel outside the support matrix (§6.5)
+	Unsupported bool  // the admin allowed hosts outside the support matrix when the cluster was made (§6.5)
 	ActiveTask     int64  // structural task holding the cluster (§6.2), 0 = none
 	ActivePoolTask int64  // pool task (create / change / delete a CloudLand pool), 0 = none
-	PendingClients string `gorm:"type:varchar(1024)"` // json: hosts waiting to join as clients (§6.3)
-	AutoJoinZones  string `gorm:"type:varchar(256)"`  // json: zones whose new hosts join as clients, empty = off
+	PendingClients string `gorm:"type:text"`         // json: [{hostid, status, reason, task_id, since}] of the hosts joining as clients on their own (§6.3)
+	AutoJoinZones  string `gorm:"type:varchar(256)"` // json: ids of the zones whose hosts join as clients, empty = off
+	AutoJoinSince  *time.Time // only the hosts registered after it join on their own; nil = every host of the zones
 	SSHPubKey      string `gorm:"type:text"` // cluster admin key (§6.6), every kind that manages its members over SSH
 	SSHPrivKey     string `gorm:"type:text"` // encrypted
 	Description    string `gorm:"type:varchar(256)"`
@@ -420,11 +447,12 @@ type StorageCluster struct {
 ```
 
 - **列只放所有类型都有的东西**（§4.5.1）。某一种存储才有的放进三个 JSON 列，只由它的后端读写：
-  - `params`（管理员选的）：所有类型都有 `test`（单节点测试形态）；GPFS 有 `fs_name`、`block_size`、`data_replicas`、`pagepool_mib`；Ceph 有 `replicas`、`osd_memory_target_mib`，S3 再加 `image`（容器镜像）、`registry_user`。后端解析时拒绝不认识的键
-  - `attrs`（后端发现或生成的）：Ceph 的 `client_user`（不带 `client.`，托管集群为 `cloudland`）、`mon_addrs`、`secret_uuid`（libvirt secret 编号，所有节点相同）
-  - `secrets`（凭据，整个 JSON 加密）：Ceph 的 `client_key`、`registry_password`
+  - `params`（管理员选的）：所有类型都有 `test`（单节点测试形态）；GPFS 有 `fs_name`、`block_size`、`data_replicas`、`pagepool_mib`、`layout`（`replica` / `ece` / `san`，后端据此写 `Layout` 列），纠删码布局另有 `ece_code`、`ece_set_size`、`no_slot_map`、`slot_mode`、`slot_range`、`ece_meta_code`、`ece_meta_block_size`、`ece_meta_set_size`、`ece_strict`（§7.9）；Ceph 有 `replicas`、`osd_memory_target_mib`、`image`（容器镜像）、`cluster_network`、`registry`、`registry_user`。`registry_password` 随参数一起提交，建集群时由 `SplitParamSecrets` 拆进 `secrets`，不留在 `params` 里。后端解析时拒绝不认识的键
+  - `attrs`（后端发现或生成的）：Ceph 的 `fsid`、`mon_addrs`、`client_user`（不带 `client.`，托管集群为 `cloudland`）、`secret_uuid`（libvirt secret 编号，所有节点相同），托管集群另有 `image`、`version`（实际运行的镜像与版本）；GPFS 纠删码布局的 `recovery_group`、`node_class`、`vdisk_set`、`vdisk_sets`（扩容后新增的纠删码卷集合）
+  - `secrets`（凭据，整个 JSON 加密）：Ceph 的 `client_key`、`registry_password`；轮换客户端密钥期间另有 `client_key_pending`（§6.6）
   - 集群 SSH 密钥、软件包是框架的通用机制（§6.6、§6.1），留成列
-- **`Status` 与 `Health` 分工**：`Status` 是 CloudLand 对集群的操作阶段（部署中、就绪、删除中、部署失败 `error`），只由任务改；`Health` 是存储软件自己报告的健康，只由健康看护（§14.1）改。`degraded` 不再作为 `Status` 的取值，「降级」看 `Health`，所以看护对所有 `ready` 的集群一直检查，降级后也能恢复
+- **`Status` 与 `Health` 分工**：`Status` 是 CloudLand 对集群的操作阶段（部署中 `deploying`、就绪 `ready`、删除中 `deleting`、部署失败 `error`；导入的集群在检查完成前同样是 `deploying`），只由任务改；`Health` 是存储软件自己报告的健康，只由健康看护（§14.1）改。`degraded` 不再作为 `Status` 的取值，「降级」看 `Health`，所以看护对所有 `ready` 的集群一直检查，降级后也能恢复。模型里还留着 `planning`、`degraded` 两个常量，从不写入；集群维护循环（`services/storage_backend.go`）和指标目标列表（`services/storage_metrics.go`）的查询仍写着 `ready`、`degraded` 两个值，实际只会匹配到 `ready`
+- **`Unsupported`**：建集群时管理员勾了「允许不受支持的系统」（`allow_unsupported`）就是 true，不看节点是否真的在支持范围之外；之后加节点、加盘、换盘、自动加入的预检都沿用它（与请求里的 `allow_unsupported` 取或）
 - **外部集群**：GPFS 只记文件系统和挂载点（节点上的 GPFS 由管理员装好，CloudLand 只检查和使用，§7.8）；Ceph 记 mon 地址、fsid、客户端用户名（不要求叫 `cloudland`）和密钥，CloudLand 负责在计算节点上配置客户端（§8.8）。所有 `ceph` / `rbd` / `rados` 命令和磁盘 XML 一律用 `attrs.client_user`，不写死 `cloudland`
 
 ### 5.2 `storage_cluster_nodes`（新增）
@@ -435,14 +463,16 @@ type StorageClusterNode struct {
 	ClusterID     int64  // (cluster_id, hostid) unique among live rows
 	Hostid        int32
 	Roles         string `gorm:"type:varchar(128)"` // comma separated, see below
-	Attrs         string `gorm:"type:text"`         // json, kind specific: gpfs failure_group
-	Status        string `gorm:"type:varchar(16)"` // joining | active | down | leaving | error
+	Attrs         string `gorm:"type:text"`         // json, kind specific: gpfs failure_group, host_key, hostname, mem_mib (ece servers); ceph hostname, os
+	Status        string `gorm:"type:varchar(16)"` // joining | active | leaving | error
 	State         string `gorm:"type:varchar(64)"` // what the storage software says: gpfs mmgetstate, ceph host status
 	Reason        string `gorm:"type:varchar(512)"`
 	CheckedAt     *time.Time
 	ReservedMemMB int32 // memory held back from instance scheduling for the daemons on this node (§6.7)
 }
 ```
+
+节点的 `Status` 只有 `joining`、`active`、`leaving`、`error` 四个值被写入（模型里还留着常量 `down`，从不写入）；节点此刻是否在线、存储软件怎么看它，看健康看护写的 `State`。
 
 角色：
 
@@ -459,7 +489,7 @@ type StorageClusterNode struct {
 
 角色表由各类型的后端声明（`StorageBackend.Roles`，§4.5.1），上表是 GPFS 与 Ceph 的。`client` 是所有类型共有的角色。
 
-GPFS 的故障组号（`attrs.failure_group`）在集群内从 1 开始分配，不用 hostid：hostid 只增不复用，而 GPFS 对故障组号有上限。
+GPFS 的故障组号（`attrs.failure_group`）在集群内从 1 开始分配，不用 hostid：hostid 只增不复用，而 GPFS 对故障组号有上限。SAN 布局例外：数据由阵列保护，所有 LUN 都在故障组 1（§7.10）。
 
 节点删除（`DELETE /hypers/:uuid`）时，如果它还是任何存储集群的成员，拒绝，提示先从集群移除；节点永久坏掉、在线移除做不了时，用离线移除（§7.5、§8.5）。
 
@@ -476,16 +506,22 @@ type StorageClusterDisk struct {
 	WWN       string `gorm:"type:varchar(64)"`
 	SizeBytes int64
 	Role      string `gorm:"type:varchar(16)"` // the disk role of the kind (StorageBackend.DiskRole): nsd | osd
-	Name      string `gorm:"type:varchar(64)"` // the storage software's name for it: gpfs NSD name, ceph osd.N
+	Name      string `gorm:"type:varchar(64)"` // the storage software's name for it: gpfs NSD name (pdisk name in the ece layout), ceph osd.N
 	Media     string `gorm:"type:varchar(16)"` // ssd | hdd | nvme
 	FsID      int64  // file system the disk is in, for kinds with that layer (gpfs); 0 = none / free NSD
-	Attrs     string `gorm:"type:text"`        // json, kind specific: gpfs usage (dataAndMetadata | metadataOnly | dataOnly | descOnly) and gpfs_pool (system | data)
-	Status    string `gorm:"type:varchar(16)"` // claiming | active | draining | removing | failed
+	Attrs     string `gorm:"type:text"`        // json, kind specific: gpfs usage (dataAndMetadata | metadataOnly | dataOnly | descOnly) and gpfs_pool (system | data); ceph osd_id
+	Status    string `gorm:"type:varchar(16)"` // claiming | active | removing | failed
 	Reason    string `gorm:"type:varchar(512)"`
+	State     string `gorm:"type:varchar(32)"` // what the storage software reports (gpfs availability, ceph up / down), from the health watchdog
+	CheckedAt *time.Time
 }
 ```
 
+`Status` 里原设计的 `draining` 只剩常量，从不写入（移出数据的盘是 `removing`）。
+
 `hyper_disks`（已有）增加两个状态 `gpfs_nsd`、`ceph_osd`，由磁盘扫描按盘上的特征和这张表判断（§6.4）。
+
+**两种布局的特殊记法**：纠删码布局的盘交给恢复组后，`Name` 记它的物理盘（pdisk）名，收尾时按 WWN、退而按主机与内核设备名对上（§7.9）。SAN 布局（§7.10）里一个 LUN 由几台节点共同服务，**每台服务它的节点各有一行**，`disk_id` 相同、`Name` 相同（`cl<集群ID>s<n>`）；扫描时这类盘是已有的状态 `shared`。预检下发它们的身份时带 `shared: true`，节点只核对身份和没被挂载（§6.5，2026-10-07 修复：原来不带标记、判成 `shared` 而不通过）。
 
 ### 5.4 `storage_filesystems`（新增，目前只有 GPFS）
 
@@ -514,20 +550,20 @@ Ceph 没有这一层：Ceph 池直接对应 CloudLand 存储池。
 
 | 字段 | 变更 |
 |---|---|
-| `Driver` | 新增取值 `gpfs`、`ceph_rbd`（现在只有 `local`，`model/storage_pool.go:16`） |
-| `Status` | 共享池新增 `creating`（建池任务进行中，不能被选用）、`error`（建池失败）；任务成功后变 `active`。本地池不变 |
+| `Driver` | 新增取值 `gpfs`、`ceph_rbd`（`model.StorageDriverGPFS`、`StorageDriverCephRBD`），由集群类型决定（`StorageBackend.PoolDriver`） |
+| `Status` | 共享池新增 `creating`（建池任务进行中，不能被选用）、`error`（建池失败并中止）、`deleting`（删池任务进行中）；建池任务成功后变 `active`。本地池不变 |
 | `ClusterID int64` | **新增**，共享池所属的集群；本地池为 0 |
 | `FilesystemID int64` | **新增**，GPFS 池所在的文件系统 |
-| `DriverParams string` | **新增**，JSON，驱动专用的参数，只由驱动读写（§4.5.2）：GPFS 的 `fileset`（独立 fileset 名）、`gpfs_pool`（数据落在文件系统里的哪个 GPFS 存储池，`system` / `data`）；Ceph 的 `ceph_pool`（池名）、`crush_rule`（按介质：`cl-ssd`、`cl-hdd`） |
-| `Replicas int32` | **新增**，Ceph 池的副本数（GPFS 的副本数在文件系统上） |
+| `DriverParams string` | **新增**，JSON，驱动专用的参数，只由驱动读写（§4.5.2）。GPFS 托管池：`fs_name`、`fileset`（独立 fileset 名 `cl_<池 UUID 前 8 位>`）、`gpfs_pool`（数据落在文件系统里的哪个 GPFS 存储池，`system` / `data`）、`inode_limit`；外部 GPFS 池：`fs_name`、`fileset`（可空）、`external: true`。Ceph 池：`cluster`（集群 UUID）、`conf`、`user`、`secret_uuid`、`ceph_pool`（托管池为 `cl_<池 UUID 前 8 位>`），托管池另有 `crush_rule`（按介质 `cl-ssd`、`cl-hdd`、`cl-nvme`，不选介质为 `replicated_rule`），外部池为 `external: true` |
+| `Replicas int32` | **新增**，Ceph 托管池的副本数，取集群参数 `replicas`，建池时不能单独指定（GPFS 的副本数在文件系统上） |
 | `QuotaBytes int64` | **新增**，池的配额（GPFS 的 fileset 配额 / Ceph 的池配额），0 表示不设 |
-| `CloneMode string` | **新增**，`clone`（GPFS 的 `mmclone` / Ceph 的 `rbd clone`）或 `copy` |
+| `CloneMode string` | **新增**，`clone`（托管集群的池：GPFS 的 `mmclone` / Ceph 的 `rbd clone`）或 `copy`（外部集群的池） |
 | `CapacityBytes`、`UsedBytes int64`、`CapacityAt *time.Time` | **新增**，共享池的池级容量（本地池按节点汇总，不用这三列），口径见 §9.5 |
-| `MountPath` | GPFS 池为 fileset 的入口目录（`<挂载点>/<fileset>`）；Ceph 池为空 |
+| `MountPath` | GPFS 托管池为 fileset 的入口目录（`<挂载点>/<fileset>`），外部 GPFS 池为管理员登记的目录（`path`）；Ceph 池为空 |
 
-`Shared()`（`model/storage_pool.go:44`）已经是 `Driver != local`，不用改。`Root()` 对 Ceph 池没有意义，调用方按驱动区分（§9.1）。
+`StoragePool.Shared()` 已经是 `Driver != local`，没改。`Root()` 对 Ceph 池返回空串，调用方按驱动区分（§9.1）。
 
-共享池在 `hyper_storage_pools` 里**每台能访问它的节点一行**，只用 `ready` / `unavailable` 两个状态，由可用性检查写入（§9.2）。本地池的那些状态（`creating`、`extending`、`lost` 等）对共享池不适用；现有代码里把「节点上有非内置池的行」当作「节点上有本地池」的地方（如删除节点时的 `releaseStorage`，`services/hyper.go:628-641`）都要限定 `driver = local`（附录 A）。
+共享池在 `hyper_storage_pools` 里**每台能访问它的节点一行**（远程挂载了它所在文件系统的挂载方节点也有，§7.11），只用 `ready` / `unavailable` 两个状态，由可用性检查写入（§9.2）。本地池的那些状态（`creating`、`extending`、`lost` 等）对共享池不适用；原来把「节点上有非内置池的行」当作「节点上有本地池」的地方都已限定 `driver = local`（如删除节点时的 `HyperAdmin.releaseStorage`，清单在附录 A）。
 
 ### 5.6 `volumes`（已有）的变更
 
@@ -538,7 +574,7 @@ Ceph 没有这一层：Ceph 池直接对应 CloudLand 存储池。
 | `Format` | GPFS 池为 `qcow2`；Ceph 池为 `raw`（RBD 镜像只能是 raw） |
 | `BaseImageStorageID int64` | **新增**，系统盘克隆自哪个镜像基础副本（`image_storages.id`），0 表示整盘复制、没有父对象；用于删除镜像基础副本时的引用计数（§9.6） |
 
-⚠️ **`hyper = 0` 现在的含义是「还没在任何节点上建出文件」**：删卷时只删记录、不通知节点（`services/volume.go:432`），扩容时只改数据库（`:613`、`:652`），挂载时走 `new` 模式新建文件（`:319`）。共享卷的 `hyper` 恒为 0，如果不改这些分支，删卷留下孤儿、扩容不生效、挂载会覆盖已有的卷。规则改为：**本地卷「已落盘」= `hyper > 0`；共享卷建卷成功（离开 `pending`）就已落盘**。所有读 `volumes.hyper` 的地方（含 rpcs 回调与迁移代码）都按这条改，清单在附录 A。
+⚠️ **`hyper = 0` 原来的含义是「还没在任何节点上建出文件」**：删卷时只删记录、不通知节点，扩容时只改数据库，挂载时走 `new` 模式新建文件。共享卷的 `hyper` 恒为 0，所以规则改为：**本地卷「已落盘」= `hyper > 0`；共享卷建卷成功（离开 `pending`）就已落盘**。`VolumeAdmin` 的建卷（`CreateVolume`、`Create`：共享卷由一台能访问池的节点马上写出，确认前是 `pending`）、挂载（`Update` → `attachSharedCommand`，不准入、不新建）、删卷（`Delete` → `deleteSharedCommand`，不论状态都下发给能访问池的节点）、扩容（`Resize` → `resizeSharedCommand`）都按 `pool.Shared()` 分支。读 `volumes.hyper` 的其他地方（含 rpcs 回调与迁移代码）清单在附录 A。
 
 ### 5.7 `image_storages`（新增）
 
@@ -552,10 +588,14 @@ type ImageStorage struct {
 	Path          string `gorm:"type:varchar(256)"` // gpfs: images/image-<id>-<prefix>.qcow2; ceph: image-<id>-<prefix> (snapshot "base")
 	Status        string `gorm:"type:varchar(16)"`  // syncing | synced | error | deleting
 	Reason        string `gorm:"type:varchar(512)"`
+	Hostid        int32      // the host running the import or the removal, the only one whose report is taken
+	SentAt        *time.Time // when it was sent (an import: or when its host last reported progress)
+	Phase         string `gorm:"type:varchar(16)"` // how far the import got: wait (for an import slot) | download | write
+	Progress      int    // percent of that phase
 }
 ```
 
-`<前缀>` 沿用现有约定：镜像 UUID 的第一段（`services/s3.go` 的 `s3ObjectName`）。
+`<前缀>` 是镜像 UUID 的第一段转小写（`model.Image.FilePrefix()`）；文件名一律用 `model.Image.FileBase()`（`image-<ID>-<前缀>`，`services/s3.go` 的 `s3ObjectName` 也用它）。`Hostid`、`SentAt` 用于只认被派去的那台节点的回报与超时判定（§9.6）；`Phase`、`Progress` 由心跳转发的 `image_storage_progress` 写入（S7 第二轮）。等这份副本的创建 / 重装命令在 `image_storage_waiters`（§5.12）。
 
 ### 5.8 `storage_packages`（新增，阶段 S2）
 
@@ -564,7 +604,7 @@ type ImageStorage struct {
 type StoragePackage struct {
 	Model
 	Kind        string `gorm:"type:varchar(16)"`   // gpfs
-	Edition     string `gorm:"type:varchar(32)"`   // erasure_code | data_management | standard | developer, from the license package
+	Edition     string `gorm:"type:varchar(32)"`   // erasure_code | data_management | data_access | standard | developer, from the license package
 	Version     string `gorm:"type:varchar(32)"`   // 6.0.0.2
 	FileName    string `gorm:"type:varchar(256)"`
 	SizeBytes   int64
@@ -581,6 +621,7 @@ type StoragePackage struct {
 	AcceptedAt  *time.Time
 	Status      string `gorm:"type:varchar(16)"` // uploading | verifying | ready | error
 	Reason      string `gorm:"type:varchar(512)"`
+	ProgressAt  *time.Time // when the upload last made progress or the verification started; drives the clean-up of stale ones
 }
 ```
 
@@ -593,7 +634,8 @@ type StorageTask struct {
 	Model
 	ClusterID   int64  // 0 for a task not tied to a cluster (precheck, selftest)
 	Kind        string `gorm:"type:varchar(32)"`
-	Status      string `gorm:"type:varchar(16)"` // running | failed | aborting | succeeded | aborted
+	Backend     string `gorm:"type:varchar(16)"` // kind of storage whose steps the task runs; empty for precheck, selftest
+	Status      string `gorm:"type:varchar(16);index"` // running | failed | aborting | succeeded | aborted
 	Params      string `gorm:"type:text"`        // json, what the task was asked to do
 	CurrentStep int32
 	CreatorName string `gorm:"type:varchar(64)"` // user name snapshot (clapi cannot resolve user IDs)
@@ -631,22 +673,152 @@ type StorageTaskRun struct {
 }
 ```
 
+任务种类按后端注册（`registerStorageTaskKind("<类型>:<种类>", ...)`，步骤也由该后端提供），表里 `Kind` 存不带前缀的种类、`Backend` 存类型；`precheck`、`selftest` 是所有类型共用的，`Backend` 为空。
+
 **任务种类**（`Kind`）：
 
 | 种类 | 占用 | 说明 |
 |---|---|---|
 | `precheck` | 不占集群（`ClusterID = 0`） | 只做预检（§6.5） |
 | `selftest` | 不占集群 | 只用于测试任务引擎：脚本按参数睡眠、失败、输出进度（§16 S1） |
-| `deploy`、`import`、`add_nodes`、`remove_node`、`add_clients`、`remove_clients`、`add_disks`、`remove_disk`、`replace_disk`、`rebalance`、`create_fs`、`delete_fs`、`delete_cluster`、`upgrade`、`rotate_keys` | 结构槽（`active_task`） | 改动集群结构的操作，一个集群同一时间一个 |
+| `import`、`fence`、`unfence` | 属于集群，但不占任何槽 | 导入外部集群（集群在检查完成前是 `deploying`，§7.8、§8.8）；隔离与解除隔离（§11.2），可以和集群上正在跑的任务并行 |
+| `deploy`、`add_nodes`、`remove_node`、`add_disks`、`remove_disk`、`replace_disk`、`change_roles`、`rebalance`、`create_fs`、`delete_fs`、`remote_mount`、`remote_unmount`、`delete_cluster`、`upgrade`、`rotate_keys` | 结构槽（`active_task`） | 改动集群结构的操作，一个集群同一时间一个。`rebalance`、`create_fs`、`delete_fs`、`remote_mount`、`remote_unmount` 只有 GPFS；远程挂载的两种任务占挂载方集群的槽，所属集群不加锁（§7.11）。给计算节点加 Ceph 客户端就是 `add_nodes`（角色只给 `client`），移除是 `remove_node`；原设计单列的 `add_clients`、`remove_clients` 没有做成独立的种类 |
 | `create_pool`、`update_pool`、`delete_pool` | 池槽（`active_pool_task`） | 改 CloudLand 存储池的操作。只要集群是 `ready`，就不被长时间的结构任务（重新均衡、移除盘）挡住 |
 
-不占集群的任务同样可以重试和中止，只是不检查也不占用任何槽；列表接口用 `cluster_id=0` 查。
+不占槽的任务同样可以重试和中止，只是不检查也不占用任何槽。列表接口用 `cluster_id=0` 查预检和自测，`import`、`fence`、`unfence` 带集群，按集群查。
 
-现有的通用 `tasks` 表（`model/task.go:44-57`）现在只被迁移当作阶段记录用，但它有对外的 `/tasks` 接口（`apis/task.go`）；存储任务不写进这张表，免得混进那个列表。每节点状态的写法参考中转网关的 `TgwNodeState`（`model/transit_gateway.go:98-107`）。
+现有的通用 `tasks` 表（`model/task.go` 的 `Task`）现在只被迁移当作阶段记录用，但它有对外的 `/tasks` 接口（`apis/task.go`）；存储任务不写进这张表，免得混进那个列表。每节点状态的写法参考中转网关的 `TgwNodeState`（`model/transit_gateway.go`）。
 
 ### 5.10 凭据
 
-集群 SSH 私钥、Ceph 客户端密钥、私有镜像仓库的口令，都用 `common/secret.go` 的 AES-256-GCM 加密后入库（与 VPN 的预共享密钥同一套）。集群 SSH 私钥是通用机制，单独一列；某种存储自己的凭据（Ceph 的客户端密钥与仓库口令）放在 `storage_clusters.secrets` 这个 JSON 里，整体加密一次（§5.1）。错误码 `ErrVpnSecretUnavailable` 已改名为 `ErrSecretUnavailable`（数值 132031 不变）。配置键 `vpn.secret_key`（环境变量 `VPN_SECRET_KEY`）**暂不改名**：改名要同步改每个部署环境的 `.env`，否则 VPN 凭据全部解不开，等决策 D7（§18.1）。将来改名时，HKDF 的两个固定参数（`"cloudland-vpn"`、`"vpn-secrets-v1"`，`common/secret.go:44`）**不能改**，否则旧密文作废；名字建议用 `CREDENTIAL_KEY` 这类不会和 `S3_SECRET_KEY`、`CPGATEWAY_SECRET_KEY`、`AUTH_SECRET_KEY` 混淆的。没配密钥时，新建托管集群和导入 Ceph 集群返回 503，与 VPN 相同。
+集群 SSH 私钥、Ceph 客户端密钥、私有镜像仓库的口令，都用 `common/secret.go` 的 AES-256-GCM 加密后入库（与 VPN 的预共享密钥同一套）。集群 SSH 私钥是通用机制，单独一列；某种存储自己的凭据（Ceph 的客户端密钥、轮换期间的待定密钥 `client_key_pending` 与仓库口令）放在 `storage_clusters.secrets` 这个 JSON 里，整体加密一次（§5.1）。错误码 `ErrVpnSecretUnavailable` 已改名为 `ErrSecretUnavailable`（数值 132031 不变）。配置键 `vpn.secret_key`（环境变量 `VPN_SECRET_KEY`）**暂不改名**：改名要同步改每个部署环境的 `.env`，否则 VPN 凭据全部解不开，等决策 D7（§18.1）。将来改名时，HKDF 的两个固定参数（`"cloudland-vpn"`、`"vpn-secrets-v1"`，`common/secret.go` 的 `loadSecretKey`）**不能改**，否则旧密文作废；名字建议用 `CREDENTIAL_KEY` 这类不会和 `S3_SECRET_KEY`、`CPGATEWAY_SECRET_KEY`、`AUTH_SECRET_KEY` 混淆的。没配密钥时，新建托管集群和导入 Ceph 集群返回 503，与 VPN 相同。
+
+### 5.11 `storage_remote_mounts`（新增，阶段 S7）
+
+一个集群的文件系统被同类型的另一个集群远程挂载（GPFS 多集群，§7.11）：挂载方节点上沿用原名与原挂载点，所以这个文件系统上的池在挂载方节点上路径相同，也进它们的池清单。
+
+```go
+type StorageRemoteMount struct {
+	Model
+	OwnerClusterID  int64  // cluster whose file system it is
+	AccessClusterID int64  // cluster whose hosts mount it
+	FilesystemID    int64
+	Name            string `gorm:"type:varchar(32)"`  // the file system name, kept on the hosts that mount it
+	MountPoint      string `gorm:"type:varchar(256)"` // the same mount point
+	Status          string `gorm:"type:varchar(16)"`  // mounting | ready | unmounting | error
+	Reason          string `gorm:"type:varchar(512)"`
+}
+```
+
+没有数据库唯一索引：同一个挂载方集群里文件系统名或挂载点不能重复，由服务层在建立时检查（自己的文件系统和已有的远程挂载都算）。有远程挂载的集群不能删除，被远程挂载的文件系统不能删除。
+
+### 5.12 `image_storage_waiters`（新增，阶段 S4）
+
+基础副本还在导入时，从它克隆系统盘的命令先存在这里，副本 `synced` 后再下发，导入失败时连同云服务器一起放弃（§9.6）：
+
+```go
+type ImageStorageWaiter struct {
+	Model
+	ImageStorageID int64
+	InstanceID     int64
+	VolumeID       int64
+	Kind           string `gorm:"type:varchar(16)"` // launch | reinstall
+	PriorSize      int32  // size the boot disk of a reinstall goes back to when the copy can not be made
+	Control        string `gorm:"type:text"`
+	Command        string `gorm:"type:text"` // the whole command, with the metadata of the instance
+}
+```
+
+命令里带着云服务器的密码和密钥，所以记录一律物理删除（启动时的 `AutoUpgrade` 也会清掉已软删的行）。一台云服务器有等待记录时，电源操作、救援、重装、调整规格、迁移都拒绝（§9.8）。
+
+### 5.13 `storage_fences`（新增，阶段 S6）
+
+宕机节点在某个存储集群上的隔离（§11.2）：它的云服务器在别处恢复，它在清掉自己留下的副本之前不能再写这些盘。
+
+```go
+type StorageFence struct {
+	Model
+	ClusterID   int64  // (cluster_id, hostid) unique among live rows
+	Hostid      int32
+	Status      string `gorm:"type:varchar(16)"`  // fencing | fenced | confirmed | failed | unfencing | unfence_failed
+	Method      string `gorm:"type:varchar(16)"`  // expel (gpfs mmexpelnode) | blocklist (ceph osd blocklist range) | confirmed
+	Target      string `gorm:"type:varchar(255)"` // the address blocklisted (ceph), the node name expelled (gpfs)
+	TaskID      int64  // the fence or unfence task
+	Message     string `gorm:"type:varchar(512)"`
+	FencedAt    *time.Time
+	ConfirmedBy string `gorm:"type:varchar(255)"` // the admin who confirmed the host was off, when no fence command could run
+}
+```
+
+部分唯一索引 `idx_storage_fence_live`。`confirmed` 是管理员确认节点已断电（集群执行不了隔离命令时），不下发命令；节点放回来后记录删除。
+
+### 5.14 `storage_run_logs`（新增，阶段 S5）
+
+一次运行的完整日志，按请求从节点取回（§6.2.6）；回调里只带最后 64 KiB。
+
+```go
+type StorageRunLog struct {
+	ID          int64  `gorm:"primaryKey"`
+	RunID       int64  `gorm:"uniqueIndex"` // one row per run, overwritten when fetched again
+	Status      string `gorm:"type:varchar(16)"` // requested | ready | error
+	Message     string `gorm:"type:varchar(512)"`
+	Content     string `gorm:"type:text"` // the last 16 MiB of the log at most
+	Size        int64  // size of the log on the host; larger than the content when only its end was kept
+	RequestedAt time.Time
+	UpdatedAt   time.Time
+}
+```
+
+### 5.15 `storage_pool_reconciles`（新增，阶段 S5）
+
+共享池最近一次孤儿对账的结果（§16 S5）：池里有、clapi 没有记录的对象，只报告不删除。
+
+```go
+type StoragePoolReconcile struct {
+	ID          int64  `gorm:"primaryKey"`
+	PoolID      int64  `gorm:"uniqueIndex"`
+	Status      string `gorm:"type:varchar(16)"` // running | done | error
+	Hostid      int32  // the host asked to list the pool
+	Error       string `gorm:"type:varchar(512)"`
+	Objects     int    // how many objects the pool holds
+	Truncated   bool   // the host listed only the first 100000
+	Orphans     string `gorm:"type:text"` // json array of the orphans
+	RequestedAt time.Time
+	CheckedAt   *time.Time
+}
+```
+
+### 5.16 其他已有表的变更（阶段 S6）
+
+| 表 | 字段 | 说明 |
+|---|---|---|
+| `hypers` | `OfflineAt *time.Time` | cland 把节点判为离线（status 10）的时刻，在线时为空；离线多久决定能不能疏散它的云服务器（§11.1） |
+| `hypers` | `OfflinePrior *int32` | 离线前的状态：管理员设的停用（0）与维护（2）在节点回来后恢复 |
+| `hypers` | `ReconciledAt *time.Time`、`ReconciledBoot varchar(64)` | 节点上次对账本机云服务器的时间和对应的开机 ID（§11.4） |
+| `migrations` | `SourceCleaned bool` | 疏散（类型 `evacuate`）在源节点宕机时把云服务器在别处启动；源节点回来对账、删掉旧副本后置 true，在此之前源节点关于这台云服务器的上报一律忽略 |
+| `migrations` | `Message varchar(512)` | 疏散在等什么或为什么失败 |
+
+### 5.17 `storage_pending_cleanups`（新增，2026-10-07 设计复查后补）
+
+集群删除时离线、错过了 `leave`（或导入集群的 `forget`）的节点，回来后要补做的清理（§7.6、§8.6）。一台节点、一个集群一条活记录（部分唯一索引 `idx_storage_cleanup_live (hostid, cluster_uuid)`）。
+
+```go
+type StoragePendingCleanup struct {
+	Model
+	Hostid      int32
+	Kind        string // gpfs | ceph
+	ClusterUUID string
+	ClusterName string
+	Step        string // leave | forget
+	Input       string // stc_leave.sh / stc_forget.sh 的输入，删集群时按当时的记录生成（记录随集群删掉）
+	TaskID      int64  // 正在跑或上一次的补清理任务
+	Attempts    int32
+	TriedAt     *time.Time
+	Message     string // 上一次失败的原因
+}
+```
+
+补清理成功后软删；节点被删除时一起删（重装的节点上没有这些东西）。
 
 ---
 
@@ -659,16 +831,16 @@ type StorageTaskRun struct {
 1. **上传**：界面分片上传，每片 8 MiB（nginx 的 `/api/v1/` 限制请求体 10 MB，`deploy/docker/config/nginx/ssl.conf:55`；cpgateway 会把整个请求体读进内存，`cpgateway/src/apis/proxy.go:43`，8 MiB 在可接受范围内）。clapi 把每一片写成 S3 分段上传的一段（S3 要求除最后一段外每段不小于 5 MiB，最多 10000 段，单个包最大约 80 GB）
    - **只能按顺序传**：第 n 片只在已完成 n−1 片时接受（重传第 n−1 片覆盖原段，用于中断后重试）。`GET /storage_packages/:id` 返回 `parts_done`，界面断线后从下一片继续；合并时用 S3 的 `ListObjectParts` 取各段的 ETag，不在库里存
    - 删除软件包、或者上传 24 小时没有进展时，`AbortMultipartUpload` 清掉已传的段（MinIO 没配未完成上传的生命周期规则，不清会一直占空间）
-   - 也可以填一个下载地址，由 clapi 自己拉取写入 S3，与镜像按地址导入的做法相同（`services/image.go:236-256`）
+   - 也可以填一个下载地址，由 clapi 自己拉取写入 S3（`storage_package.go` 的 `StartDownload`），与镜像按地址导入的做法相同（`services/image.go` 的 `uploadImageToS3`）
 2. **校验**（clapi 后台）：从 S3 读出文件，算 SHA-256；读脚本头的 `PGM_BEGIN_TGZ` 与 `PROD_FILES`（支持的发行版来自后者的 `gpfs_debs/ubuntu/ubuntu22` 这类目录），从该行起解 tar 流，取出 `manifest`（软件包与 md5）和许可证文本（`LA_HOME/LA_<语言>`、`LI_<语言>`，UTF-16 编码，转成 UTF-8 存），从 `gpfs.license.*` 包名得出版本类型。只读不执行，不需要 Java。读一遍 1.7 GB 的压缩流约 1–2 分钟；clapi 在校验中途重启时，维护循环把卡在 `verifying` 超过 30 分钟的包重新校验
 3. **接受许可证**：界面显示许可证文本，系统管理员勾选同意后才能用这个包部署。记录同意人和时间，进审计（`storage_package.accept_license`）
-4. **节点安装**（部署任务的步骤，§7.2）：节点用预签名地址下载（`GenerateDownloadURL` 现在只接受镜像，`services/s3.go:188-198`，改成按对象键生成），校验 SHA-256，**不执行安装包脚本本身**，而是从第 `PayloadLine` 行起直接解 tar 流里的 `gpfs_debs`（与 clapi 的校验同一个做法；不必以 root 运行一个 1.7 GB 的自解压脚本，也不需要它自带的 Java），按 `manifest` 的 md5 校验要装的包，`apt-get install`。许可证的同意由第 3 步在 CloudLand 里完成并记录
+4. **节点安装**（部署任务的步骤，§7.2）：节点用预签名地址下载（`storage_package.go` 的 `storagePackageURL`，按对象键生成，6 小时有效；镜像用的 `GenerateDownloadURL` 没有改），校验 SHA-256，**不执行安装包脚本本身**，而是从第 `PayloadLine` 行起直接解 tar 流里的 `gpfs_debs`（与 clapi 的校验同一个做法；不必以 root 运行一个 1.7 GB 的自解压脚本，也不需要它自带的 Java），按 `manifest` 的 md5 校验要装的包，`apt-get install`。许可证的同意由第 3 步在 CloudLand 里完成并记录
 
 **完整性**：上传时算出的 SHA-256 在界面上显示，供管理员和 IBM 下载页给出的值对照；包内各 deb 再按 `manifest` 的 md5 校验。安装包里带有 IBM 的签名公钥（`Public_Keys/`），能否用它校验 deb 的签名待验证（V19）。
 
 **不启用 S3（`S3_ENDPOINT` 为空）时不能用托管 GPFS**，界面提示先配置对象存储；外部集群不受影响。
 
-下载缓存放在节点的 `/opt/cloudland/cache/storage-pkg/<sha256>/`，用 `flock` 加 `.partial` 原子替换（照搬 `ensure_image_cached`，`scripts/cloudrc:339-375`）；安装完成后删除解出来的包，只保留安装包本身，以后加节点、重装时不必重新下载。
+下载缓存放在节点的 `/opt/cloudland/cache/storage-pkg/<sha256>/`（`stc_fetch.sh`）：先拿 `fetch-<sha256 前 16 位>` 锁（§6.2.3），下载到 `.partial`、核对大小与 SHA-256 后再改名（与 `cloudrc` 的 `ensure_image_cached` 同一个做法）；缓存里已有且 SHA-256 对得上就不再下载；速度低于 1 KiB/s 持续一分钟就放弃这次下载。安装完成后删除解出来的包，只保留安装包本身，以后加节点、重装时不必重新下载。
 
 ### 6.2 任务引擎
 
@@ -677,31 +849,32 @@ type StorageTaskRun struct {
 #### 6.2.1 槽与并发
 
 - 结构任务占集群的结构槽（`active_task`），池任务占池槽（`active_pool_task`），各自同一时间一个（§5.9）。新任务在事务里 `FOR UPDATE` 锁集群行后检查，槽被占就返回 409
-- **失败的任务继续占着槽**，直到管理员重试或中止：半完成的集群上不该再跑别的结构操作
-- 自动加入客户端（§6.3）不受 409 影响：请求先记进集群的 `pending_clients`，结构槽空出来时由后台循环发起 `add_clients` 任务
+- 预检、链路自检（§6.5、§16 S1）和隔离 / 解除隔离（§11.2）不占槽，可以和其他任务同时跑
+- **失败的任务继续占着槽**，直到管理员重试或中止：半完成的集群上不该再跑别的结构操作。例外是自动加入客户端的任务：失败后由后台自动中止（§6.3）
+- 自动加入客户端（§6.3）不受 409 影响：节点先记进集群的 `pending_clients`，结构槽空出来时由后台循环为**一台**节点发起 `add_nodes` 任务（角色 client）；这期间别的任务抢先占了槽，节点就等下一轮
 - 任务里一切状态变化都在锁住任务行的事务里做（建运行、收回调、超时判失败、重试、中止），所以两台 clapi、回调和后台循环同时推进同一个任务也不会冲突
 - **后台循环只在一台 clapi 上跑**：每轮先 `pg_try_advisory_lock`，拿不到就空转。否则轮询和健康检查会对同一节点各发两遍
 
 #### 6.2.2 下发（outbox）
 
 - 推进时，在锁住任务行的事务里给这一步的每台节点建一条运行记录（状态 `dispatched`），**事务提交之后再下发命令**；下发失败的直接置失败
-- clapi 恰好在提交和下发之间重启时，运行停在 `dispatched`。轮询会问节点（§6.2.4），节点答「没有这个作业」时，clapi **重新下发**同一条运行（`dispatches` 加一），超过 30 分钟仍不见作业才判失败。节点上作业的启动是幂等的（§6.2.3），重复下发不会跑出两份
+- clapi 恰好在提交和下发之间重启时，运行停在 `dispatched`。轮询会问节点（§6.2.4），节点答「没有这个作业」时，clapi **重新下发**同一条运行（`dispatches` 加一）；超过 30 分钟仍不见作业、已经下发了 10 次（`storageRunMaxDispatches`），或者任务正在中止时，才判失败（「the command never reached the host」）。节点上作业的启动是幂等的（§6.2.3），重复下发不会跑出两份
 - 命令格式：`/opt/cloudland/scripts/backend/storage/<脚本> '<运行ID>' <<'EOF' <JSON 输入> EOF`。输入由编排器在下发前从数据库和前面步骤的输出（`storage_task_runs.result`）生成，所以重试用的是最新的数据。命令经环境变量交给执行器，单个字符串上限 128 KiB，输入超过 120 KiB 时这条运行直接失败
 
 #### 6.2.3 节点上的作业
 
 所有步骤脚本共用 `scripts/kvm/storage/stc_lib.sh`：
 
-- **作业目录**：`/opt/cloudland/run/storage/jobs/<运行ID>/`，在磁盘上、保留 7 天，里面有：`accepted`（收到命令的时间）、`pid`、`boot_id`（`/proc/sys/kernel/random/boot_id`）、`progress`、`exit`（退出码）、`callback`（最终的回调行）。日志在 `/opt/cloudland/log/storage/run-<运行ID>.log`，保留 90 天
-- **启动是幂等的**：脚本先在前台（同步部分）检查作业目录：已有 `exit` → 只把 `callback` 再输出一次；有 `pid` 且进程还在、`boot_id` 没变 → 什么都不做（作业正在跑）；否则才用 `async_exec` 起后台作业。同步部分只做这几件很快的事，长活全在后台
-- **同一集群一把锁**：后台作业先拿 `flock /var/lock/cloudland-storage-<集群UUID>.lock`，同一台节点上同一集群的作业不会并发（比如超时后重试时旧作业还在跑）。拿不到锁就等，等待计入步骤的超时
+- **作业目录**：`/opt/cloudland/run/storage/jobs/<运行ID>/`，在磁盘上、保留 7 天，里面有：`accepted`（收到命令的时间）、`input`（这一步的输入）、`pid`、`boot_id`（`/proc/sys/kernel/random/boot_id`）、`progress`、`message`（失败原因）、`result.json`（给后面步骤的输出）、`exit`（退出码）、`callback`（最终的回调行）。日志在 `/opt/cloudland/log/storage/run-<运行ID>.log`，保留 90 天。`jobs/` 与 `log/storage/` 两个目录每次启动作业都设为 700：步骤的输入、输出和回调里有集群私钥和 Ceph 客户端密钥。不改作业的 umask：作业还要写 QEMU 要读的文件（`/etc/ceph/<集群UUID>.conf`）
+- **启动是幂等的**（`stc_lib.sh` 的 `stc_start`）：脚本先在前台（同步部分）检查作业目录：已有 `callback` → 只把它再输出一次；作业在跑（`pid` 的进程还在、`boot_id` 没变、进程的命令行带着 `--stc-job <运行ID>`，防 pid 被复用），或者刚接受、60 秒内还没写 `pid` → 什么都不做；接受过但作业已经不在（节点重启过或进程被杀） → **不再重起**，直接记为失败「作业中断」并输出回调；从没接受过才记下 `accepted`、用 `async_exec` 起后台作业（`setsid`，作业自成进程组）。同步部分只做这几件很快的事，长活全在后台
+- **作业的锁**（`stc_lock`，`/var/lock/cloudland-storage-<锁名>.lock`）：动集群、写盘的步骤（`stc_resolve_disks.sh`、`stc_release_disks.sh`、`stc_leave.sh`、`gpfs_*.sh`、`ceph_cluster.sh`、`ceph_pool.sh` 等）拿 `<类型>-<集群UUID>`，同一台节点上同一集群的这些作业不会并发（比如超时后重试时旧作业还在跑）；装包、编译 GPL、GPFS 节点升级按整台节点拿 `gpfs-install` / `ceph-install`，跨集群也串行；下载拿 `fetch-<sha256 前 16 位>`；隔离 / 解除隔离拿 `<类型>-fence-<集群UUID>`，不排在可能卡住的集群作业后面；Ceph 客户端配置拿 `ceph-client-<集群UUID>`。预检、`join`、`ssh_trust`、`finish`、池清单、取消登记这些步骤不拿锁。拿不到锁就等，等待计入步骤的超时
 - **stdout 只用于回调**：`async_exec` 会把后台作业的 stdout 和 stderr 一起写进待发文件，心跳时整份发给 clapi（`report_rc.sh` 的 `sync_delayed_job`），所以作业一开始就把 stdout、stderr 都重定向到日志文件，回调行写到单独保存的描述符上
 - **结束**：写 `exit` 和 `callback`，再把回调行输出：`|:-COMMAND-:| storage_task_run '<运行ID>' '<succeeded|failed>' '<进度>' '<base64 JSON>'`，JSON 里是消息、日志尾部（最多 64 KiB）和这一步的输出
 - 每个步骤脚本都必须**可重入**：先检查目标状态是否已经达成（包已装、模块已编译、节点已在集群里、NSD 已存在），达成就直接报成功（附录 B 写了每个脚本的判断条件）。这样重试只需对失败的节点重跑，成功过的节点不重复执行
 
 #### 6.2.4 结果送达与轮询
 
-- 后台作业结束后，结果由下一次心跳带回（`report_rc.sh:400-406`，1–20 秒）。但 `.done` 文件在投递之前就被删掉，cland 转发失败最多重试 3 次，所以**心跳这条路可能丢结果**
+- 后台作业结束后，结果由下一次心跳带回（`report_rc.sh` 的 `sync_delayed_job`，1–20 秒）。但 `.done` 文件在投递之前就被删掉，cland 转发失败最多重试 3 次，所以**心跳这条路可能丢结果**
 - 补救靠轮询：后台循环每 15 秒检查一次，对超过 15 秒没有消息的运行下发 `stc_poll.sh '<运行ID>'`（同步命令，只读作业目录，毫秒级）。`stc_poll.sh` 是作业状态的权威来源，回答四种情况之一：
   - 已结束 → 把保存的 `callback` 再发一次（clapi 按运行记录去重）
   - 在跑 → `running`，带进度和日志尾部
@@ -712,9 +885,12 @@ type StorageTaskRun struct {
 
 #### 6.2.5 超时、重试、中止
 
-- **超时**：每步有超时（安装 30 分钟、编译 15 分钟、建文件系统 60 分钟等；重新均衡、移除盘这类数据迁移不设上限，靠轮询的「作业中断」发现异常）。运行超时或者节点离线超过 5 分钟，这台节点的这一步置为失败，原因写明
-- **重试**：`POST /storage_tasks/:id/retry` 从失败的那一步重新开始，只对失败的节点再下发（新的 `attempt`）。用到「上一步解析出的设备名」的步骤声明了 `RetryFrom`，重试时从解析那一步重新开始（§6.4）。旧作业如果还在跑（超时判失败但进程还在），新作业会等在同一把集群锁上，不会两份同时干活
-- **中止**：`POST /storage_tasks/:id/abort` 先把任务置 `aborting`，对还在跑的运行下发 `stc_kill.sh '<运行ID>'`（杀掉作业的进程组），等这些运行都终结（或节点离线超过 5 分钟）后才置 `aborted` 并释放槽。不自动回滚：部分失败时很难做对，还会把排查现场清掉；半成品由管理员另行发起「删除集群」清理（删除集群能清理任何阶段的半成品，§7.6、§8.6）
+- **超时**：每步有超时（预检、`join` 10 分钟，下载、安装 30 分钟〔Ceph 安装 45 分钟〕，编译 15 分钟，建 NSD 15 分钟，建文件系统、建 OSD 60 分钟等）。数据迁移类的步骤超时很长，主要靠轮询的「作业中断」及早发现异常：GPFS 移除盘 24 小时，重新均衡、换盘后的恢复（`restore`）、Ceph 移除 OSD、移除主机都是 7 天，Ceph 升级 12 小时。运行超时，或者节点离线且这条运行 5 分钟没有更新，这台节点的这一步置为失败，原因写明
+- **重试**：`POST /storage_tasks/:id/retry` 从失败的那一步重新开始，只对失败的节点再下发（新的 `attempt`）。管理节点步骤改由当前在线的任一管理节点执行（失败的那台可能就是原因）；各节点都成功、只是跨节点的检查（步骤的 `Done`）失败时，所有节点重跑；所有步骤都成功、只是收尾失败时，重试只重做收尾。步骤可以声明 `RetryFrom`，重试时从前面那一步重新开始：用到「上一步解析出的设备名」的步骤（`create_nsd`、`create_fs` 等）从 `resolve_disks` 开始（§6.4）；要用集群密钥登录其他成员的步骤（GPFS 的 `create_cluster`、`change_roles`，Ceph 的 `bootstrap`、`add_hosts`、`set_labels`）从 `ssh_trust` 开始，密钥或 `known_hosts` 写错是它们最常见的失败原因。旧作业如果还在跑（超时判失败但进程还在），新作业会等在同一把集群锁上，不会两份同时干活
+- **中止**：`POST /storage_tasks/:id/abort` 先把任务置 `aborting`，对还在跑的运行下发 `stc_kill.sh '<运行ID>'`（杀掉作业的进程组），等这些运行都终结（或节点离线超过 5 分钟）后才置 `aborted` 并释放槽；已经没有在跑的运行时立即置 `aborted`。不自动回滚：部分失败时很难做对，还会把排查现场清掉；半成品由管理员另行发起「删除集群」清理（删除集群能清理任何阶段的半成品，§7.6、§8.6；⚠️ 有成员离线时删除会失败，见 §14.1 的已知缺陷）
+- **收尾**（任务种类的 `Finish`）：在任务成功或被中止时执行（失败的任务不执行，它继续占着槽），跑在保存点里，出错时它写的东西全部撤销：成功的任务这时留在 `failed`、已没有要跑的步骤，重试只重做收尾；中止时收尾出错只记日志，任务照样 `aborted`。中止时的收尾只把记录改成与实际相符（如认领失败的盘标 `failed`、改角色恢复旧的内存预留），不回滚节点上做过的事
+- **控制步骤**（`storageStepDef.Control`，S6 加的）：clapi 自己做、不下发脚本的步骤，例如 GPFS 升级前的 `drain`（迁走节点上用本集群存储池的云服务器，§16 S6）。步骤开始、任务每次推进、后台每一轮（15 秒）都调用一次，直到它报告完成，所以它必须能重复调用而不重复做事；出错或超过步骤的超时就判失败；重试时从头开始，超时也重新计
+- **只在在线节点运行的步骤**（`OnlineOnly`）：开始时只在在线的节点上跑、跳过离线的，用于节点回来后自己会补上的事：共享池清单（`sync_pools`，§9.2）。取消登记导入集群时清节点上客户端配置的 `forget` 也是这种步骤，但离线节点回来后不会补做
 
 #### 6.2.6 日志
 
@@ -727,10 +903,10 @@ type StorageTaskRun struct {
 - **只有已注册的计算节点能加入存储集群**（要经 cloudlet 下发命令）。专用的存储节点也按计算节点注册，然后在节点详情里设为「不调度云服务器」：用现有的禁用状态（`PATCH /hypers/:uuid` 改 status），禁用的节点不参与调度，但 cloudlet 照常执行命令
 - 向导里列出区域内所有在线节点，显示操作系统、内核、内存、可用磁盘、是否已在别的集群里、是否在支持范围内（§6.5）
 - **角色的校验**：
-  - GPFS：仲裁节点奇数台；管理节点 1–2 台且必须是仲裁节点；**有盘的节点（故障组）至少 3 个**，只有 2 个时必须另加一块 `descOnly` 盘作第三个故障组：文件系统描述符的法定人数按故障组算，只有两个故障组时丢掉其中之一整个文件系统就卸载；数据、元数据副本数不超过故障组数，并且按 GPFS 存储池分别算（`system` 池里的故障组数要不少于元数据副本数）；全部成员都必须在 GPFS 支持的系统上（§2.2）
+  - GPFS：仲裁节点奇数台（至少 3，测试形态 1）；管理节点 1–2 台且必须是仲裁节点；NSD 节点至少有一块盘；**副本布局里有盘的节点（故障组）至少 3 个**：文件系统描述符的法定人数按故障组算，只有两个故障组时丢掉其中之一整个文件系统就卸载。原设计允许只有 2 个故障组时另加一块 `descOnly` 盘作第三个故障组，**决定不做**（2026-10-07）：这块盘要放在第三台机器上才起作用，而第三台机器加一块普通 NSD 盘就是第三个故障组、还多出容量；只有两台机器时用测试形态。少于 3 个一律拒绝（测试形态除外）。数据副本 2 或 3（测试形态 1），不超过故障组数；元数据副本不单独配置，取 min(故障组数, 3) 且不少于数据副本（`storage_backend_gpfs_tasks.go` 的 `gpfsFileSystem`）。原设计「副本数按 GPFS 存储池分别算（`system` 池里的故障组数不少于元数据副本数）」**没实现**，只按全部故障组算。纠删码布局、SAN 布局另有规则（§7.9、§7.10）；全部成员都必须在 GPFS 支持的系统上（§2.2）
   - Ceph：mon 奇数台；mgr 1–2 台；`admin` 必须是 mon；OSD 所在主机数不少于副本数；托管集群的副本数只能是 3（或单节点测试形态的 1），不允许 2：Ceph 的 `size=2` 配 `min_size=1` 会单副本写入，配 `min_size=2` 坏一台就停写
   - 单节点测试形态（1 台仲裁 / 1 个 mon、副本 1）只在参数里显式选「测试」时允许，集群详情一直显示警告
-- **自动加入客户端**：集群设置 `auto_join_zones`（可用区列表），这些可用区里新上线的节点记进 `pending_clients`，结构槽空出来时由后台循环发起 `add_clients` 任务（§6.2.1）；节点的系统不在支持范围内时不加，在集群详情页上列出。**只加新节点**（2026-10-07 第二轮）：`auto_join_new_only` 记下开启的时刻（`storage_clusters.auto_join_since`），可用区里在它之前注册的节点保持不变，只有之后注册的自动加入
+- **自动加入客户端**（S5，`storage_auto_join.go`）：只对托管、支持加节点的集群。集群设置 `auto_join_zones`（可用区列表）后，后台每分钟一轮：可用区里在线、不在集群里、作为客户端不与同类型的其他集群冲突的节点记进 `pending_clients`（`{hostid, status: pending|joining|failed, reason, task_id, since}`），没勾「只加新节点」时**开启那一刻可用区里已有的节点也会加入**；结构槽空闲且没有节点正在加入时，为**一台**节点发起 `add_nodes` 任务（角色 client，§6.2.1），失败只影响它自己。系统不在支持范围内的节点（集群创建时没允许不受支持的系统）照样排进来，在预检失败；失败的任务由后台自动中止，节点标 `failed` 并记下原因（失败运行的消息），在集群详情页上列出，之后不再自动重试；它的成员记录停在 `error`，管理员移除后用 `retry_auto_join` 重试。离开可用区、或经别的途径进了集群的等待节点移出队列。**只加新节点**（2026-10-07 S7 第二轮，已提交推送，没有部署，没在真实节点上运行过）：`auto_join_new_only` 记下开启的时刻（`storage_clusters.auto_join_since`），可用区里在它之前注册（`hypers.created_at`）的节点保持不变，只有之后注册的自动加入；可用区清空时一并清掉
 
 ### 6.4 磁盘认领与身份核对
 
@@ -738,15 +914,17 @@ type StorageTaskRun struct {
 
 两道保证：
 
-1. **数据库**：`storage_cluster_disks` 里有记录的盘，不能再被别的集群或本地池选中；本地池建池时的选盘（`services/hyper_storage.go:395-428` 的 `pickDisks`）增加这项检查。保存扫描结果（`SaveScannedDisks`）时，登记过的盘一律按登记的角色显示为 `gpfs_nsd` / `ceph_osd`
-2. **盘上的特征**（扫描时识别，防止数据库与实际不一致，`classify_disk`，`scripts/kvm/storage_lib.sh:271`）：
-   - **Ceph OSD**：盘上是 LVM 物理卷，卷组名 `ceph-*`、逻辑卷带 `ceph.osd_id`、`ceph.cluster_fsid` 标签。现在判为 `unknown_member`（有 LVM 签名、读不出 CloudLand 的标签，`storage_lib.sh:296-299`），本地池已经会拒绝；改为识别成 `ceph_osd` 并带上编号和 fsid
-   - **GPFS NSD**：旧格式（v1）的 NSD 盘上没有 `blkid` 认得的签名，现在会判为 `free`；新格式（v2）在盘上写 GPT 分区表、分区类型 GUID 为 GPFS 专用值，现在会判为 `dirty`。两种都危险：`dirty` 的盘勾选「擦除」就能拿去建本地池。识别办法按可靠程度：分区类型 GUID（v2，`lsblk -o PARTTYPE` 就能读）→ 节点装了 GPFS 时用 GPFS 自带的识别命令（`tspreparedisk -s`，输出格式待验证，V2）。**节点上只要装了 GPFS（`/usr/lpp/mmfs/bin/mmfsd` 存在），无法确认「不是 NSD」的空白盘一律判为 `unknown_member`，不判 `free`**（外部 GPFS 集群的 NSD 不在 CloudLand 的库里，只能这样兜底）
-   - **实际的做法（2026-10-02 真实节点验收时改）**：上面「装了 GPFS 的空白盘一律 `unknown_member`」在集群建好之后会让成员节点上的**任何新盘都加不进集群**（加盘只收 `free` / `dirty`），所以按两条规则判：① 有 GPFS 分区类型（`37affc90-ef7d-4e96-91c3-2d7ae055b174`）的分区 → `unknown_member`「GPFS NSD」，不管装没装 GPFS（不再是能勾「擦除」的 `dirty`）；② 装了 GPFS、没有任何签名的盘，**前 4 MiB 不全为零**才判 `unknown_member`（旧格式 NSD 的描述符写在盘头），全零判 `free`。`tspreparedisk -s` 验证过不能用：它只列 `nsddevices` 出口给出的盘，而我们的出口只列本集群认领的盘。配套地，`wipe_disk` 擦完签名后把盘头、盘尾各 10 MiB 清零（下面「释放」一条原本就这么写，代码之前只做了 `wipefs`），这样我们自己释放的盘在 GPFS 节点上重新扫描是 `free`
-- **认领时的检查**：盘必须是 `free`（或 `dirty` 且勾选了擦除）；扫描结果不能超过 24 小时（沿用 `hyper_storage.go:37`）；认领时记下盘的序列号、WWN、大小
-- **用到盘的那一刻核对身份**：数据库里存的是稳定 ID（by-id 链接名如 `wwn-0x…`；回环设备是 `loop:<后端文件>`，找不到 by-id 时是 `dev:<名>`，`storage_lib.sh:143-163`）。**任何会写盘的脚本（建 NSD、建 OSD、擦盘）都在执行的那一刻、在那台节点上用 `disk_path_of`（`storage_lib.sh:166-181`）重新解析，并核对序列号、WWN、大小与认领时一致**，再复核盘上没有分区、文件系统、LVM、md 签名，没有被挂载，不是系统盘。不一致就失败，不碰盘。脚本只接受「稳定 ID + 期望的序列号」，不接受设备名
-- GPFS 的 NSD 描述（stanza）要用内核设备名（`/dev/sdX`），所以由管理节点生成描述之前，`resolve_disks` 步骤在各 NSD 节点上解析并核对，`create_nsd` 声明 `RetryFrom: resolve_disks`（§6.2.5）。另外给每个集群写 `/var/mmfs/etc/nsddevices` 用户出口：**只列出本集群认领的盘**（按稳定 ID 解析）并返回 0，GPFS 永远看不到其他盘，也就不会把 NSD 建到本地池的盘上
-- **释放**：从集群里移除盘（§7.5、§8.5）或删除集群后，盘被擦除（`wipefs -a`、清掉开头和结尾各 10 MiB、`sgdisk --zap-all`；同样先核对身份），记录删除，再触发一次扫描。擦除前在界面上列出盘的型号、序列号、大小，要求输入集群名确认
+1. **数据库**：`storage_cluster_disks` 里有记录的盘，不能再被别的集群或本地池选中：集群认领（`storage_cluster.go` 的 `checkStoragePlan`）和本地池选盘（`hyper_storage.go` 的 `pickDisks`）都先查这张表（`storageDiskClaim`）。保存扫描结果（`SaveScannedDisks`）时，登记过的盘一律按登记的角色显示为 `gpfs_nsd` / `ceph_osd`
+2. **盘上的特征**（扫描时识别，防止数据库与实际不一致，`storage_lib.sh` 的 `classify_disk`）。状态有 `free`、`dirty`、`in_use`、`system`、`cloudland_pool`、`unknown_member`、`shared`、`ceph_osd`，与集群有关的几种：
+   - **SAN 与多路径**：多路径设备本身、FC / iSCSI 盘、WWN 在本机重复的盘 → `shared`（可能是 SAN 上的共享 LUN，§7.10）；多路径设备下面的某条路径（持有者里有 `mpath`）→ `in_use`「多路径设备 X 的一条路径」，不能单独认领（单条路径会绕过多路径）。多路径的识别是 S7 第二轮加的（2026-10-07 已提交推送，没有部署，没在真实节点上运行过）
+   - **Ceph OSD**：盘上是 LVM 物理卷，卷组名 `ceph-*`、逻辑卷带 `ceph.osd_id`、`ceph.cluster_fsid` 标签 → `ceph_osd`，详情带 OSD 编号和 fsid（读不出编号时记 `?`）；其他读不出 CloudLand 标签的 LVM、md 成员仍是 `unknown_member`。本地池只收 `free` / `dirty`，两种都会拒绝
+   - **GPFS NSD**：旧格式（v1）的 NSD 盘上没有 `blkid` 认得的签名，只在盘头写描述符；新格式（v2）在盘上写 GPT 分区表、分区类型 GUID 为 GPFS 专用值。按两条规则判（2026-10-02 真实节点验收时定下）：① 有 GPFS 分区类型（`37affc90-ef7d-4e96-91c3-2d7ae055b174`）的分区 → `unknown_member`「GPFS NSD」，不管装没装 GPFS（不是能勾「擦除」的 `dirty`）；② 装了 GPFS（`/usr/lpp/mmfs/bin/mmfsd` 存在）、没有任何签名的盘，**前 4 MiB 不全为零**才判 `unknown_member`（旧格式 NSD 的描述符写在盘头），全零判 `free`
+   - 原设计是「节点上只要装了 GPFS，无法确认不是 NSD 的空白盘一律判为 `unknown_member`」，集群建好之后会让成员节点上的**任何新盘都加不进集群**（加盘只收 `free` / `dirty`），所以改成上面两条。GPFS 自带的 `tspreparedisk -s` 验证过不能用（V2）：它只列 `nsddevices` 出口给出的盘，而我们的出口只列本集群认领的盘。配套地，`wipe_disk` 擦完签名后把盘头、盘尾各 10 MiB 清零，我们自己释放的盘在 GPFS 节点上重新扫描是 `free`
+- **认领时的检查**：副本、纠删码布局的盘必须是 `free`（或 `dirty` 且勾选了擦除）；SAN 布局（§7.10）反过来只收 `shared` 的盘、拒绝本地盘，一个 LUN 已被别的集群（在任何一台节点上）认领就拒绝，集群已在用的 LUN 不能勾擦除。扫描结果不能超过 24 小时（`hyper_storage.go` 的 `diskScanValidity`）；认领时记下盘的序列号、大小，稳定 ID 是 `wwn-*` 时还记下 WWN（取自 ID）
+- **用到盘的那一刻核对身份**：数据库里存的是稳定 ID（`storage_lib.sh` 的 `disk_stable_id`：`/dev/disk/by-id` 里指向这块盘的链接名，优先 `wwn-*`，其次 `nvme-eui.*`，再次 `ata-*` / `scsi-*` / `nvme-*`；多路径设备按真实路径 `/dev/dm-N` 匹配；回环设备是 `loop:<后端文件>`；找不到 by-id 时是 `dev:<名>`）。**任何会写盘的脚本（建 NSD、建 OSD、擦盘）都在执行的那一刻、在那台节点上重新解析（`disk_path_of`），并核对序列号、WWN、大小与认领时一致（`disk_identity`）**，再复核盘不是系统盘、没有被挂载、没有分区和任何签名（`wipefs -n`，文件系统、LVM、md 都在内）。不一致就失败，不碰盘。脚本只接受「稳定 ID + 期望的序列号」，不接受设备名
+- **已在用的盘只核身份**：`stc_resolve_disks.sh` 的输入里标了 `in_use` 的盘只核身份，不查空、不擦：GPFS 里集群已在用（`active`）的盘，以及 SAN 里由别的节点负责查空的共享 LUN。查过空的盘在节点上留标记 `run/storage/<集群UUID>/claimed-<稳定 ID 的 md5 前 16 位>`，同一集群后面的运行（重试、`RetryFrom`）不再查空：那时盘上可能已经写了 NSD。释放盘时删掉标记
+- GPFS 的 NSD 描述（stanza）要用内核设备名（`/dev/sdX`），所以由管理节点生成描述之前，`resolve_disks` 步骤在各 NSD 节点上解析并核对，`create_nsd`、`create_fs` 声明 `RetryFrom: resolve_disks`（§6.2.5）。另外给每台 NSD 节点写 `/var/mmfs/etc/nsddevices` 用户出口（每台节点一份，一台节点最多属于一个 GPFS 集群）：**只列出本集群认领的盘**（每次按稳定 ID 解析，开机后改了名的盘照样找得到；多路径设备报类型 `dmm`，GPFS 才用它而不是它的某条路径）并返回 0，GPFS 永远看不到其他盘，也就不会把 NSD 建到本地池的盘上。纠删码布局不写这个出口（盘做恢复组的物理盘，不做 NSD；解析输入带 `nsddevices: false`）
+- **释放**：从集群里移除盘（§7.5、§8.5）或删除集群后（`stc_release_disks.sh`、`stc_leave.sh`），盘先核对身份再擦除（`storage_lib.sh` 的 `wipe_disk`：先逐个分区、再整盘 `wipefs -a`，盘头、盘尾各清零 10 MiB，`blockdev --rereadpt`，分区还在就 `partx -d`；原设计里的 `sgdisk --zap-all` 没有用），删掉节点上的 claimed 标记和库里的记录，再触发一次扫描。三种情况不擦：身份对不上（盘已不在或换成了别的盘，只记日志、跳过，不让步骤失败）；SAN 共享 LUN 还有别的节点在服务、或由别的节点去擦（输入带 `shared`）；换盘时换下来的坏盘（`no_wipe`）。盘上有挂载时步骤失败。擦除前在界面上列出盘的型号、序列号、大小，要求输入集群名确认
 
 ### 6.5 部署前预检
 
@@ -757,29 +935,36 @@ type StorageTaskRun struct {
 | 操作系统与内核在支持范围内 | 与安装包的发行版目录和支持矩阵比对（矩阵随 CloudLand 一起维护，由各类型后端的 `Requirements` 声明，`api/src/services/storage_backend_<类型>.go`；26.04 一律不通过，§2.2） | Ubuntu 24.04 / 26.04 | 不通过；可勾选「允许不受支持的系统（仅用于测试）」 |
 | 运行中内核的头文件可装 | `linux-headers-$(uname -r)` | — | 不通过 |
 | 安全启动 | 开着时自己编译的内核模块加载不了（`mokutil --sb-state`） | — | 不通过 |
-| 时间同步 | `timedatectl` 显示已同步 | 同左 | 不通过 |
+| 时间同步 | `timedatectl` 显示已同步。原设计按 mon 之间时差 0.05 秒判断，**决定不做**（2026-10-07）：部署前还没有 mon，量不出 mon 之间的时差；部署后 Ceph 自己报 `MON_CLOCK_SKEW`，集群转为 HEALTH_WARN，健康看护照常告警 | 同左 | 不通过 |
 | 节点之间的内网连通 | 1191 端口与 SSH | 3300、6789、6800（代表 OSD 端口段）与 SSH | 不通过 |
-| 磁盘 | 认领的盘空闲、身份可核对；同一文件系统内各故障组容量相近 | 同左，且不小于 5 GB | 不通过 / 警告 |
+| 磁盘 | 认领的盘身份可核对（序列号、WWN、大小），且 `classify_disk` 判为 `free`（`dirty` 且勾选了擦除时为警告），其他状态一律不通过；SAN 布局（§7.10）的盘要判为 `shared`（共享 LUN）且没被挂载，空不空到认领盘（`resolve_disks`）时再查（勾了擦除时为警告）。原设计的「同一文件系统内各故障组容量相近」（警告）**决定不做**（2026-10-07）：容量不齐只是可用量按最小的组算，不影响正确性，建池时和界面上的容量已经看得出来 | 同左；原设计的「不小于 5 GB」**决定不做**：OSD 的最小容量归 Ceph 管（`ceph-volume` 把小于 5 GB 的设备列为不可用），小盘建出来只是容量小 | 不通过 / 警告 |
 | 根文件系统 | `/var/mmfs` 所在分区至少 10 GB 空闲 | `/var/lib/ceph` 所在分区至少 30% 空闲（mon 节点） | 不通过 |
 | 内存余量 | 可调度内存扣掉预留后仍大于 0（§6.7） | 同左 | 警告 |
 | 软件包管理器 | dpkg 锁能拿到（等 2 分钟；开机后 unattended-upgrades 常常占着） | 同左 | 不通过 |
 | 容器 | — | docker 或 podman 在运行 | 不通过 |
-| 主机名 | 在集群内唯一，能解析 | 同左 | 不通过 |
+| 主机名 | 能解析（节点上查）；本次任务的节点之间不重复（clapi 在预检步骤的 `Done` 里比较各节点上报的主机名） | 同左 | 不通过 |
 | 已有安装 | 节点上已有 GPFS / Ceph 且没有本集群的成员标记 | 同左 | 不通过（要先清理，或改用导入） |
+| 安装包对得上发行版 | 安装包里有该节点 Ubuntu 版本的包（clapi 在 `Done` 里按上报的 `os` 比对） | — | 不通过 |
+| 守护进程主机的发行版一致 | — | 跑守护进程的主机（连同集群里已有的）是同一个 Ubuntu 版本：各自从发行版装，才是同一个 Ceph 版本；纯客户端主机可以不同（§8.1） | 不通过 |
+| 纠删码服务器的内存（`ece_memory`） | 内存不少于 pagepool 的 5/4（`mmvdisk` 最多把内存的 80% 给 pagepool）；各服务器（连同已有的）相差不超过 10% | — | 不通过 |
+| 纠删码服务器的 IBM 支持要求（`ece_cores`、`ece_network`、`ece_bare_metal`） | 至少 16 核、到其他成员的链路至少 25 Gbit/s、裸金属（§2.3） | — | 警告；集群参数 `ece_strict` 时不通过 |
 
 - **连通性怎么测**：软件装好之前这些端口上没有服务在听。用 TCP 连接测试：对方立刻回「连接被拒绝」说明网络通、只是没人听，算通过；超时说明被防火墙拦了，不通过。不临时起监听
 - **成员标记**：加入集群的第一步（预检之后、装软件之前）就在节点上写 `/opt/cloudland/run/storage/<集群UUID>/member`，所以前面的步骤失败后重试或再加节点，不会把半装好的软件误判成外部安装
-- 预检同时收集后面步骤要用的信息（SSH 主机公钥、内核版本、内网地址），存进这一步的输出。预检也可以单独发起（`POST /storage_clusters/precheck`，任务种类 `precheck`，不占集群），用来在选节点和磁盘时提前发现问题
+- 预检同时收集后面步骤要用的信息，存进这一步的输出（`facts`）：主机名、内核版本、发行版（`os`）、SSH 主机公钥、本机的全局 IPv4 地址、内存（`mem_mib`）与 CPU 数（`cpus`）。预检也可以单独发起（`POST /storage_clusters/precheck`，任务种类 `precheck`，不占集群），用来在选节点和磁盘时提前发现问题
 - 安装步骤的 `apt-get` 一律带 `-o DPkg::Lock::Timeout=600`
+- 跨节点的几项（主机名不重复、安装包对得上发行版、Ceph 守护进程主机的发行版一致、纠删码服务器内存相近）由 clapi 在预检步骤的 `Done` 里做；纠删码的几项（节点上 `backends/gpfs.sh` 的 `backend_readiness` 钩子，只对纠删码布局的恢复组服务器）是 S7 第二轮加的（2026-10-07 已提交推送，没有部署，没在真实节点上运行过）
+- **SAN 布局的盘**（2026-10-07 修复设计复查发现的缺陷 a）：预检输入里，集群布局要共享 LUN 时每块盘带 `shared: true`（`storage_cluster.go` 的 `precheckInput`，按 `storageTakesShared` 判断），节点上 `check_disks` 对这样的盘只要求 `classify_disk` 判为 `shared`、没有挂载；判成别的（例如多路径设备的某一条路径，`in_use`）就不通过。原来不带标记，共享 LUN 一律按「can not be used: shared」失败，SAN 集群的部署和加节点都过不了预检
 
 ### 6.6 集群的 SSH 密钥
 
 GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。**不用 CloudLand 自己的 cland 密钥**（那一对是全集群共用的，见待办 A1），每个集群单独一对：
 
 - clapi 生成 ed25519 密钥对，私钥加密入库（§5.10）
-- 公钥写进每个成员的 `/root/.ssh/authorized_keys`，**带 `from="<发起登录的节点的内网地址>"` 限制**和 `no-agent-forwarding,no-port-forwarding,no-X11-forwarding`；发起登录的节点变化时编排器重写这一行（行尾注释 `cloudland-storage-<集群UUID>` 用来定位）
-- **GPFS**：发起登录的是管理节点，私钥只发给管理节点。预检时每个成员上报自己的 SSH 主机公钥，编排器给管理节点写一份这个集群专用的 `known_hosts`。建集群时用 CloudLand 的包装脚本作为远程命令（`mmcrcluster -r /opt/cloudland/scripts/kvm/storage/gpfs_rsh -R .../gpfs_rcp`），包装脚本给 `ssh` / `scp` 加上这个集群的私钥和 `known_hosts`（`StrictHostKeyChecking=yes`），root 的默认 SSH 配置不受影响。再设 `mmchconfig adminMode=central`，非管理节点之间不需要互相登录
-- **Ceph**：cephadm 的 SSH 连接是从**当前活动的 mgr** 发起的（编排模块运行在 mgr 进程里），所以 `from=` 要列出所有 mgr 所在主机的地址，mgr 放置变化时更新。bootstrap 时用 `--ssh-private-key` / `--ssh-public-key` 传入这对密钥，cephadm 把它存在集群的配置库里。两个已知的不足：cephadm bootstrap 自己会往引导主机的 `authorized_keys` 写一行**不带 `from=`** 的公钥（编排器在 bootstrap 之后把那一行改写成带限制的，待验证，V17）；cephadm 不校验被管主机的 SSH 主机公钥，`known_hosts` 对它不起作用
+- 公钥写进每个成员的 `/root/.ssh/authorized_keys`，**带 `from="<发起登录的节点的内网地址>"` 限制**和 `no-agent-forwarding,no-port-forwarding,no-X11-forwarding`；发起登录的节点变化时编排器重写这一行（行尾注释 `cloudland-storage-<集群UUID>` 用来定位）。改写一律经 `stc_lib.sh` 的 `stc_keys_update`：整台节点一把锁（`/var/lock/cloudland-authorized-keys.lock`，几个集群的作业可能同时改这个文件），写临时文件再原子改名，失败也不会留下截断的文件（文件里还有 cland 用的密钥）；节点离开集群时（`stc_leave.sh`）删掉本集群的行。私钥只发给管理节点（两种存储都是），放在集群目录的 `id_ed25519`（600），旁边写同一对的 `id_ed25519.pub`
+- **GPFS**：发起登录的是管理节点。预检时每个成员上报自己的 SSH 主机公钥，编排器给管理节点写一份这个集群专用的 `known_hosts`（每行写主机的内网地址、它上报的主机名和 CloudLand 里的主机名：GPFS 会把节点文件里的地址转成主机名再登录）。`ssh_trust` 步骤在每个成员的集群目录（`/opt/cloudland/run/storage/<集群UUID>/`）里写远程命令包装脚本 `gpfs_rsh` / `gpfs_rcp`（`backends/gpfs.sh` 的 `backend_trust_written`，权限 700；每个成员都写，GPFS 在哪找都有，只有管理节点有私钥），建集群时用它们作为远程命令（`mmcrcluster ... -r <集群目录>/gpfs_rsh -R <集群目录>/gpfs_rcp`）。包装脚本给 `ssh` / `scp` 加上这个集群的私钥和 `known_hosts`（`StrictHostKeyChecking=yes`、`BatchMode=yes`），root 的默认 SSH 配置不受影响。再设 `mmchconfig adminMode=central`，非管理节点之间不需要互相登录
+- **Ceph**：cephadm 的 SSH 连接是从**当前活动的 mgr** 发起的（编排模块运行在 mgr 进程里），所以 `from=` 列出所有 `_admin` 主机和 mgr 主机的地址（`ssh_trust` 的输入取这两种角色），放置变化时更新。bootstrap 时用 `--ssh-private-key` / `--ssh-public-key` 传入这对密钥，cephadm 把它存在集群的配置库里。cephadm bootstrap 自己会往引导主机的 `authorized_keys` 写一行**不带 `from=`** 的公钥，bootstrap 步骤结束时把这一行删掉，只留 `ssh_trust` 写的带限制的那行（`ceph_cluster.sh`，`stc_keys_update line`；V17 已实现）。还有一个不足：cephadm 不校验被管主机的 SSH 主机公钥，`known_hosts` 对它不起作用
+- **轮换**（S6，`POST /storage_clusters/:id/rotate_keys`，`storage_cluster_keys.go`）：全部成员都必须是 `active` 且在线，否则拒绝。新密钥分三轮下发到每个成员（`stc_ssh_trust.sh` 的 `rotate`），不管管理节点走到哪一轮，每个成员都接受它正在用的那把：`trust_add` 加第二行（行尾 `cloudland-storage-<集群UUID>-rotate`）→ `ssh_switch` 管理节点换上新私钥（GPFS 在这一步把新密钥写进集群记录；Ceph 之后还有 `cephadm_key` 换掉编排器自己存的那份，在那一步写库）→ `trust_drop` 本集群那一行换成新公钥、删掉 `-rotate` 行（Ceph 之后再由 `cephadm_check` 核对一次）。switch 和 drop 之后管理节点逐个成员试登录（输入 `check`），登不上就失败。中止时集群仍用记录里的那把，残留的 `-rotate` 行在下次写信任或离开集群时删掉。Ceph 客户端密钥的轮换见 §8.4、§16 S6
 
 普通成员被攻破，拿不到登录其他节点的能力；管理节点（或 Ceph 的 mgr 主机）被攻破则可以登录这个集群的所有成员（GPFS 和 cephadm 的设计决定的，无法避免）。**另外，A1 的共用 cland 密钥还在，任何节点被攻破本来就能登录所有节点**，所以在 A1 修好之前，每集群独立密钥并不增加实际的隔离，只是不让问题变得更糟，记在 §18。
 
@@ -787,19 +972,21 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 
 ### 6.7 存储进程的内存预留
 
-计算节点上报的可调度内存是「物理内存 − 系统预留（默认 1/4，`report_rc.sh:13-18`）」乘以超分比例再减去云服务器内存。GPFS 和 Ceph 的进程要从里面再扣掉：
+计算节点上报的可调度内存是「(物理内存 − 系统预留 − 存储预留) × 超分比例 − 云服务器内存」（`report_rc.sh` 开头与 `calc_resource`）：系统预留默认是物理内存的 1/4、最多 64000000 KiB，可在 `cloudrc` / `cloudrc.local` 用 `system_reserved_memory` 指定；存储预留在乘超分比例之前扣，不被超分放大。GPFS 和 Ceph 的进程按下表预留：
 
 | 进程 | 预留（默认） |
 |---|---|
-| GPFS（任何角色） | pagepool + 1 GiB；pagepool 默认 1 GiB，可在集群参数里调 |
+| GPFS 副本布局、SAN 布局（任何角色） | pagepool + 1 GiB；pagepool 默认 1 GiB，可在集群参数里调 |
+| GPFS 纠删码布局的恢复组服务器 | pagepool + 2 GiB；pagepool 最低 8 GiB，不填时就是 8 GiB |
+| GPFS 纠删码布局的其他成员 | 默认 pagepool 1 GiB + 1 GiB，不随 `pagepool_mib` 变 |
 | Ceph mon | 2 GiB |
 | Ceph mgr | 1 GiB |
 | Ceph OSD | `osd_memory_target` + 0.5 GiB；`osd_memory_target` 在集群参数里设，与云服务器混跑时默认 2 GiB（Ceph 默认 4 GiB） |
 | Ceph 客户端（librbd） | 不预留，算在云服务器的 QEMU 进程里 |
 
-- 编排器按节点的角色算出 `storage_cluster_nodes.reserved_mem_mb`，写到节点的 `/opt/cloudland/run/storage_reserved_memory`（多个集群相加，单位 KiB），`report_rc.sh` 读取后从总内存里减掉
+- 编排器按节点的角色和盘数算出 `storage_cluster_nodes.reserved_mem_mb`；节点的 `finish` 步骤（`stc_finish.sh` → `stc_mem_reserve.sh`）把它写进本集群的 `run/storage/<集群UUID>/reserved_mb`（MiB），再把节点上所有集群的加起来写到 `/opt/cloudland/run/storage_reserved_memory`（单位 KiB），`report_rc.sh` 读取后从总内存里减掉
 - **Ceph 一律关掉 `osd_memory_target_autotune`**：cephadm 默认开着，会按主机内存的七成给 OSD 设置并覆盖全局的 `osd_memory_target`，预留就是错的
-- ⚠️ `report_rc.sh:446-447` 有一行「算出的可用内存小于 `MemFree` 就改用 `MemFree`」。存储进程刚启动、还没把内存用起来时 `MemFree` 很大，预留会被这一行抵消，所以预留同样要从 `MemFree` 里减掉
+- ⚠️ `report_rc.sh` 的 `calc_resource` 有一行「算出的可用内存小于 `MemFree` 就改用 `MemFree`」。存储进程刚启动、还没把内存用起来时 `MemFree` 很大，预留会被这一行抵消，所以预留同样从 `MemFree` 里减掉（已实现）
 
 #### 6.7.1 预留的边界与更新（2026-10-06 按代码核对补充）
 
@@ -885,12 +1072,18 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 | 路径 | 内容 |
 |---|---|
 | `/opt/cloudland/cache/storage-pkg/<sha256>/` | 下载的安装包（§6.1） |
-| `/opt/cloudland/run/storage/jobs/<运行ID>/` | 作业目录（§6.2.3），保留 7 天 |
-| `/opt/cloudland/log/storage/run-<运行ID>.log` | 步骤日志，保留 90 天 |
-| `/opt/cloudland/run/storage/<集群UUID>/` | 集群的运行时状态：成员标记 `member`（§6.5）、`known_hosts`、GPFS 包装脚本用的私钥（权限 600，只在管理节点上）、这个集群的共享池清单 `shared_pools.json`（§9.2，每集群一份，开机时合并读取）、探测状态（§9.2） |
-| `/opt/cloudland/run/storage_reserved_memory` | 内存预留（§6.7） |
+| `/opt/cloudland/run/storage/jobs/<运行ID>/` | 作业目录（§6.2.3），保留 7 天；`jobs/` 权限 700 |
+| `/opt/cloudland/log/storage/` | 步骤日志 `run-<运行ID>.log`（保留 90 天），以及 `metrics.log`、`health-<集群UUID>.log`、`ceph_oom.log`、`gpfs-disks-up.log`；目录权限 700 |
+| `/opt/cloudland/run/storage/<集群UUID>/` | 集群的运行时状态（集群目录）：成员标记 `member`（内容是存储类型，§6.5）、`state`（`finish` 后为 `active`）、`held_packages`（`join` 时 hold 的内核包）、本集群的内存预留 `reserved_mb`（§6.7）、查过空的盘的标记 `claimed-<md5>`（§6.4）；集群私钥 `id_ed25519`（600，只在管理节点上）与 `id_ed25519.pub`、`known_hosts`；GPFS 的 `gpfs_rsh` / `gpfs_rcp`（每个成员都有，700，§6.6）、文件系统清单 `gpfs_mounts`（附录 E）、拉盘时间戳 `disks_up`、纠删码升级时的 `rg-suspended`；这个集群的共享池清单 `shared_pools.json`（§9.2，每集群一份，开机时合并读取）和远程挂载标记 `remote`（§14.3） |
+| `/opt/cloudland/run/storage/gpfs.cloudland`、`ceph.cloudland` | CloudLand 在本机装过 GPFS 包、装过 cephadm 并拉了镜像（预检的「已有安装」靠它区分别人装的） |
+| `/opt/cloudland/run/storage/metrics.started`、`ceph_oom.started` | 心跳起指标采集（每分钟）、OOM 保护巡检（每 5 分钟）的时间戳 |
+| `/opt/cloudland/run/pools/<池UUID>.state`、`.shared`、`.pid` | 共享池的探测状态（§9.2），与本地池的放在一起；`.shared` 记所属集群 |
+| `/opt/cloudland/run/storage_reserved_memory` | 本机所有集群的内存预留之和，KiB（§6.7） |
 | `/etc/ceph/<集群UUID>.conf`、`/etc/ceph/<集群UUID>.client.<用户>.keyring` | Ceph 客户端配置（§8.4）。不用默认的 `/etc/ceph/ceph.conf`：一台节点可以是多个 Ceph 集群的客户端，而 cephadm 的管理节点自己要用默认文件。**配置文件里要写 `keyring = <密钥环路径>`**：librados 默认按集群名找 `/etc/ceph/ceph.client.<用户>.keyring`，找不到这个按 UUID 命名的密钥环 |
-| `/var/lock/cloudland-storage-<集群UUID>.lock` | 同一集群的作业互斥（§6.2.3） |
+| `/etc/systemd/system/ceph-<集群UUID>@.service.d/` | Ceph 单元的 drop-in：`cloudland-order.conf`（OSD 排在本机 mon 之后停，§16 S3）、`cloudland-oom.conf`（OOM 保护，§6.7.2） |
+| `/var/mmfs/etc/nsddevices` | GPFS 的磁盘出口，只列本集群认领的盘（§6.4） |
+| `<node_exporter 的 textfile 目录>/cloudland_storage_<集群UUID>.prom`、`cloudland_shared_pool_<池UUID>.prom` | 集群与共享池的指标（§14.3、附录 E）；目录取 node_exporter 的 `--collector.textfile.directory`，部署脚本设为 `/var/lib/node_exporter` |
+| `/var/lock/cloudland-storage-<锁名>.lock` | 作业的锁（§6.2.3）：`<类型>-<集群UUID>`、`gpfs-install`、`ceph-install`、`fetch-<sha256 前 16 位>`、`<类型>-fence-<集群UUID>`、`ceph-client-<集群UUID>`；另有 `/var/lock/` 下的 `cloudland-storage-metrics.lock`、`cloudland-storage-health-<集群UUID>.lock`、`cloudland-authorized-keys.lock`、`cloudland-ceph-oom.lock`、`cloudland-gpfs-disks-up-<集群UUID>.lock` |
 | `/opt/cloudland/scripts/kvm/storage/backends/<类型>.sh`、`drivers/<驱动>.sh` | 每种存储的节点钩子、每个存储池驱动的函数（§4.5），随脚本一起分发 |
 
 ---
@@ -901,78 +1094,97 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 
 | 模式 | 说明 | 阶段 |
 |---|---|---|
-| **托管 · 副本**（`managed` + `replica`） | 无共享：每台 NSD 节点的本地盘是它自己的 NSD，每台节点一个故障组（集群内从 1 开始编号，§5.2）。**至少 3 个故障组**（只有 2 台有盘时加一块 `descOnly` 盘作第三组，§6.3）。数据副本默认 2（可选 3），元数据副本在有 3 个以上故障组时为 3；最大副本数一律建成 3，以后可以加副本不必重建文件系统。设 `restripeOnDiskFailure=yes`，盘失效后 GPFS 自动在其余故障组补齐副本 | S2 |
+| **托管 · 副本**（`managed` + `replica`） | 无共享：每台 NSD 节点的本地盘是它自己的 NSD，每台节点一个故障组（集群内从 1 开始编号，§5.2）。**至少 3 个故障组**：非测试形态下有盘的节点少于 3 台时布局检查直接拒绝（`CheckLayout`）；§6.3 设想的「只有 2 台有盘时加一块 `descOnly` 盘作第三组」**决定不做**（理由见 §6.3）。数据副本默认 2（可选 3；单节点测试形态为 1），元数据副本取 min(故障组数, 3) 且不少于数据副本；最大副本数一律建成 3，以后可以加副本不必重建文件系统。设 `restripeOnDiskFailure=yes`，盘失效后 GPFS 自动在其余故障组补齐副本 | S2 |
 | **外部**（`external`） | 集群由管理员装好，计算节点已经是它的成员并挂好了文件系统；CloudLand 只登记、检查和使用（§7.8） | S2 |
 | 托管 · 纠删码（`managed` + `ece`） | ECE 的 `mmvdisk` 恢复组（§7.9） | S7 |
+| 托管 · SAN 共享 LUN（`managed` + `san`） | NSD 是多台成员共同服务的共享 LUN，数据由存储阵列保护，故障组一律 1、数据和元数据各一份（§7.10） | S7 |
 
-**NSD 节点重启后的盘**：无共享布局下，NSD 节点离线期间它的盘被标成 `down`，节点回来后不会自己恢复，要 `mmchdisk <fs> start`。健康看护（§14.1）发现节点已 `active`、它的盘仍 `down` 时自动执行一次（同一块盘 10 分钟内只试一次），否则滚动重启第二台节点时双副本的数据就不可用了。
+**NSD 节点重启后的盘**：无共享布局下，NSD 节点离线期间它的盘被标成 `down`，节点回来后不会自己恢复，要 `mmchdisk <fs> start`。clapi 每分钟让一台在线的管理节点跑 `gpfs_disks_up.sh`（`gpfsBackend.Maintain`）：某个文件系统有 `down` / `unrecovered` 的盘、且**所有**节点都已 `active` 时执行 `mmchdisk <fs> start -a`；节流按集群算（整个集群 10 分钟最多一次，不是按盘）；集群有结构任务时不跑（换盘时会把要丢弃的坏盘又拉起来），纠删码集群跳过（§7.9）。不做的话滚动重启第二台节点时双副本的数据就不可用了。
 
 ### 7.2 部署步骤（任务 `deploy`）
 
 | # | 步骤 | 范围 | 做什么 | 可重入的判断 |
 |---|---|---|---|---|
 | 1 | `precheck` | 全部成员 | §6.5；输出主机公钥、内网地址、内核版本 | 每次都跑 |
-| 2 | `join` | 全部成员 | 写成员标记（§6.5）、`apt-mark hold` 内核元包（§7.7） | 标记已存在 |
+| 2 | `join` | 全部成员 | 写成员标记（§6.5）、`apt-mark hold` 内核包（§7.7），hold 了哪些记在集群目录的 `held_packages` | 标记已存在 |
 | 3 | `fetch_package` | 全部成员 | 按预签名地址下载安装包、校验 SHA-256（§6.1） | 缓存目录里已有且校验通过 |
-| 4 | `install` | 全部成员 | 从安装包的 tar 流里解出 `gpfs_debs`，按 `manifest` 的 md5 校验后 `apt-get install`：`gpfs.base`、`gpfs.gpl`、`gpfs.gskit`、`gpfs.msg.en-us`、`gpfs.license.<版本类型>`、`gpfs.docs`（ECE 模式另加 `gpfs.gnr*`）。不装 `gpfs.gui`、`gpfs.scaleapi`、`gpfs.java`、性能采集、协议服务（§1.3）；另装 `libaio1t64`、`ksh`、`iputils-arping`、编译工具与内核头文件。一律用 `apt-get install ./<包>.deb` 装，让 apt 补齐依赖：`gpfs.base` 依赖的 `iputils-arping` 在 24.04 上默认没有，只用 `dpkg -i` 会留下半装的包（V1 实测） | `dpkg -s gpfs.base` 的版本相同 |
-| 5 | `build_gpl` | 全部成员 | `mmbuildgpl` | 运行中内核的模块已存在（`/lib/modules/$(uname -r)/extra/mmfs26.ko`） |
-| 6 | `ssh_trust` | 全部成员 | 写 `authorized_keys`；管理节点另写私钥、`known_hosts`、`gpfs_rsh` / `gpfs_rcp`（§6.6） | 行已存在且内容相同 |
-| 7 | `create_cluster` | 管理节点 | 生成节点描述文件（**一律用内网地址**，即 `hypers.host_ip`），`mmcrcluster -N <文件> -C <集群名> -r gpfs_rsh -R gpfs_rcp -A`；`mmchlicense server --accept -N <仲裁与 NSD 节点>`、`mmchlicense client --accept -N <其余>`；`mmchconfig adminMode=central,autoBuildGPL=yes,restripeOnDiskFailure=yes,pagepool=<值>` | `mmlscluster` 已是同名集群；节点已属于别的集群则失败 |
+| 4 | `install` | 全部成员 | 从安装包的 tar 流里（起始行是包记录的 `payload_line`）解出 `gpfs_debs`，按 `manifest` 的 md5 校验后 `apt-get install`：`gpfs.base`、`gpfs.gpl`、`gpfs.gskit`、`gpfs.msg.en-us`、`gpfs.license.<版本类型>`、`gpfs.docs`（ECE 模式另加 `gpfs.gnr*`、`gpfs.adv`、`gpfs.crypto`、`gpfs.compression`；名字里带发行版的 `.U2x` 包不装）。不装 `gpfs.gui`、`gpfs.scaleapi`、`gpfs.java`、性能采集、协议服务（§1.3）；另装 `libaio1t64`、`ksh`、`m4`、`python3`、`iputils-arping`、编译工具与内核头文件（有 `gpfs.gnr` 时再加 `lsscsi sg3-utils`）。一律用 `apt-get install ./<包>.deb` 装，让 apt 补齐依赖：`gpfs.base` 依赖的 `iputils-arping` 在 24.04 上默认没有，只用 `dpkg -i` 会留下半装的包（V1 实测） | 安装包清单里**每个**包都已按清单里的版本装好（`backends/gpfs.sh` 的 `gpfs_debs_missing`；只看 `gpfs.base` 不够，§7.9 坑 ⑯） |
+| 5 | `build_gpl` | 全部成员 | `mmbuildgpl` | 运行中内核的三个模块（`mmfs26`、`mmfslinux`、`tracedev`）都在 `/lib/modules/$(uname -r)/extra/`，且 `vermagic` 是运行中的内核 |
+| 6 | `ssh_trust` | 全部成员 | 写 `authorized_keys` 和 `gpfs_rsh` / `gpfs_rcp`（每台都写，路径到处都有）；管理节点另写私钥、`known_hosts`（§6.6） | 行已存在且内容相同 |
+| 7 | `create_cluster` | 管理节点 | 生成节点描述文件（**一律用内网地址**，即 `hypers.host_ip`；仲裁节点写成 `<地址>:quorum-manager`，所有仲裁节点同时是 manager），`mmcrcluster -N <文件> -C <集群名> -r <集群目录>/gpfs_rsh -R <集群目录>/gpfs_rcp -A`（集群目录是 `/opt/cloudland/run/storage/<集群 UUID>/`）；`mmchlicense server --accept -N <仲裁、NSD 与管理节点>`、`mmchlicense client --accept -N <其余>`；`mmchconfig adminMode=central,autoBuildGPL=yes,restripeOnDiskFailure=yes,pagepool=<值>M`。`RetryFrom: ssh_trust` | `mmlscluster` 已是同名集群；节点已属于别的集群则失败 |
 | 8 | `start` | 管理节点 | `mmstartup -a`，等到 `mmgetstate -a` 全部 `active`（最长 10 分钟） | 已全部 active |
 | 9 | `resolve_disks` | NSD 节点 | 按稳定 ID 解析认领的盘并核对身份（§6.4）；写 `/var/mmfs/etc/nsddevices`，只列出本集群认领的盘 | 每次都跑 |
-| 10 | `create_nsd` | 管理节点 | 按上一步的输出生成 NSD 描述（`device=/dev/<名>`、`nsd=cl<集群ID>h<hostid>d<序号>`、`servers=<内网地址>`、`failureGroup=<故障组号>`、`usage`、`pool`），`mmcrnsd -F`。`RetryFrom: resolve_disks` | `mmlsnsd` 里已有同名 NSD |
-| 11 | `create_fs` | 管理节点 | `mmcrfs <名> -F <描述> -B <块大小> -m <M> -M 3 -r <R> -R 3 -T /gpfs/<名> -A yes -Q yes --inode-limit <值>`；有多种介质时装默认放置规则（§7.3）；`mmmount <名> -a`，等到所有成员都挂上（`mmlsmount -L`） | `mmlsfs <名>` 已存在 |
-| 12 | `finish` | 全部成员 | 装集群监控的采集脚本（附录 E）、写内存预留，然后触发一次磁盘扫描 | 每次都跑 |
+| 10 | `create_nsd` | 管理节点 | 按上一步的输出生成 NSD 描述（`device=/dev/<名>`、`nsd=cl<集群ID>h<hostid>d<序号>`、`servers=<内网地址>`、`failureGroup=<故障组号>`、`usage`、`pool`），`mmcrnsd -F <描述> -v yes`。`RetryFrom: resolve_disks` | `mmlsnsd` 里已有同名 NSD |
+| 11 | `create_fs` | 管理节点 | `mmcrfs <名> -F <描述> -B <块大小> -m <M> -M 3 -r <R> -R 3 -T /gpfs/<名> -A yes -Q yes -v yes`（不设 `--inode-limit`，inode 上限按 CloudLand 存储池在 fileset 上设，§7.4）；有多种介质时描述里另加 `%pool: pool=data blockSize=<块大小> layoutMap=cluster`，建完装默认放置规则（§7.3）；`mmmount <名> -a`，等到所有成员都挂上（`mmlsmount -L`，最长 5 分钟）。`RetryFrom: resolve_disks` | `mmlsfs <名>` 已存在 |
+| 12 | `finish` | 全部成员 | 写内存预留（`stc_mem_reserve.sh`）和集群目录的 `state`；clapi 收尾后触发一次磁盘扫描。集群监控的指标由心跳调 `stc_metrics.sh` 采集（附录 E），不在这一步安装 | 每次都跑 |
 
-参数（向导里填，存在 `storage_clusters.params`）：集群名、第一个文件系统的名称（默认 `fs1`）、块大小（默认 4 MiB，可选 1 / 2 / 4 / 8 / 16 MiB；与 qcow2 的 2 MiB 簇如何搭配待验证，V15）、数据副本数（2 / 3）、pagepool（默认 1 GiB）、inode 上限、是否单节点测试形态。
+参数（向导里填，存在 `storage_clusters.params`）：集群名、布局（`layout`：`replica` 默认 / `ece` / `san`）、第一个文件系统的名称（默认 `fs1`）、块大小（默认 4 MiB，可选 1 / 2 / 4 / 8 / 16 MiB；与 qcow2 的 2 MiB 簇如何搭配待验证，V15）、数据副本数（2 / 3；单节点测试形态为 1）、pagepool（默认 1 GiB，256–65536 MiB）、是否单节点测试形态（`test`）。集群上没有 inode 上限参数，inode 上限是 CloudLand 存储池的参数（`inode_limit`，§7.4）。纠删码与 SAN 的专用参数见 §7.9、§7.10。
 
 挂载点固定为 `/gpfs/<文件系统名>`：所有节点相同，不在 `/opt/cloudland` 下面（池的根目录是挂载点下的 fileset 入口，§7.4）。
 
 ### 7.3 文件系统
 
-- **介质**：认领磁盘时按介质分进文件系统里的 GPFS 存储池：只有一种介质时全部进 `system`（数据和元数据）；有 SSD 或 NVMe 也有 HDD 时，SSD / NVMe 进 `system`（数据和元数据），HDD 进 `data`（只放数据），并装一条默认放置规则 `RULE 'default' SET POOL 'data'`。CloudLand 存储池选介质时就是选 GPFS 存储池（§7.4，`storage_pools.driver_params` 的 `gpfs_pool`）
-- **再建一个文件系统**：任务 `create_fs`，用空闲的 NSD 或新认领的盘（`resolve_disks` → `create_nsd` → `create_fs`）
-- **删除文件系统**：上面没有 CloudLand 存储池时才能删（任务 `delete_fs`），`mmumount <名> -a` → `mmdelfs <名>`，NSD 变回空闲（可以再删 NSD、擦盘）
+- **介质**：认领磁盘时按介质分进文件系统里的 GPFS 存储池：只有一种介质时全部进 `system`（数据和元数据）；有 SSD 或 NVMe 也有 HDD 时，SSD / NVMe 进 `system`（数据和元数据），HDD 进 `data`（只放数据），并装一条默认放置规则 `RULE 'default' SET POOL 'data'`。CloudLand 存储池选介质时就是选 GPFS 存储池（§7.4，`storage_pools.driver_params` 的 `gpfs_pool`）。**之后加的盘沿用集群已有的布局**（`InitialAttrs`）：已经有 `data` 池时 HDD 进 `data`，否则不论介质都进 `system`——只有 SSD 的集群后来加 HDD，HDD 也进 `system`；新建的文件系统（下一条）按它自己的盘重新判断
+- **再建一个文件系统**：任务 `create_fs`，**只用新认领的盘**（没有新盘就拒绝；不用空闲的 NSD），`resolve_disks` → `create_nsd` → `create_fs`。非测试形态要求新盘分布在至少 3 台主机（故障组）上、数据副本数不超过主机数（`NewFilesystem`）
+- **删除文件系统**：上面没有 CloudLand 存储池、没有被远程挂载、不是集群里唯一就绪的文件系统、去掉它的盘后剩下的布局仍合规（`CheckLayout`）时才能删（任务 `delete_fs`）：`delete_fs`（管理节点）`mmumount <名> -a -f`，等所有节点卸掉 → `mmdelfs <名>` → `mmdelnsd` 它的 NSD；再由 `release_disks`（盘所在节点）擦盘归还
 - **接口（2026-10-07 第二轮实现）**：`POST /storage_clusters/:id/filesystems {name, block_size, data_replicas, disks}`（新盘做新文件系统）、`DELETE /storage_clusters/:id/filesystems/:name`（连同它的盘删除、擦盘归还；最后一个文件系统随集群删除；被远程挂载时拒绝）；加盘可以指定进哪个文件系统（`filesystem`）。纠删码、SAN 布局不支持第二个文件系统。移除盘、移除节点时离开的盘可能分属几个文件系统（一台节点在 `fs1`、`fs2` 都有盘），移除输入按文件系统分组（`groups: [{fs_name, nsds}]`），`gpfs_fs.sh remove` 逐组从各自的文件系统移出（代码审查前只接受一个文件系统，这样的节点移除不了）
-- **容量**：健康看护每分钟取一次 `mmdf <名> -Y`（§14.1），既有整个文件系统的、也有每个 GPFS 存储池的，写 `storage_filesystems` 与存储池的容量（口径见 §9.5）
+- **容量**：健康看护每分钟由一台成员在挂载点上 `df -B1`（`backend_health`），clapi 把整个文件系统的总量与空闲写进 `storage_filesystems`（§14.1）。每个 GPFS 存储池的容量（`mmdf <名> -Y` 的 `poolTotal`）只由指标脚本导出给 Prometheus 画曲线（`gpfs_pool_metrics`，§14.3），不写数据库；CloudLand 存储池的容量取自池探测（fileset 配额下的 `df`，口径见 §9.5）
 
 ### 7.4 CloudLand 存储池（独立 fileset）
 
-托管集群在集群详情页的「存储池」标签里建（任务 `create_pool`，占池槽，管理节点执行）。池记录先以 `creating` 状态建出来（fileset 名要用池的 UUID），任务成功后变 `active`，失败变 `error`（可以删除重建）：
+托管集群在集群详情页的「存储池」标签里建（任务 `create_pool`，占池槽；步骤 `create_pool` 在管理节点执行，`sync_pools` 在全部在线成员上执行）。池参数：文件系统（`filesystem`，不填为集群的第一个）、`inode_limit`（默认 100000，1000–100000000）。池记录先以 `creating` 状态建出来（fileset 名要用池的 UUID），任务成功后变 `active`，失败变 `error`（可以删除重建）：
 
-1. `mmcrfileset <fs> <fileset> --inode-space new --inode-limit <值>`，fileset 名由 CloudLand 生成（`cl_<池UUID 前 8 位>`）
-2. `mmlinkfileset <fs> <fileset> -J /gpfs/<fs>/<fileset>`，这就是池的根目录（`storage_pools.mount_path`）
-3. **放置规则由 CloudLand 整体生成**：每个池一条 `RULE '<fileset>' SET POOL '<system|data>' FOR FILESET ('<fileset>')`，最后一条默认规则；`mmchpolicy <fs> <文件> -I test` 校验通过后再正式装入，`storage_filesystems.policy_gen` 加一。托管文件系统上**不要手工改放置规则**，CloudLand 下次改池时会整体覆盖（界面提示）。不用 `LIMIT` 做溢出（SSD 满了会悄悄写到 HDD，用户选的和实际拿到的不一致，空间不足应该由准入拒绝，§9.5），不配迁移规则（GPFS 按整个文件分层，运行中的云服务器磁盘一直在读写，按访问时间迁移没有意义，还会产生大量 I/O）
-4. 设了配额就 `mmsetquota <fs>:<fileset> --block <配额>:<配额>`
-5. 建池内目录 `volumes/`、`images/`、`nvram/`、`tmp/`，写标记文件 `.cloudland-pool`（`driver=gpfs`、`pool_uuid=<UUID>` 两行，§9.2）
-6. 对集群全部成员做一轮可用性检查（§9.2），写 `hyper_storage_pools`
+1. 文件系统还没开 `--filesetdf` 就先 `mmchfs <fs> --filesetdf`（在 fileset 入口上 `df` 报的是 fileset 的配额，即池的容量，§9.5；设不上只告警）
+2. `mmcrfileset <fs> <fileset> --inode-space new --inode-limit <inode_limit>`，fileset 名由 CloudLand 生成（`cl_<池UUID 前 8 位>`）
+3. `mmlinkfileset <fs> <fileset> -J /gpfs/<fs>/<fileset>`，这就是池的根目录（`storage_pools.mount_path`）
+4. **放置规则由 CloudLand 整体生成**，只用于有 `data` 池的文件系统（两种介质，§7.3）；只有一个 GPFS 存储池的文件系统不装规则。每个池一条 `RULE '<fileset>' SET POOL '<system|data>' FOR FILESET ('<fileset>')`，最后一条默认规则 `SET POOL 'data'`；`mmchpolicy <fs> <文件> -I test` 校验通过后再 `-I yes` 正式装入，装了才把 `storage_filesystems.policy_gen` 加一。托管文件系统上**不要手工改放置规则**，CloudLand 下次改池时会整体覆盖（界面提示）。不用 `LIMIT` 做溢出（SSD 满了会悄悄写到 HDD，用户选的和实际拿到的不一致，空间不足应该由准入拒绝，§9.5），不配迁移规则（GPFS 按整个文件分层，运行中的云服务器磁盘一直在读写，按访问时间迁移没有意义，还会产生大量 I/O）
+5. 设了配额就 `mmsetquota <fs>:<fileset> --block <配额>K:<配额>K`，没设就 `--block 0:0`（不限）
+6. 建池内目录 `volumes/`、`images/`、`nvram/`、`tmp/`（755），写标记文件 `.cloudland-pool`（`driver=gpfs`、`pool_uuid=<UUID>` 两行，§9.2）
+7. `sync_pools`：给集群全部在线成员下发池清单并立即探测一次（§9.2），写 `hyper_storage_pools`
 
 - **改配额**：`PATCH /storage_pools/:id` 带 `quota_gb`（任务 `update_pool`），下发 `mmsetquota`
-- **删池**（任务 `delete_pool`）：池里没有卷时才能删。引用数为 0 的镜像基础副本随池一起删除，不挡删池（懒导入留下的副本，否则池永远删不掉）。`mmunlinkfileset` → `mmdelfileset -f` → 重新生成放置规则
+- **删池**（任务 `delete_pool`）：池里没有卷时才能删。先 `sync_pools`（把池从各节点的清单里拿掉，免得探测进程碰到正在删的 fileset），再在管理节点 `delete_pool`：池目录 `volumes/` 里还有文件就失败；`mmunlinkfileset -f` → `mmdelfileset -f` → 有 `data` 池时重新生成放置规则。引用数为 0 的镜像基础副本随 fileset 一起删除，不挡删池（懒导入留下的副本，否则池永远删不掉）
 - **外部集群**：按原设计登记已有的 fileset 入口目录（填路径、文件系统名、fileset 名），CloudLand 只建池内目录和标记文件，不建 fileset、不改放置规则和配额
 
 ### 7.5 加节点、加盘、移除
 
 | 操作 | 任务 | 步骤 | 前提 |
 |---|---|---|---|
-| 加节点 | `add_nodes` | 预检 → 加入（成员标记）→ 下载 → 安装 → 编译 → SSH 信任（管理节点的 `known_hosts` 加新主机）→ `mmaddnode -N` → `mmchlicense` → `mmstartup -N` → `mmmount all -N` → 完成；带盘的接着做「加盘」 | 节点系统在支持范围内、不在别的 GPFS 集群里 |
-| 加盘 | `add_disks` | `resolve_disks` → `mmcrnsd` → `mmadddisk <fs> -F <描述>`（不带 `-r`） | — |
+| 加节点 | `add_nodes` | 预检 → 加入（成员标记）→ 下载 → 安装 → 编译（都只在新节点）→ SSH 信任（全部成员：管理节点的 `known_hosts` 加新主机）→ `add_node`（管理节点：`mmaddnode -N` → `mmchlicense` → `mmstartup -N` → `mmmount all -N`，已是成员的跳过）→ 带盘的接着做「加盘」的三步 → `finish`（新节点）；收尾把新节点在本集群各池上记为「等待首次上报」并下发池清单 | 节点系统在支持范围内、不在别的 GPFS 集群里 |
+| 加盘 | `add_disks` | `resolve_disks` → `create_nsd`（`mmcrnsd -v yes`）→ `add_disks`（`mmadddisk <fs> -F <描述> -v yes`，不带 `-r`）；可以指定进哪个文件系统（`filesystem`，默认第一个） | — |
 | 重新均衡 | `rebalance` | `mmrestripefs <fs> -b`，I/O 很重、可能跑几小时，单独发起；进度由轮询读它的输出 | 建议在业务低峰 |
-| 移除盘 | `remove_disk` | `mmdeldisk <fs> <NSD>`（把数据迁走，可能很久）→ `mmdelnsd` → 擦盘（核对身份） | 剩余容量够放下已用数据；剩余故障组数不少于副本数且不少于 3 |
-| 移除节点 | `remove_node` | 有盘先「移除盘」；仲裁节点先 `mmchnode --nonquorum`；`mmumount all -N` → `mmshutdown -N` → `mmdelnode -N` → 删 `authorized_keys` 那一行与成员标记；可选卸载软件包 | 这台节点上没有使用本集群存储池的云服务器（先迁走）；移除后仲裁节点仍是奇数且不少于 3（或明确降到 1 台的测试形态） |
-| 离线移除 | `remove_node`（带 `offline`） | 节点已经永久坏了：它的 NSD `mmdeldisk <fs> <NSD> -p`（盘不可读时）→ `mmdelnsd -p` → `mmdelnode -N <节点>`（节点不可达时 GPFS 会提示，具体选项待验证，V21）。不在该节点上执行任何命令 | 节点离线超过 30 分钟；要求输入节点名确认 |
-| 换坏盘 | `replace_disk` | 坏盘已经 `down`：`mmdeldisk <fs> <NSD> -p` 再加新盘 | — |
+| 移除盘 | `remove_disk` | `remove_disks`（管理节点：`mmdeldisk <fs> <NSD>`，把数据迁走，可能很久，步骤上限 24 小时 → `mmdelnsd`）→ `release_disks`（盘所在节点：`nsddevices` 只留还在用的盘，擦盘、核对身份） | CloudLand 只按剩下的盘校验布局（`CheckLayout`：非测试形态至少 3 台有盘主机、副本数不超过它，按整个集群数，不按盘所在的文件系统）；剩余容量够不够不预先检查，**决定不做**（2026-10-07）：GPFS 的可用量按副本数、故障组和存储池算，CloudLand 在外面复算容易算错；空间不够时 `mmdeldisk` 自己报错失败，任务失败后可以中止（迁移中途失败时盘可能停在 `suspended`，要 `mmchdisk <fs> resume -d <NSD>`） |
+| 移除节点 | `remove_node` | 有盘先 `remove_disks`（同上，盘可能分属几个文件系统，按文件系统分组，§7.3）→ `remove_node`（管理节点：`mmumount all -N` → `mmshutdown -N` → 仲裁节点 `mmchnode --nonquorum` → `mmdelnode -N`）→ `leave`（这台节点：删 `authorized_keys` 那一行、擦掉它的盘（核对身份）、内存预留清零、放开 join 时 hold 的内核包、删成员标记和集群目录；可选卸载软件包） | 节点在线；这台节点上没有使用本集群存储池的云服务器（先迁走）；移除后仲裁节点仍是奇数且不少于 3（或明确降到 1 台的测试形态） |
+| 离线移除 | `remove_node`（带 `offline`） | 节点已经永久坏了：`remove_disks` 对它的 NSD `mmdeldisk <fs> <NSD> -p`（不迁数据，其余副本还在）→ `mmdelnsd`（不带 `-p`；坏盘上的 NSD 标记清不掉时，只核对集群里已没有这些 NSD）→ `remove_node` 跳过卸载和停 GPFS，`mmchnode --nonquorum`（仲裁节点）→ `mmdelnode -N <地址>`（不带额外选项；节点不可达时 GPFS 的实际表现没验证，V21）。没有 `leave`，不在该节点上执行任何命令 | 节点**此刻不在线**（`hostOnline` 为假：`hypers.status` 是 10，或 4 / 5 部署未完成），在线节点必须走普通移除；要求输入节点名确认；cland 判为离线（status 10）的节点要**离线满 30 分钟**（按 `hypers.offline_at`，`storageOfflineRemoveAfter`；部署未完成的 4 / 5 没有这个等待，没有离线时间的也不等），重启或短暂断网的节点会回来，不能为此丢掉它的数据（2026-10-07 补） |
+| 换坏盘 | `replace_disk` | `resolve_disks`（新盘）→ `create_nsd`（先建新 NSD，新盘不行就在动坏盘之前停下）→ `remove_disks`（节点上再查一次，GPFS 此刻报 `down` / `unrecovered` 才 `mmdeldisk <fs> <NSD> -p`，`recovering` 等其他状态一律拒绝）→ `add_disks`（新盘进坏盘所在的文件系统）→ `restore`（`mmrestripefs <fs> -r` 补齐副本）→ `release_disks`（坏盘只去掉认领、不擦） | 健康看护 10 分钟内见过这块盘、且报告的不是 `up`（好盘走「移除盘」，数据先迁走）；新盘与坏盘在同一台主机 |
 
 ### 7.6 删除集群
 
-前提：集群上没有 CloudLand 存储池。步骤：`mmumount all -a` → 每个文件系统 `mmdelfs` → `mmdelnsd` 全部 → `mmshutdown -a` → `mmdelnode -a` → 每台节点：删 `authorized_keys` 那一行、成员标记和集群目录、按确认擦盘（核对身份）、可选卸载软件包、内存预留清零、触发磁盘扫描。删除前要求输入集群名，并列出将被擦除的盘。
+前提：集群上没有 CloudLand 存储池，没有远程挂载（不论作为所属方还是挂载方，§7.11），没有占着槽的任务（失败的部署先中止），也没有还在跑或等重试 / 中止的导入任务。删除前要求输入集群名，并列出将被擦除的盘。两步：
 
-**半成品与离线节点**：删除任务从「集群现在实际是什么状态」出发，每一步都可重入（文件系统不存在就跳过 `mmdelfs`，节点不在集群里就跳过 `mmdelnode`），所以部署任何阶段失败、中止后都能用它清理。有节点离线时，集群级命令照常在在线的管理节点上做，离线节点用 §7.5 的离线移除；节点本地的清理（密钥、标记、擦盘）记为「待清理」，节点回来后由健康看护补做，删除任务本身不卡住。
+1. `teardown`（一台在线的管理节点）：只拆 CloudLand 建的集群——这台节点有本集群的成员标记、`mmlscluster` 的集群名也相符时才动手，否则什么都不做（预检就失败的部署里，节点可能属于别人的 GPFS 集群）。`mmumount all -a` → 纠删码层（§7.9「删除」）→ 每个文件系统 `mmdelfs` → `mmdelnsd` 全部 → `mmshutdown -a` → `mmdelnode -a`。输入里带此刻离线的成员地址（`offline`）：有离线成员时 `mmdelnode -a` 失败不算失败（它要连到每台节点），各节点在 `leave` 时自己删掉集群配置，离线的回来后补做
+2. `leave`（**在线的**节点，`OnlineOnly`）：停 GPFS、删本集群的 `nsddevices` 和 `/var/mmfs/gen/mmsdrfs`；擦掉本节点认领的盘（核对身份；SAN 的共享 LUN 只由最小 hostid 的节点擦一次，§7.10）；删 `authorized_keys` 那一行（连同轮换中途留下的）；内存预留清零；放开 join 时 hold 的内核包；删集群目录（成员标记在里面）；可选卸载软件包（`purge_packages`）。没有成员标记的节点不动它的 GPFS（守护进程、集群配置、软件包）
+
+clapi 收尾删掉集群、节点、盘、文件系统和隔离记录，再触发一次磁盘扫描。
+
+**半成品**：删除任务从「集群现在实际是什么状态」出发，每一步都可重入（文件系统不存在就跳过 `mmdelfs`，节点已不在任何 GPFS 集群里就什么都不做），所以部署任何阶段失败、中止后都能用它清理。
+
+**离线节点**（2026-10-07 修复设计复查发现的缺陷 b，`services/storage_cleanup.go`）：`leave` 只在步骤开始时在线的节点上跑，删除不再因为有成员离线而卡住（原来离线节点的 run 过一会儿以「the host is offline」失败，任务停在失败）。收尾在删记录之前，为每台被跳过的节点按当时的记录生成它的 `leave` 输入，记进 `storage_pending_cleanups`（§5.17）。看护（每分钟）发现这台节点上线了，就起一个不属于任何集群的「补清理」任务（`cleanup`，不占槽，一个 `leave` 步骤，30 分钟超时）跑这份输入；失败时记下原因、中止任务，10 分钟后再试，之后每次间隔翻倍，最长 6 小时；成功后删记录。界面上，节点详情的恢复卡片列出「待补清理」（集群、类型、尝试次数与上次的任务、失败原因）。
+
+补清理有三道保护，防止伤到节点回来之后的新东西：
+- 有待补清理的节点**不能加入任何存储集群**（`storageHostConflict` 拒绝，建集群、加节点、自动加入都经过它）：GPFS 的 `leave` 停掉整台节点的 GPFS、删掉它的集群配置，还会擦当时认领的盘
+- 下发前把已被别的存储集群认领的盘从擦除列表里去掉；节点上擦盘前看盘有没有 CloudLand 本地池的标签（`disk_tags`），有就不擦
+- GPFS 的 `backend_leave` 发现节点上有别的 GPFS 集群的成员标记时，不动它的 GPFS（守护进程、集群配置、软件包）：一台节点只属于一个 GPFS 集群，那就是新集群的
+
+集群已经删掉，所以 GPFS 那边离线节点不会被正式删除（`mmdelnode -a` 失败时），它回来后 `mmautoload` 拉起 GPFS 也找不到仲裁，等补清理删掉配置；有成员离线导致**仲裁不够**时，`teardown` 的 GPFS 命令本身就会失败，只能等节点回来。节点在补清理之前被删除（重装）时，记录随节点删掉。原设计「离线节点先做离线移除」没有照做：集群马上就要删掉，补清理已经覆盖节点本地要删的东西。
 
 ### 7.7 升级与内核
 
-- **GPFS 升级**（阶段 S6）：逐台进行。一台节点停 GPFS 之前，上面使用本集群存储池的云服务器要先迁走（全部磁盘在共享池上的不复制磁盘，很快；有本地盘的照常复制），复用现有维护模式的批量迁移。每台：迁走 → 把本节点的文件系统管理节点 / 集群管理节点角色交给另一台（`mmchmgr`；否则节点离开后 GPFS 等它的租约过期约一分钟才恢复，要分配块的写在所有节点上卡住，§16 S6 补测第 6 条）→ `mmshutdown -N` → 装新版本 → `mmbuildgpl` → `mmstartup -N` → 挂载 → 解除维护。全部完成后再由管理员确认执行 `mmchconfig release=LATEST` 和 `mmchfs <fs> -V full`（不可逆，单独一步；`mmchfs -V` 要在标准输入上确认）
-- **内核**：`autoBuildGPL=yes` 让 GPFS 启动时发现没有对应模块就自动编译。但新内核必须在 IBM 的支持范围内，而 Ubuntu 的安全更新会带来新内核。**加入集群时对 GPFS 节点 `apt-mark hold` 内核元包**（`linux-image-generic`、`linux-headers-generic`），管理员查过支持矩阵后再手工升级；节点详情页在运行中的内核不在支持表里时显示警告。这样会让内核安全更新变成手工操作，是否接受列在 §18 决策 D5
+- **GPFS 升级**（阶段 S6，任务 `upgrade`）：新安装包要和集群同一版本类型（edition）、版本更新、许可证已接受。先在全部节点 `fetch_package`，然后逐台进行，非仲裁节点在前、仲裁节点最后（`storageDrainHosts`）。每台两步：
+  - `drain`（clapi 自己做的控制步骤，`storageDrainControl`）：把这台节点上磁盘在本集群池里、运行中或暂停的云服务器迁走（全部磁盘在共享池上的不复制磁盘，很快；有本地盘的照常复制），用的是维护模式那套批量迁移（`migrationAdmin.Create`），但**不把节点设成维护状态**，所以之后也没有「解除维护」；关机的云服务器留在原地。迁不走就失败，管理员处理后重试
+  - `upgrade_node`（这台节点上本机执行，`gpfs_upgrade.sh`）：再查一次本机没有磁盘在本集群文件系统上的运行中的域、各文件系统所有盘都 `up`（否则停这台可能拿走某些数据唯一的副本），不满足就失败 → 把本节点的文件系统管理节点 / 集群管理节点角色交给另一台活跃的仲裁节点（`mmchmgr`；否则节点离开后 GPFS 等它的租约过期约一分钟才恢复，要分配块的写在所有节点上卡住，§16 S6 补测第 6 条）→ `mmshutdown`（恢复组服务器改为挂起，§7.9）→ 装新版本 → `mmbuildgpl` → `mmstartup` → 挂载 → 有没起来的盘就 `mmchdisk <fs> start -a`（同步执行，补上停机期间写的数据）→ 所有盘 `up` 才轮到下一台。已经是新版本的节点（重试）只做启动之后的部分
+- **完成升级**：全部节点都跑新版本后由管理员单独发起（`upgrade` 任务带 `finalize`，只有一步，不可逆）：`mmchconfig release=LATEST --accept-empty-cipherlist-security`（GPFS 5.1 起集群没有 cipherList 时要带这个参数，平台建的集群默认没有）、每个文件系统 `mmchfs <fs> -V full`（`mmchfs -V` 要在标准输入上确认，之后核对 `filesystemVersion` 等于 `filesystemHighestSupported`），纠删码集群另加 `mmvdisk recoverygroup change --version LATEST`
+- **内核**：`autoBuildGPL=yes` 让 GPFS 启动时发现没有对应模块就自动编译。但新内核必须在 IBM 的支持范围内，而 Ubuntu 的安全更新会带来新内核。**加入集群时对 GPFS 节点 `apt-mark hold` 内核包**（`linux-generic`、`linux-image-generic`、`linux-headers-generic` 和运行中内核的 `linux-image` / `linux-headers` / `linux-modules-$(uname -r)`，装了的才 hold，记在集群目录的 `held_packages`；节点离开集群时 `leave` 自动放开），管理员查过支持矩阵后再手工升级；节点详情页在运行中的内核不在支持表里时显示警告。这样会让内核安全更新变成手工操作，是否接受列在 §18 决策 D5
 
 ### 7.8 外部 GPFS 集群
 
@@ -986,26 +1198,29 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 
 正式使用要满足 IBM 的支持条件（§2.3）；开发与功能验证可以在虚拟机里做。
 
-**实现（2026-10-06 / 07，第一版；2026-10-07 已提交并推送，见 §16 S7）**：
-- 后端：参数与布局规则在 `api/src/services/storage_backend_gpfs.go`；步骤、输入、收尾、拆除、健康输入在 `storage_backend_gpfs_ece.go`。
-- 节点：`scripts/kvm/storage/gpfs_ece.sh`（`configure` / `slots` / `create_rg` / `create_vs` / `create_fs`）；拆除在 `gpfs_cluster.sh` 的 `teardown_ece`；健康在 `backends/gpfs.sh` 的 `backend_health`。
+**实现（第一版 2026-10-06 / 07，2026-10-07 已提交并推送，见 §16 S7；第二轮——运维、混合介质、槽位映射、就绪检查——2026-10-07 已提交并推送（88c36ce8..e8c96655、7072b00f），未部署，没在真机上跑过，见下文「运维」与 §16 S7 的 E1–E9）**：
+- 后端：参数与布局规则在 `api/src/services/storage_backend_gpfs.go`；部署步骤、输入、收尾、拆除、健康输入在 `storage_backend_gpfs_ece.go`；加减服务器、加盘、换盘在 `storage_backend_gpfs_ece_ops.go`；升级（挂起服务器）在 `storage_backend_gpfs_upgrade.go`。
+- 节点：`scripts/kvm/storage/gpfs_ece.sh`（`configure` / `slots` / `create_rg` / `create_vs` / `create_fs`；第二轮加了 `add_servers` / `remove_server` / `replace` / `resize`）；拆除在 `gpfs_cluster.sh` 的 `teardown_ece`；健康在 `backends/gpfs.sh` 的 `backend_health`，就绪检查是同一文件的 `backend_readiness`；升级时挂起 / 恢复在 `gpfs_upgrade.sh`。
 - 界面：创建向导的「GPFS 纠删码」卡片，集群详情显示纠删码方式、恢复组和纠删码卷。
 
 **参数**（`storage_clusters.params`）：
 - `layout: ece`；
-- `ece_code`：默认 4+2p；
+- `ece_code`：默认 4+2p，可选 4+2p、4+3p、8+2p、8+3p、3WayReplication、4WayReplication；
 - `block_size`：按纠删码限定，默认 4M，三副本 / 四副本默认 2M；
-- `ece_set_size`：纠删码卷占恢复组空间的百分比，默认 80；
+- `ece_set_size`：纠删码卷占恢复组空间的百分比，默认 80（10–100）；
 - `pagepool_mib`：恢复组服务器的，默认且至少 8192；
 - `no_slot_map`：不要求槽位映射，仅测试；
+- `slot_mode`（`lmr` 或 `nvme`）与 `slot_range`（`[第一个, 最后一个]` 用户槽位）：实体机自动生成槽位映射，两个一起给，不能和 `no_slot_map` 同时用；
+- `ece_meta_code`（默认 3WayReplication）、`ece_meta_block_size`（默认 1M）、`ece_meta_set_size`（默认 80，10–100）：混合介质时的元数据卷；
+- `ece_strict`：就绪检查里 IBM 的支持条件（核数、网速、物理机）不满足时失败而不是只提示；
 - `fs_name`。
 
-不接受 `data_replicas` 和 `test`，纠删码专用的参数也不能用在副本模式上。
+不接受 `data_replicas` 和 `test`，纠删码专用的参数（`ece_*`、`no_slot_map`、`slot_mode`、`slot_range`）也不能用在副本模式和 SAN 布局上。
 
 **布局规则**（`checkECELayout`）：
 - NSD 主机就是恢复组服务器，3–32 台，只有它们能给盘；
-- 每台盘数相同，暂时只支持一种介质（一组盘）；
-- 盘总数至少 12 块，且至少比纠删码宽度多 2 块；
+- 每台盘数相同；介质可以只有一种，也可以 HDD 加一种固态盘（SSD 或 NVMe，不能两种都有，`gpfsECEArrays`），这时每台每种介质的盘数也要相同（见下文「混合介质」）；第一版只支持一种介质；
+- 数据阵列（只有一种介质时就是全部盘，混合时是 HDD）至少 12 块，且至少比纠删码宽度多 2 块；混合时元数据阵列至少比元数据纠删码宽度多 2 块；
 - 仲裁和管理节点的规则同副本模式；
 - 内存预留：服务器是 `pagepool` + 2 GiB，其他成员是默认 `pagepool` + 1 GiB。
 
@@ -1013,25 +1228,26 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 
 | # | 步骤 | 范围 | 做什么 | 说明 |
 |---|---|---|---|---|
-| 1–8 | `precheck` … `start` | — | 同 §7.2。`install` 另装 `gpfs.gnr*`、`gpfs.adv`、`gpfs.crypto`、`gpfs.compression`（和 `lsscsi sg3-utils`），安装包里没有 `gpfs.gnr` 时这一步就失败（建集群时已按版本拦下非纠删码版的包，坑 ⑫）；是否已装好按安装包里**每个**包的版本判断，不只看 `gpfs.base`（坑 ⑯）；`create_cluster` 把集群默认 `pagepool` 留在 1 GiB，服务器的由 `mmvdisk` 按节点类设 | 预检里的 IBM 就绪检查还没做 |
+| 1–8 | `precheck` … `start` | — | 同 §7.2。`install` 另装 `gpfs.gnr*`、`gpfs.adv`、`gpfs.crypto`、`gpfs.compression`（和 `lsscsi sg3-utils`），安装包里没有 `gpfs.gnr` 时这一步就失败（建集群时已按版本类型拦下非纠删码版的包：`CheckPackage` 只收 `edition = erasure_code`，坑 ⑫）；是否已装好按安装包里**每个**包的版本判断，不只看 `gpfs.base`（坑 ⑯）；`create_cluster` 把集群默认 `pagepool` 留在 1 GiB，服务器的由 `mmvdisk` 按节点类设 | 预检对服务器多做就绪检查（第二轮，见下文「就绪检查」），预检结束时 clapi 核对服务器之间内存相差不超过 10% |
 | 9 | `resolve_disks` | 服务器 | 同 §7.2，但不写 `nsddevices`（输入 `nsddevices: false`；第一版的判断写错、一直在写，坑 ⑰）：盘交给恢复组当物理盘，不当 NSD | 结果里的内核设备名用来拼盘表达式 |
 | 10 | `ece_configure` | 管理节点 | 建节点类 `cl<ID>_nc` → 按盘表达式查拓扑（每台「needs attention no」、拓扑相同）→ `mmvdisk server configure --pagepool <字节数> --recycle one`；节点类已配置过就跳过配置；最后尽力跑一次 `mmdiscovercomp -N <节点类>`（坑 ⑭） | 盘表达式是 `<服务器 IP>:sdb,sdc;…`，只列认领的盘（`mmvdisk` 认 IP 作节点名）；重试从 `resolve_disks` 开始 |
-| 11 | `ece_slots` | 管理节点 | 实体机：检查每台有 `ecedrivemapping` 生成的槽位映射，没有就失败并提示先去生成；`no_slot_map`：对本节点类设 `nsdRAIDStrictPdiskSlotLocation=0`（提示处输入 999）和 `nsdRAIDDiskCheckVWCE=no`（坑 ⑩），逐台核对运行中的守护进程，没生效的逐台重启 | 实体机这条路没实测 |
-| 12 | `ece_create_rg` | 管理节点 | `mmvdisk recoverygroup create --recovery-group cl<ID>_rg --node-class … --disk-list <盘表达式>`；然后核对日志组数量（服务器数 × 2 + 1；服务器数取自盘表达式，节点类成员数对不上就失败），不够就补跑 `--complete-log-format`（坑 ⑦）；根日志组不在服务器列表第一台上时挪过去（坑 ⑮）；结果带每块物理盘的名字、所在服务器地址、设备和 WWN（取自 `mmlspdisk`，坑 ⑧），物理盘数必须等于认领的盘数（读不全时隔 15 秒重读，最多 10 次，仍不符就失败） | 超时 8 小时，进度看 `tscrvdisk` 进程；重试从 `resolve_disks` 开始 |
-| 13 | `ece_create_vs` | 管理节点 | 定义并建出纠删码卷 `cl<ID>_vs`，已定义 / 已建好的部分跳过 | 块大小限制：三副本 / 四副本 256K–2M，4+2p / 4+3p 512K–8M，8+2p / 8+3p 512K–16M；CloudLand 只开放 1M–16M 里对应的几档 |
-| 14 | `ece_create_fs` | 管理节点 | `mmvdisk filesystem create … --mmcrfs -T /gpfs/<fs> -A yes -Q yes`，等所有成员挂上 | 开配额：CloudLand 的存储池是带配额的 fileset（§7.4） |
+| 11 | `ece_slots` | 管理节点 | 实体机：给了 `slot_mode` / `slot_range` 时，在缺映射的服务器上执行 `ecedrivemapping --mode <模式> --slotrange <min> <max> --force`（已有的映射不动，第二轮）；之后检查每台都有槽位映射（`slotmap.yaml` 或 `*.edf`），没有就失败并提示先去生成或给集群槽位模式；`no_slot_map`：对本节点类设 `nsdRAIDStrictPdiskSlotLocation=0`（提示处输入 999）和 `nsdRAIDDiskCheckVWCE=no`（坑 ⑩），逐台核对运行中的守护进程，没生效的逐台重启 | 实体机这条路没实测 |
+| 12 | `ece_create_rg` | 管理节点 | `mmvdisk recoverygroup create --recovery-group cl<ID>_rg --node-class … --disk-list <盘表达式>`；然后核对日志组数量（服务器数 × 2 + 1；服务器数取自盘表达式，节点类成员数对不上就失败），不够就补跑 `--complete-log-format`（坑 ⑦）；根日志组不在服务器列表第一台上时挪过去（坑 ⑮）；结果带每块物理盘的名字、所在服务器地址、设备和 WWN（取自 `mmlspdisk`，坑 ⑧），物理盘数必须等于认领的盘数（读不全时隔 15 秒重读，最多 12 次、约 3 分钟，仍不符就失败） | 超时 8 小时，进度看 `tscrvdisk` 进程；重试从 `resolve_disks` 开始 |
+| 13 | `ece_create_vs` | 管理节点 | 定义并建出纠删码卷 `cl<ID>_vs`（`mmvdisk vdiskset define … --code … --block-size … --set-size <n>%` → `vdiskset create`），已定义 / 已建好的部分跳过；混合介质时 `cl<ID>_vs` 放在 HDD 阵列（`dataOnly`、`data` 池），另建元数据卷 `cl<ID>_vsm` 放在固态阵列（`metadataOnly`、`system` 池）；块大小 8M / 16M 时加 `--checksum-granularity 32k`（第二轮） | 块大小限制：三副本 / 四副本 256K–2M，4+2p / 4+3p 512K–8M，8+2p / 8+3p 512K–16M；CloudLand 只开放 1M–16M 里对应的几档 |
+| 14 | `ece_create_fs` | 管理节点 | `mmvdisk filesystem create --file-system <fs> --vdisk-set <全部纠删码卷> --mmcrfs -T /gpfs/<fs> -A yes -Q yes`；有 `data` 池（混合介质）时装放置规则 `RULE 'default' SET POOL 'data'`；`mmmount <fs> -a`，等所有成员挂上 | 开配额：CloudLand 的存储池是带配额的 fileset（§7.4） |
 | 15 | `finish` | 全部成员 | 同 §7.2 | — |
 
 **收尾**（`gpfsECEDeployFinish`，记账部分与副本模式共用 `gpfsDeployDone`）：
 - 文件系统记录的数据副本数和元数据副本数都是 1。
 - 每块盘先按 WWN 找对应的物理盘：WWN 是认领时记下的，GPFS 写成 `naa.xxx`，比较前统一写法。找不到再按「服务器地址 + 解析时的设备名」找。
 - 找到后把物理盘名记成盘名，健康看护按这个名字对盘。有盘对不上，或两块盘对上同一块物理盘，部署就失败。
-- 集群 `attrs` 记下 `node_class`、`recovery_group`、`vdisk_set`、`ece_code`。
+- 集群 `attrs` 记下 `node_class`、`recovery_group`、`vdisk_set`（第一个数据卷）、`vdisk_sets`（全部纠删码卷：数据卷、混合介质时的 `cl<ID>_vsm`、之后每次加盘追加的 `cl<ID>_vs<n>`）、`ece_code`。
 
-**能力**：
-- 纠删码集群只支持部署、删除、建存储池、轮换密钥（`LayoutCapabilities`）。接口和集群详情按集群返回 `capabilities`，界面据此显示按钮。
-- 布局的组成经后端的可选接口 `LayoutInfo` 给出，接口返回通用的 `layout_info`（GPFS 纠删码：`code`、`no_slot_map`、`recovery_group`、`vdisk_set`、`node_class`），接口层不按类型分支。
-- 加减节点、加盘、移除盘、换盘、改角色、重新均衡、升级都关掉。
+**能力**（`LayoutCapabilities`；接口和集群详情按集群返回 `capabilities`，界面据此显示按钮）：
+- 现在（第二轮）支持：部署、删除、建存储池、轮换密钥、加节点（服务器或客户端）、移除节点、加盘、换盘、改角色（`nsd` 以外的角色）、滚动升级与完成升级、远程挂载（§7.11）。各项的做法见下文「运维」。
+- 不支持：移除单块盘（盘只随它的服务器离开恢复组，或被换掉）、重新均衡（GNR 自己均衡条带）、第二个文件系统（要另建纠删码卷）。
+- 第一版只支持部署、删除、建存储池、轮换密钥（下面「物理机端到端」表里的「不支持的操作」一行就是那时的结果）。
+- 布局的组成经后端的可选接口 `LayoutInfo` 给出，接口返回通用的 `layout_info`（GPFS 纠删码：`code`、`no_slot_map`、`slot_mode`（有时）、`recovery_group`、`vdisk_set`（有多个纠删码卷时是逗号分隔的全部名字）、`node_class`，混合介质时另有 `meta_code`、`meta_block_size`），接口层不按类型分支。
 - GPFS 每分钟「拉起状态为 down 的 NSD」的看护，对纠删码集群跳过。
 
 **删除**：拆除步骤先按 `mmvdisk` 的顺序拆纠删码这一层：文件系统 → 纠删码卷（恢复组上的每一个，含只定义未建的；有文件系统先删，已建的先 delete，再 undefine）→ 恢复组 → 取消服务器配置 → 删节点类。已经没有的层跳过，然后照副本模式删集群；输入里 `nsds` 为空，`ece` 只有恢复组与节点类。恢复组上已没有纠删码卷还删不掉时，停掉服务器再强制删（坑 ⑪）；还有纠删码卷时直接失败、不停服务器。
@@ -1115,9 +1331,9 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 | 项 | 结果 |
 |---|---|
 | 部署（15 步） | 2 小时 10 分：前 11 步约 20 分钟（装 12 个包、编模块、建集群、拓扑三台「ECE 5 HDD」、两个检查参数关掉）；建恢复组 1 小时 40 分（每台 sdb 约 40 MB/s，是虚拟机里的 2.7 倍，每块日志盘 13–19 分钟）；纠删码卷 2 分钟；文件系统 7 分钟（1.3T） |
-| 收尾 | 15 块盘按 WWN 对上物理盘名，节点对应正确（n001 → work-01……）；每台预留 10240 MiB；`capabilities` 只剩部署 / 文件系统 / 建池 / 轮换密钥 |
-| 不支持的操作 | 加盘、加节点、移除盘、换盘、重新均衡、升级、改角色、移除节点都 400「gpfs clusters (ece) do not support this operation yet」，集群保持 ready |
-| 公网界面（只读） | 详情页布局 / 纠删码 / 恢复组 / 纠删码卷 / 无槽位映射、没有加节点 / 加盘 / 升级 / 移除 / 换盘按钮、15 个物理盘名；向导里两个纠删码版的包都能选 |
+| 收尾 | 15 块盘按 WWN 对上物理盘名，节点对应正确（n001 → work-01……）；每台预留 10240 MiB；`capabilities` 只剩部署 / 文件系统 / 建池 / 轮换密钥（第一版时） |
+| 不支持的操作（第一版时） | 加盘、加节点、移除盘、换盘、重新均衡、升级、改角色、移除节点都 400「gpfs clusters (ece) do not support this operation yet」，集群保持 ready。第二轮起只有移除盘、重新均衡（和第二个文件系统）还是这样拒绝，其余已实现但没在真机上跑过（见「能力」「运维」） |
+| 公网界面（只读，第一版） | 详情页布局 / 纠删码 / 恢复组 / 纠删码卷 / 无槽位映射、没有加节点 / 加盘 / 升级 / 移除 / 换盘按钮、15 个物理盘名；向导里两个纠删码版的包都能选 |
 | 存储池与卷 | 池 `ep1`（fileset、60 GB 配额、三台可用）；卷在 work-01 的云服务器写 64 MiB、挂到 work-03 的云服务器读出 md5 一致 |
 | 系统盘与迁移 | 系统盘从池里的基础副本克隆，云服务器在 work-02 起来；热迁移到 work-03，磁盘计划「共享、不复制」，标记文件一致 |
 | 拔盘 | 删掉 work-02 的 lun2：`n002p005` 报 `missing/draining`，2 分钟后 `StorageDiskDown`（带 WWN 和节点）；期间云服务器照常写盘；插回 3 分钟内恢复、告警解除 |
@@ -1129,24 +1345,24 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 - 盘状态：`mmvdisk pdisk list --recovery-group <rg> --not-ok`。
 - 后台任务（重建、均衡、巡检）与剩余空间：`mmvdisk recoverygroup list --recovery-group <rg> --declustered-array`。
 - 日志组在哪台：`mmvdisk recoverygroup list --recovery-group <rg> --log-group`。
-- 坏盘由纠删码自己重建，不像副本模式要 `mmchdisk start`；换盘走 `mmvdisk pdisk replace`。
+- 坏盘由纠删码自己重建，不像副本模式要 `mmchdisk start`；换盘见下面「运维」（有槽位映射走 `mmvdisk pdisk replace`，没有时 `mmaddpdisk --replace`）。
 
-**运维（2026-10-07 第二轮实现，代码层面；节点命令按 `gpfs.gnr` 6.0.0.2 里 `mmvdisk` 的手册页与 Python 源码写，没在真机跑过）**：
+**运维（2026-10-07 第二轮实现，已提交并推送（88c36ce8..e8c96655、7072b00f），未部署；节点命令按 `gpfs.gnr` 6.0.0.2 里 `mmvdisk` 的手册页与 Python 源码写，没在真机跑过）**：
 - **加服务器**（任务 `add_nodes`，新节点带 `nsd` 角色）：照常装包、`mmaddnode` 之后，所有服务器重新解析盘（拼完整的盘表达式），`ece_add_servers`：`mmvdisk server configure -N <新节点> --target-node-class <类> --recycle one`（没进节点类就再 `mmvdisk nodeclass add`）→ 槽位 / 检查关闭 → 全部服务器拓扑一致 → `mmvdisk recoverygroup add --recovery-group <rg> -N <新节点> --disk-list <新盘>`。mmvdisk 先把条带均衡到新盘，再由它自己的回调执行 `--complete-node-add`（格式化新服务器的日志组、扩展纠删码卷和文件系统）。完成的判断：`recoverygroup list -Y` 的 `rgSummary.AddNode` 为空、日志组数等于 2×服务器数+1；均衡已完成（`rebalanceStatus=complete`）而回调 10 分钟还没跑，就自己执行 `--complete-node-add`。步骤上限 7 天。只加客户端（不带 `nsd`）时不碰恢复组。
 - **移除服务器**（`remove_node`）：`ece_remove_server`：对用到这个恢复组的每个文件系统 `mmvdisk filesystem delete --file-system <fs> --vdisk-set <它的纠删码卷> --recovery-group <rg> -N <节点> --confirm`，再 `mmvdisk recoverygroup delete --recovery-group <rg> -N <节点> --confirm`（数据迁到其余服务器，mmvdisk 自己核对剩下的服务器放得下、宽度够），等这台的物理盘都不在了，`mmvdisk nodeclass delete -N`；之后照常 `mmdelnode`、`leave`。布局规则保证至少剩 3 台。
 - **加盘**（`add_disks`，每台服务器加同样数量、同一种介质的盘）：所有服务器解析盘，`ece_resize`：`mmvdisk recoverygroup resize --recovery-group <rg> --disk-list <全部盘>`（mmvdisk 要求每台的拓扑签名一样，IBM 文档说只支持认可的拓扑升级路径）→ 新纠删码卷 `cl<集群>_vs<n>` 定义在盘所在的阵列上，占用 = 集群的占用比例减去阵列已用的比例（`vdiskset list --recovery-group -Y` 的 `vdisksetDaSizing.freePercent`），定义不下就每次少 5 个百分点 → `mmvdisk vdiskset create` → `mmvdisk filesystem add`。集群属性 `vdisk_sets` 记下全部纠删码卷。
-- **换盘**（`replace_disk`，同一台服务器上的新盘换坏的物理盘）：`mmvdisk pdisk replace --prepare`；有槽位映射时新盘插在原槽位，`mmvdisk pdisk replace -v no` 自己找；没有槽位映射（虚拟机、模拟盘）时用 `mmaddpdisk <rg> -F <%pdisk: pdiskName=<旧名> device=//<节点>/dev/<新盘> da=<旧盘的阵列>> --replace -v no` 指定设备。新盘沿用旧物理盘的名字（旧盘排空期间改名为 `<旧名>#nnnn`，收尾按 WWN 认新盘、不会认成旧盘）。状态是 `ok` 的物理盘不换（GNR 只换坏盘；框架也只让健康看护报告 down 的盘进入替换）。
+- **换盘**（`replace_disk`，同一台服务器上的新盘换坏的物理盘）：`mmvdisk pdisk replace --prepare`；有槽位映射时新盘插在原槽位，`mmvdisk pdisk replace -v no` 自己找；没有槽位映射（虚拟机、模拟盘）时用 `mmaddpdisk <rg> -F <%pdisk: pdiskName=<旧名> device=//<节点>/dev/<新盘> da=<旧盘的阵列>> --replace -v no` 指定设备。新盘沿用旧物理盘的名字（旧盘排空期间改名为 `<旧名>#nnnn`，收尾按 WWN 认新盘、不会认成旧盘）。状态是 `ok` 的物理盘不换（GNR 只换坏盘；框架也只让健康看护 10 分钟内报告为非 `up` 的盘进入替换）。步骤：`resolve_disks`（新盘）→ `ece_replace` → `release_disks`（旧盘只去掉认领、不擦）。
 - **改角色**：沿用副本模式（`mmchnode` 改仲裁 / 管理）；`nsd` 角色跟着盘走，改不了，等于不能在这里加减服务器。
 - **滚动升级**：恢复组服务器不用 `mmshutdown`，而是 `mmvdisk recoverygroup change --suspend -N <节点> --window 60`（停 GPFS、挂起它的物理盘，60 分钟内不重建），装包、编可移植层后 `--resume`；挂起前要求恢复组没有 not-ok 的物理盘、没有阵列在 rebuild，恢复后等它的物理盘全部回来（最多 30 分钟）才轮到下一台。客户端照副本模式停启。**完成升级**另加 `mmvdisk recoverygroup change --version LATEST`。**查不到就当作不行**（代码审查后）：`mmvdisk` 查询失败或超时当作恢复组没准备好（全部正常时它退出 0、没有数据行）；挂起前在 `run/storage/<集群>/rg-suspended` 记标记、恢复成功后删掉，因为本机 GPFS 停着时 `mmvdisk` 问不到「是否已挂起」——重试时有标记就恢复，没有标记又查不到就失败、让管理员看，不盲目 `mmstartup`（那样物理盘会一直挂起）也不盲目恢复。
 - **混合介质**：HDD 加一种固态盘（SSD 或 NVMe，不能两种都有）时恢复组有两个解簇阵列：数据卷（集群的纠删码、块大小、占用，`--nsd-usage dataOnly --storage-pool data`）在 HDD 阵列，元数据卷 `cl<集群>_vsm`（`ece_meta_code` 默认 3WayReplication、`ece_meta_block_size` 默认 1M、`ece_meta_set_size` 默认 80，`metadataOnly`、`system` 池）在固态阵列；阵列按 `vdisksetDaSizing.hardwareType` 认（mmvdisk 说 HDD / SSD / NVMe，SSD 与 NVMe 互认）。建文件系统用两个纠删码卷，有数据池时装放置规则 `RULE 'default' SET POOL 'data'`（mmvdisk 只在多于两个池时提示）。布局规则：每台每种介质的盘数相同，数据阵列至少 12 块、至少宽度+2，元数据阵列至少元数据纠删码宽度+2。
 - **8+2p / 8+3p**：第一版起就支持，只是没有盘测；块大小大于 4M（8M、16M）时 mmvdisk 要求 `--checksum-granularity 32k`，第一版漏了，第二轮补上。
 - **槽位映射**：参数 `slot_mode`（`lmr` 或 `nvme`）加 `slot_range`（`[第一个, 最后一个]` 用户槽位）时，槽位步骤在缺映射的服务器上执行 `ecedrivemapping --mode <模式> --slotrange <min> <max> --force`（不给范围它会交互式询问）；已有的映射（手工生成的）不动。顺带修了第一版的判断：`ls slotmap.yaml *.edf` 只要有一个不在就返回非零，而一台服务器只会有其中一种，实体机永远被判为「没有映射」。
-- **就绪检查**：预检对恢复组服务器多带一项 `readiness`，节点侧 `backend_readiness`：内存不够 pagepool（mmvdisk 最多把内存的 80% 给 pagepool）直接失败；核数 < 16、到其他成员的链路 < 25 Gbit/s（`/sys/class/net/<dev>/speed`）、不是物理机（`systemd-detect-virt`）只提示，参数 `ece_strict` 时失败。clapi 在预检步骤结束时核对服务器之间内存相差不超过 10%（mmvdisk 的硬性要求），每台的内存记在节点属性 `mem_mib`，之后加入的服务器和它们比。
+- **就绪检查**：预检对恢复组服务器多带一项 `readiness`，节点侧 `backend_readiness`：内存不够 pagepool（mmvdisk 最多把内存的 80% 给 pagepool）直接失败；核数 < 16、到第一个对端成员的出口网卡 < 25 Gbit/s（`ip route get <对端>` 找到的 `dev`，读 `/sys/class/net/<dev>/speed`；只看这一个对端）、不是物理机（`systemd-detect-virt`）只提示，参数 `ece_strict` 时失败。clapi 在预检步骤结束时核对服务器之间内存相差不超过 10%（mmvdisk 的硬性要求），每台的内存记在节点属性 `mem_mib`，之后加入的服务器和它们比。
 - **§6.6 的 SSH 包装与 `adminMode=central`**：纠删码与副本模式共用建集群的步骤，所以一直是这么建的；没验证的是 `mmvdisk` 在这种配置下的全部子命令都能用（见下面「没测」）。
 - 第一版只给 `resolve_disks` 新盘；运维时服务器上的在用盘也要解析（拼盘表达式），解析输入对在用盘带 `in_use`，只核身份、不查空（盘上已经是物理盘的数据）。节点脚本 `stc_resolve_disks.sh` 起初并不读 `in_use`（只靠本机的认领标记跳过查空），代码审查后才读：`in_use` 的盘只核对身份、永不擦除。
 
-**没测**（详见 §16 S7「第二轮」的表）：
-- 上面的运维一项都没在真机上跑；`-Y` 输出的字段名（`rgSummary` 的 `AddNode` / `rebalanceStatus` / `suspendedServer`、`vdisksetDaSizing` 的 `freePercent` / `hardwareType`、`rgDeclusteredArray` 的 `backgroundTask`、`pdiskSummary` 的 `state`）按源码推断。
+**没测**（详见 §16 S7「第二轮」的表，E1–E9）：
+- 上面的运维一项都没在真机上跑（第二轮没有部署）；`-Y` 输出的字段名（`rgSummary` 的 `AddNode` / `rebalanceStatus` / `suspendedServer`、`vdisksetDaSizing` 的 `freePercent` / `hardwareType`、`rgDeclusteredArray` 的 `backgroundTask`、`pdiskSummary` 的 `state`）按源码推断。
 - 实体机上的槽位映射（`ecedrivemapping`）、就绪检查读到的网速。
 - §6.6 的 SSH 包装脚本与 `adminMode=central` 下的 `mmvdisk`。
 - 8+2p / 8+3p 与 8M / 16M 块，要更多盘；一组 SSD 加一组 HDD 的两组盘布局。
@@ -1160,10 +1376,15 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 - 建文件系统那步的脚本在 ece1 的 `/root/ece-step5-fs.sh`。
 - 状态在 `/root/ece-spike.state`，里面记着改动前的配额。
 - 测试盘的文件在三台宿主机的 `/var/lib/cl-ece-spike/`，各占约 200 GB。
+- 物理机端到端之后（2026-10-07）：gpfs1 已删除（连带 gp1、s4ga-1、gv1、gv2）；三台的 sdb 现在是 xfs，挂在 `/var/lib/cl-ece`，上面是 5 块 256 GiB 的 LIO fileio 模拟盘（`emulate_write_cache=1`，已擦）；`gece` 测完已删。要重建副本集群，先清 LIO 配置、卸载 sdb、擦盘再扫描。
 
 ### 7.10 SAN 共享 LUN（布局 `san`，阶段 S7，2026-10-07 第二轮实现，代码层面）
 
+已提交并推送（88c36ce8..e8c96655、7072b00f），未部署，没在真机上跑过（E10）。
+
 **用途**：NSD 用 SAN 上的共享 LUN（FC、iSCSI、多路径），一个 LUN 由能看到它的多台成员共同服务，数据由存储阵列保护。和副本模式（每台的本地盘是自己的 NSD、跨故障组存两三份）互斥，所以是 GPFS 的第三种布局。
+
+预检：共享 LUN 的身份带 `shared: true` 下发，节点的 `check_disks` 只要求它判为 `shared`、没被挂载，空不空在 `resolve_disks` 时再查（§6.5；2026-10-07 修复设计复查发现的缺陷 a：原来不带标记，按「can not be used」失败，SAN 布局的部署和带 LUN 的加节点都过不了预检）。下面描述的是预检之后的设计与代码。
 
 **磁盘扫描**：
 - 扫描除了 `TYPE disk` 也列多路径设备（`lsblk` 的 `TYPE mpath`，`/dev/mapper/<名字>`），状态 `shared`（多路径设备、FC / iSCSI、WWN 重复）。
@@ -1188,15 +1409,18 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 - 释放、离开集群时盘标识带 `shared`，节点不擦：LUN 还有别的节点在服务时一律不擦，整个 LUN 离开时只由最小的节点擦一次（`gpfsSANWipedHere`）。
 
 **运维**：
-- 加节点、加盘：新 LUN（所有记录都是新的）做 NSD、加进文件系统；已有的 LUN 多了服务器（新节点也勾了它），用 `mmchnsd` 改服务器列表（GPFS 5.0 起不用卸载），步骤 `san_servers`。
+- 加节点、加盘：服务这些 LUN 的节点都 `resolve_disks`；新 LUN（所有记录都是新的）`create_nsd` 做 NSD；已有的 LUN 多了服务器（新节点也勾了它），用 `mmchnsd` 改服务器列表（GPFS 5.0 起不用卸载），步骤 `san_servers`；有新 LUN 时再 `add_disks` 加进文件系统。
 - 移除节点：先 `san_servers` 把它从共享 LUN 的服务器列表里拿掉，只有它服务的 LUN 才 `mmdeldisk`（数据先迁走），再 `mmdelnode`。
-- 移除盘：移除的是整个 LUN（框架的 `DiskSiblings` 把同一个 LUN 在其他节点上的记录一起标为移除），一个 NSD 删一次，各节点释放、只擦一次。
+- 移除盘：移除的是整个 LUN（框架的 `DiskSiblings` 把同一个 LUN 在其他节点上的记录一起标为移除），一个 NSD 删一次，各节点释放、只由最小 hostid 的节点擦一次（`gpfsSANPrimary`）。
 - 健康：同一个 LUN 的告警条件只有一条。
+- 重新均衡、改角色、升级与完成升级、远程挂载照副本模式（`LayoutCapabilities`）。
 - 不支持：换盘（阵列负责，坏了就加新 LUN、删旧 LUN）、第二个文件系统。
 
-**没测**：没有 SAN 环境，整套只有 PostgreSQL（`TestStorageGPFSSANPG`）和替身命令（`stc-test16.sh`）；`mmlsnsd -X -Y` 的字段名是推断的（读不到时照样执行 `mmchnsd`，它是幂等的）。
+**没测**（E10）：没有 SAN 环境，整套只有 PostgreSQL（`TestStorageGPFSSANPG`）和替身命令（`stc-test16.sh`）；`mmlsnsd -X -Y` 的字段名是推断的（读不到时照样执行 `mmchnsd`，它是幂等的）。
 
 ### 7.11 多集群远程挂载（阶段 S7，2026-10-07 第二轮实现，代码层面）
+
+已提交并推送（88c36ce8..e8c96655、7072b00f），未部署，没在真机上跑过（E11）。
 
 **用途**：一台节点只能属于一个 GPFS 集群；要用另一个集群的存储池，就让自己的集群远程挂载那个集群的文件系统。所属集群和挂载方集群都必须是平台部署的、就绪的 GPFS 集群（任何布局）。
 
@@ -1211,8 +1435,9 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 4. `remote_mount`（挂载方）：`mmremotecluster add <所属方> -n <所属方的仲裁节点，最多 8 个> -k`（已有就 `update`），`mmremotefs add`，`mmmount <fs> -a`，等挂载方自己的节点都挂上。
 
 **取消**（`remote_unmount`）：
-- `mmumount -a` → `mmremotefs delete`，挂载方不再挂所属方的任何文件系统时再 `mmremotecluster delete`。
-- 所属方 `mmauth deny`，不再给挂载方任何文件系统时 `mmauth delete`。
+- 先和挂载时一样在两边各跑一次 `remote_owner_key`、`remote_access_key`（读出双方的 GPFS 集群名；没有密钥或 cipherList 时同样会生成、设成 AUTHONLY）。
+- `remote_unmount`（挂载方）：`mmumount -a` → `mmremotefs delete`，挂载方不再挂所属方的任何文件系统时再 `mmremotecluster delete`。
+- `remote_revoke`（所属方）：`mmauth deny`（失败只记日志），不再给挂载方任何文件系统时 `mmauth delete`。
 - 挂载方节点上的云服务器还在用这个文件系统上的卷时拒绝。
 
 **存储池**：
@@ -1228,7 +1453,7 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 - 有远程挂载的集群不能删除，被远程挂载的文件系统不能删除。
 - 所属方增删仲裁节点后，挂载方记着的联系节点不会自动更新（取消再建，或以后加「刷新联系节点」）。
 
-**没测**：没有第二个平台部署的 GPFS 集群，整套只有 PostgreSQL（`TestStorageRemoteMountPG`）和替身命令（`stc-test17.sh`）；`mmauth show .` 的 cipherList 一行的写法、运行中能否改 cipherList 都是推断。
+**没测**（E11）：没有第二个平台部署的 GPFS 集群，整套只有 PostgreSQL（`TestStorageRemoteMountPG`）和替身命令（`stc-test17.sh`）；`mmauth show .` 的 cipherList 一行的写法、运行中能否改 cipherList 都是推断。
 
 ---
 
@@ -1236,68 +1461,75 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 
 ### 8.1 版本与镜像
 
-- 节点上的 `cephadm`、`ceph-common` 来自发行版源（26.04 是 20.2.0；24.04 是 19.2 系列）。**一个集群只用一个版本**：部署时以管理节点上 `cephadm` 的版本为准，其他成员装同一主版本；24.04 与 26.04 混用、发行版源里没有同一版本时，用 Ceph 官方的软件源（`download.ceph.com`）装 `cephadm`、`ceph-common`，版本由集群参数固定
-- 容器镜像默认 `quay.io/ceph/ceph:v<集群版本>`，可以改成私有仓库地址（私有化环境），仓库口令加密保存（§5.1）。Ubuntu 打包的 `cephadm` 与上游镜像能否直接搭配，待验证（V10）
-- 节点上已有 docker，不另装 podman（cephadm 两者都支持）
-- **私有仓库（2026-10-07 第二轮）**：参数 `registry`（主机名[:端口]，镜像必须以它开头）、`registry_user`、`registry_password`（口令加密进 `secrets`，参数里不留）；安装步骤 `docker login --password-stdin` 后再拉镜像，bootstrap 带 `--registry-json`（600 权限的临时文件，用完删除）
-- **混合发行版（第二轮）**：只要求跑守护进程（有编排标签）的节点是同一个发行版；纯客户端可以是另一个，但它的 `ceph-common` 不能低于集群镜像的版本（安装步骤收尾核对）
-- **mon 刷新（第二轮）**：加节点、改角色、移除节点使 mon 变化时，任务最后读出新的 mon 地址（`mon_addrs`）并在所有客户端上重写配置（`client_refresh`，复用 `ceph_client.sh setup`）
+- 节点上的 `cephadm`、`ceph-common` 来自发行版源（26.04 是 20.2.0；24.04 是 19.2.3），**装的是发行版当前的版本，不钉版本**。原设计里「混用时改用 Ceph 官方源（`download.ceph.com`）、版本由集群参数固定」没有做
+- **版本规则**：跑守护进程（有编排标签，即 mon / mgr / OSD / 管理）的节点必须是同一个发行版，因此是同一个 Ceph 版本（部署、加节点任务的预检步骤比较发行版，加节点时和已记录的守护进程节点比；客户端改成守护进程角色时由安装步骤核对版本）。纯客户端可以是另一个发行版，但它的 `ceph-common` 不能低于守护进程（镜像）的版本：更旧的客户端读不出新版本生成的密钥（安装步骤的 Done 钩子 `cephInstallDone` 核对）
+- 容器镜像默认 `quay.io/ceph/ceph:v<守护进程节点 ceph-common 的版本>`，可以另指定（私有化环境用私有仓库，见下）。**镜像比本机 `ceph-common` 新时安装步骤拒绝**（`ceph_install.sh`）：cephadm 打包的默认镜像 `:v20` 是 20.2.4，它生成的新类型密钥 20.2.0 的客户端读不出（`Malformed input`）。Ubuntu 打包的 `cephadm` 能和上游镜像搭配（V10，已验证）
+- 用节点上已有的 docker 跑守护进程，不另装 podman（cephadm 两者都支持）
+- **私有仓库（2026-10-07 第二轮）**：参数 `registry`（主机名[:端口]，镜像必须以 `<registry>/` 开头）、`registry_user`、`registry_password`（口令加密进 `secrets`，参数里不留，§5.10）；守护进程节点的安装步骤 `docker login --password-stdin` 后再拉镜像，bootstrap 带 `--registry-json`（600 权限的临时文件，用完删除）。创建向导确认页的参数汇总把 `registry_password` 显示为 `******`（§20.2，2026-10-07 修复：原来明文显示）
+- **mon 刷新（第二轮）**：加节点、改角色、移除节点使 mon 变化时，读出新的 mon 地址（步骤 `mon_addrs`，`ceph mon dump`）并在其余成员上重写客户端配置（`client_refresh`，复用 `ceph_client.sh setup`）。位置：加节点在建 OSD 之后、新节点的 `client_setup` 之前；改角色在改标签之后；移除节点在 `remove_host` 之后、`leave` 之前，而且要有留下的管理节点执行
+- 第二轮的这三项（私有仓库、混合发行版、mon 刷新）已提交推送，**没部署，没在真实节点上跑过**（§16 S7「第二轮」E13）
 
 ### 8.2 部署步骤（任务 `deploy`）
 
 | # | 步骤 | 范围 | 做什么 | 可重入的判断 |
 |---|---|---|---|---|
-| 1 | `precheck` | 全部成员 | §6.5 | 每次都跑 |
+| 1 | `precheck` | 全部成员 | §6.5；另外核对跑守护进程的节点是同一个发行版（§8.1） | 每次都跑 |
 | 2 | `join` | 全部成员 | 写成员标记（§6.5） | 标记已存在 |
-| 3 | `install` | 全部成员 | `apt-get install cephadm ceph-common lvm2`，版本固定 | 已装且版本相同 |
-| 4 | `pull_image` | 全部成员 | `cephadm --image <镜像> pull`（有私有仓库时先 `cephadm registry-login`） | 本地已有该镜像 |
-| 5 | `ssh_trust` | 全部成员 | 写 `authorized_keys`（`from=` 为 mgr 所在主机，§6.6）。放在 bootstrap 之前：bootstrap 自己要 SSH 到本机 | 行已存在且内容相同 |
-| 6 | `bootstrap` | 第一台 `admin`（必须是 mon） | `cephadm --image <镜像> bootstrap --fsid <clapi 生成> --mon-ip <内网地址> [--cluster-network <网段>] --ssh-private-key <f> --ssh-public-key <f> --ssh-user root --skip-monitoring-stack --skip-dashboard --skip-firewalld`；单节点测试形态加 `--single-host-defaults`；之后把 bootstrap 自己写进 `authorized_keys` 的那一行改成带 `from=` 的（§6.6） | `/var/lib/ceph/<fsid>` 已存在且 `ceph -s` 能连上 |
-| 7 | `add_hosts` | 管理节点 | `ceph orch host add <主机名> <内网地址> --labels <角色>` | `ceph orch host ls` 里已有 |
-| 8 | `place_daemons` | 管理节点 | `ceph orch apply mon --placement=label:mon`、`ceph orch apply mgr --placement=label:mgr`；给 `admin` 加 `_admin` 标签；**`ceph orch apply osd --all-available-devices --unmanaged=true`**（关掉「自动占用所有空闲盘」，否则 cephadm 会把节点上的空闲盘全部吃掉，包括准备给本地池的）；等 mon 全部进入法定人数 | 放置已一致 |
-| 9 | `configure` | 管理节点 | `public_network`、`cluster_network`、`osd_memory_target`、**`osd_memory_target_autotune=false`**（§6.7）、`osd_pool_default_size`、`mon_allow_pool_delete=false`、`auth_allow_insecure_global_id_reclaim=false`；启用 mgr 的 `prometheus` 模块并绑内网地址；`ceph auth get-or-create client.cloudland mon 'profile rbd'`（先不给任何池的权限，建池时加），输出密钥，clapi 加密存进 `client_key` | 每次都写（幂等） |
-| 10 | `resolve_disks` | OSD 节点 | 同 §7.2（核对身份）；测试环境的回环设备先建成 LVM 逻辑卷（ceph-volume 不收回环设备） | 每次都跑 |
-| 11 | `create_osds` | 管理节点 | 每块盘 `ceph orch daemon add osd <主机>:<设备>`，等 OSD `up`；介质与 Ceph 自动识别的设备类不同时 `ceph osd crush set-device-class` 改成认领时的介质；输出 OSD 编号。`RetryFrom: resolve_disks` | 该设备上已有 OSD（`ceph-volume lvm list` / `ceph osd tree`） |
-| 12 | `client_setup` | 全部成员与客户端 | 见 §8.4 | 文件与 secret 已存在且一致 |
-| 13 | `finish` | 全部成员 | 写内存预留；触发磁盘扫描。任务成功后由 clapi 把 mgr 的指标地址写进 Prometheus 的目标文件（§14.2，节点写不到控制面的文件） | 每次都跑 |
+| 3 | `install` | 全部成员 | 所有节点 `apt-get install ceph-common qemu-block-extra`（发行版的版本，不钉）。守护进程节点另外：装 `cephadm lvm2 python3-jinja2`（24.04 的 cephadm 包没声明 jinja2 依赖）；没有 uid 167 的用户时建 `ceph-ctr`（26.04 的 Rust coreutils 不认没有用户的数字 uid）；写 unit drop-in `ceph-<集群>@.service.d/cloudland-order.conf`（OSD 排在本机 mon 之后停，关机时 OSD 的下线通知才发得出去）与 `cloudland-oom.conf`（§6.7.2）；有私有仓库时 `docker login`；`docker pull` 镜像（§8.1），镜像比本机 `ceph-common` 新就失败。Done 钩子核对守护进程节点装的是同一版本、拉的是同一镜像，客户端版本不低于镜像，记下版本与镜像 | 每次都跑（`apt-get install`、`docker pull` 本身幂等） |
+| 4 | `ssh_trust` | 全部成员 | 写 `authorized_keys`（`from=` 为管理节点与 mgr 节点，§6.6）。放在 bootstrap 之前：bootstrap 自己要 SSH 到本机 | 行已存在且内容相同 |
+| 5 | `bootstrap` | 第一台 `admin`（必须是 mon） | `cephadm --image <镜像> bootstrap --fsid <集群 UUID> --mon-ip <内网地址> [--cluster-network <网段>] --ssh-user root --ssh-private-key <f> --ssh-public-key <f> --skip-monitoring-stack --skip-dashboard --skip-firewalld --skip-pull --allow-fqdn-hostname --orphan-initial-daemons --output-dir /var/lib/ceph/<fsid>/bootstrap --no-cleanup-on-failure [--registry-json <f>]`；只有一台 cephadm 主机时加 `--single-host-defaults`。`--orphan-initial-daemons`：不建 cephadm 默认的「5 个 mon、2 个 mgr」放置，由下一步按标签放；`--skip-pull`：镜像在安装步骤已拉好。之后删掉 cephadm 写进 `authorized_keys` 的那一行（不带限制），留下 `ssh_trust` 写的带 `from=` 的那行（§6.6），再给本机打上它的标签。管理命令一律用 cephadm 在 `_admin` 主机上维护的 `/var/lib/ceph/<fsid>/config/ceph.conf` 与 admin keyring，不用 `/etc/ceph/ceph.conf`。`RetryFrom: ssh_trust` | admin keyring 在而且 `ceph fsid` 能应答；否则先 `cephadm rm-cluster` 清掉上次失败留下的目录再重来 |
+| 6 | `add_hosts` | 管理节点 | 先按标签放置：`ceph orch apply mon --placement=label:mon`、`ceph orch apply mgr --placement=label:mgr`、`ceph orch apply crash --placement='*'`，打开 mgr 的 `prometheus` 模块（§14.3）；再对每台 cephadm 主机 `ceph orch host add <主机名> <内网地址> --labels <角色>`（标签 `mon` / `mgr` / `osd`，管理节点加 `_admin`；只当客户端的节点不是 cephadm 主机）；等 mon 全部进入法定人数、有 active mgr。`RetryFrom: ssh_trust` | 已在 `ceph orch host ls` 里的只补标签 |
+| 7 | `configure` | 管理节点 | `osd_pool_default_size`、`osd_pool_default_min_size`、`osd_memory_target`、**`osd_memory_target_autotune=false`**（§6.7）、`mon_allow_pool_delete=false`；**`ceph orch apply osd --all-available-devices --unmanaged=true`**（关掉「自动占用所有空闲盘」，否则 cephadm 会把节点上的空闲盘全部吃掉，包括准备给本地池的）；给了复制网段时设 `cluster_network`；测试形态 1 副本时另开 `mon_allow_pool_size_one`、关 `mon_warn_on_pool_no_redundancy`。`ceph auth get-or-create client.cloudland mon 'profile rbd' osd 'profile rbd' mgr 'profile rbd'`：**不限池**（集群归 CloudLand，上面的池都是 CloudLand 的，建池、删池不用改权限）。输出密钥与 mon 地址（mon map 里 v2 地址的 IP，不带端口）；Done 钩子把密钥加密存进 `secrets.client_key`、mon 地址记进 `attrs`，并从运行结果里删掉密钥。`auth_allow_insecure_global_id_reclaim=false`（CVE-2021-20288；cephadm 的 bootstrap 本来就写进初始配置，已在 WSL 的 20.2.0 上核实，这里再设一次，防 cephadm 以后变；2026-10-07 补）；最后把每个 mgr 的 prometheus 模块绑到它所在主机的地址（`ceph_prometheus_bind`，见下）。原设计里的 `public_network` **决定不做**（2026-10-07）：bootstrap 按 `--mon-ip`（节点内网地址）推出公共网段，正是 CloudLand 的管理网；另设一个会让 mon 和 OSD 监听到别的网段上，而节点之间只放行私网地址段 | 每次都写（幂等） |
+| 8 | `resolve_disks` | OSD 节点 | 同 §7.2（核对身份）；测试环境的回环设备先建成 LVM 逻辑卷（ceph-volume 不收回环设备；卷组 `clceph-<集群前 8 位>-<盘 ID 的哈希>`，每次都 `vgchange -ay`） | 每次都跑 |
+| 9 | `create_osds` | 管理节点 | 先 `ceph orch device ls --refresh`；每块盘 `ceph orch daemon add osd <主机>:<设备>`，20.2 报 `No devices found for host` / `is not found on host` 时带 `--skip-validation` 重试（19.2 不按清单校验，也没有这个参数）；等 OSD `up`；有介质时 `ceph osd crush rm-device-class` 再 `set-device-class` 成认领时的介质；输出 OSD 编号。最后 `ceph orch set-unmanaged osd.default`（20.2 把每次 `daemon add osd` 存成受管规格，不关掉的话盘移除、清掉后会在上面重建 OSD；19.2 没有这个规格，命令失败、无害）。`RetryFrom: resolve_disks` | 按 `ceph osd metadata` 的 `hostname` 与 `devices` 找到该盘上已有的 OSD |
+| 10 | `client_setup` | 全部成员（包括客户端） | 见 §8.4 | 每次重写配置，并用客户端身份 `ceph fsid` 核对 |
+| 11 | `finish` | 全部成员 | 写内存预留；触发磁盘扫描。Prometheus 经 http_sd 从 clapi（`/api/v1/prometheus/sd/storage`）取 mgr 的指标地址（§14.3），节点和任务都不写目标文件 | 每次都跑 |
 
-参数：集群名、镜像、公共网段（默认取成员内网地址所在网段）、复制网段（可选）、副本数（3；单节点测试形态为 1）、`osd_memory_target`（默认 2 GiB）。
+没有盘时没有第 8、9 步。原设计里单独的 `pull_image`（拉镜像）并进了 `install`，`place_daemons`（放置）并进了 `add_hosts`（§16 S3 实施记录第 2 条）。
+
+**mgr 指标端口**（2026-10-07 修复设计复查发现的缺陷 c）：每个 mgr 的 prometheus 模块只监听它所在主机的地址（cephadm 记的主机地址，也就是采集用的 `HostIP`），不再监听所有地址。`backends/ceph.sh` 的 `ceph_prometheus_bind`：按 `orch ps --daemon-type mgr` 和 `orch host ls` 给每个 mgr 设局部化选项 `mgr/prometheus/<mgr 名>/server_addr`（当前值从 `config dump` 读：`config get` 不认这类选项），值变了的备用 mgr 用 `orch daemon restart` 重启、活动 mgr 用 `mgr fail` 切走（模块只在启动时读这个选项），再等 mgr 可用、编排器能应答（最多 2 分钟，后面的步骤要用编排器）。`configure` 步骤最后调一次，健康看护每次检查时也调（之后才放上去的 mgr：加节点、改角色），已绑好的什么都不做。WSL 的 20.2.0 单节点端到端核实：部署后 9283 只在节点地址上监听
+
+参数（`cephParams`）：镜像（默认见 §8.1）、复制网段（可选）、副本数（3；单节点测试形态为 1，不可另选）、`osd_memory_target`（默认 2 GiB，896 MiB–64 GiB）、私有仓库 `registry` / `registry_user` / `registry_password`（§8.1）、测试形态 `test`。集群名在创建请求里单独给。fsid 就是集群记录的 UUID。**公共网段没有做成参数**（原设计「默认取成员内网地址所在网段」，没实现）：mon 用各节点的内网地址，公共网段由 bootstrap 按第一台 mon 的地址推出。
 
 ### 8.3 CloudLand 存储池（RBD 池）
 
-托管集群在集群详情页上建（任务 `create_pool`，占池槽，管理节点执行；池记录先以 `creating` 建出来，同 §7.4）：
+托管集群在集群详情页上建（任务 `create_pool`，占池槽：管理节点执行 `create_pool`，再在全部成员上执行 `sync_pools`；池记录先以 `creating` 建出来，同 §7.4）：
 
-1. 按介质准备 CRUSH 规则：`ceph osd crush rule create-replicated cl-<介质> default host <介质>`（已存在就跳过）；该介质的 OSD 所在主机数少于副本数时，接口直接拒绝
-2. `ceph osd pool create <池名>`，`pg_autoscale_mode on`，`size 3`、`min_size 2`（单节点测试形态 `size 1`、`min_size 1`），`crush_rule cl-<介质>`；池名由 CloudLand 生成（`cl_<池UUID 前 8 位>`）
+1. 分布规则：选了介质时 `ceph osd crush rule create-replicated cl-<介质> default host <介质>`（已存在就跳过）；不选介质用默认的 `replicated_rule`。接口按有 OSD 的主机数检查（选了介质时只算该介质的 OSD），少于副本数时直接拒绝（`PoolSetup`）
+2. `ceph osd pool create <池名> 32 32 replicated <规则>`，`size 3`、`min_size 2`（单节点测试形态 `size 1`、`min_size 1`）；没有显式设 `pg_autoscale_mode`，用 Ceph 默认开启的自动调整；池名由 CloudLand 生成（`cl_<池UUID 前 8 位>`）
 3. `ceph osd pool application enable <池名> rbd`、`rbd pool init <池名>`
-4. 设了配额就 `ceph osd pool set-quota <池名> max_bytes <配额>`
-5. 写标记对象：`rados -p <池名> put cloudland-pool <内容为池 UUID 的文件>`（§9.2 用它确认连的是对的池）
-6. 更新客户端的权限，把新池加进去（`ceph auth caps client.<用户> mon 'profile rbd' osd 'profile rbd pool=<池1>, profile rbd pool=<池2>, ...' mgr 'profile rbd pool=...'`）
-7. 对全部客户端做一轮可用性检查
+4. `ceph osd pool set-quota <池名> max_bytes <配额>`（每次都设，0 表示不限）
+5. 写标记对象：`rados -p <池名> put cloudland-pool <文件>`，内容两行 `driver=ceph_rbd`、`pool_uuid=<池 UUID>`（§9.2 用它确认连的是对的池，`drv_guard` 两行都核对）
+6. ~~更新客户端的权限，把新池加进去~~：不需要，托管集群的 `client.cloudland` 本来就是不限池的 `profile rbd`（§8.2 第 7 步）
+7. `sync_pools`：全部成员拿到新的池清单，并立即检查一遍能否访问
 
-- **删池**（任务 `delete_pool`）：没有卷时：引用数为 0 的镜像基础副本一起删除（`rbd snap unprotect` / `snap purge` / `rm`），临时 `mon_allow_pool_delete=true` → `ceph osd pool rm <池名> <池名> --yes-i-really-really-mean-it` → 改回 `false` → 从客户端权限里去掉
-- **外部集群**：登记已有的池名，CloudLand 只写标记对象（客户端密钥要有写权限）
+- **改配额**（任务 `update_pool`，只有托管集群）：管理节点先核对标记对象，再 `ceph osd pool set-quota`
+- **删池**（任务 `delete_pool`）：没有卷时：先在全部成员上 `sync_pools`，把池从各节点的清单里去掉；再在管理节点上核对标记对象是这个池的，删掉镜像基础副本（按名字删所有 `image-<ID>-<前缀>`，加上导入中断留下的 `tmp-image-*`；快照不保护，所以只要 `rbd snap purge` + `rbd rm`），`rbd ls` 与 `rbd trash ls` 都为空才继续，临时 `mon_allow_pool_delete=true` → `ceph osd pool rm <池名> <池名> --yes-i-really-really-mean-it` → 改回 `false`。不改客户端权限
+- **外部集群**：登记已有的池名（`create_pool` 任务的 `register_pool` 步骤，任一成员用客户端身份执行）：先 `rbd ls -p <池>` 确认能读，再写标记对象（客户端密钥要有写权限）；不建规则、不设配额。取消登记（`unregister_pool`）只删 clapi 列出的、CloudLand 建的基础副本和标记对象。外部集群的池系统盘用整盘复制（`rbd cp`），不克隆（`CloneMode=copy`，§9.6）
 
 ### 8.4 客户端
 
-要使用 Ceph 存储池的每台计算节点（包括 OSD、mon 所在的节点）都要配置客户端（任务步骤 `client_setup`，也可以单独对新节点执行 `add_clients`）：
+要使用 Ceph 存储池的每台计算节点（包括 OSD、mon 所在的节点）都是集群成员，都要配置客户端（任务步骤 `client_setup`）。只用存储的节点以「客户端」角色加入：建集群时选，或者在集群详情「添加节点」时只选客户端角色（任务 `add_nodes`）；托管集群还可以按可用区自动加入（§6.3，同样走 `add_nodes`）。原设计里单独的 `add_clients` / `remove_clients` 任务没有做（用不着）。
 
-- `apt-get install ceph-common`；QEMU 的 RBD 驱动 `qemu-block-extra` 与 `librbd1` 两个系统版本都显式安装（26.04 节点上现在有它，是被 `qemu-system-x86` 的推荐依赖带进来的，不能依赖这一点）
-- `/etc/ceph/<集群UUID>.conf`：`ceph config generate-minimal-conf` 的输出（fsid 与 mon 地址），**另加一行 `keyring = /etc/ceph/<集群UUID>.client.<用户>.keyring`**（§6.8）
+- 软件包由安装步骤装（§8.2 第 3 步）：显式装 `ceph-common` 与 QEMU 的 RBD 驱动 `qemu-block-extra`（26.04 节点上本来有它，是被 `qemu-system-x86` 的推荐依赖带进来的，不能依赖这一点），`librbd1` 随依赖装上（原设计要显式装 `librbd1`）；导入集群时 `check_import` 发现没装才补装这两个
+- `/etc/ceph/<集群UUID>.conf`：由平台直接写 `[global]` 里的 `fsid` 与 `mon_host`（托管集群的 mon 地址不带端口，客户端 v2、v1 都试；导入的按填的 `ip:port`），**另加 `[client.<用户>]` 段 `keyring = /etc/ceph/<集群UUID>.client.<用户>.keyring`**（§6.8）。不用 `ceph config generate-minimal-conf`：客户端节点没有管理员权限
 - `/etc/ceph/<集群UUID>.client.<用户>.keyring`：权限 600，节点脚本以 root 执行 `rbd` 时用
-- libvirt secret：所有节点用**同一个 UUID**（`storage_clusters.attrs` 的 `secret_uuid`，热迁移时目标节点才认得），`virsh secret-define` 后用 `virsh secret-set-value --file` 写入密钥（不用把密钥放在命令行参数里，避免出现在进程列表里）
-- 移除客户端（任务 `remove_clients`）：节点上没有使用这个集群的云服务器时，删配置文件、密钥环和 libvirt secret
+- libvirt secret：所有节点用**同一个 UUID**（`storage_clusters.attrs` 的 `secret_uuid`，缺省就是集群 UUID；热迁移时目标节点才认得），`virsh secret-define` 后用 `virsh secret-set-value --file` 写入密钥（不用把密钥放在命令行参数里，避免出现在进程列表里）。先写 secret、最后写 keyring：中途失败时节点上的工具仍用原来的密钥（密钥轮换时要紧，§11、S6）
+- 写完用客户端身份 `ceph fsid` 核对。被拒（`permission denied`）而 clapi 带来了中止的轮换留下的待定密钥时，改用它并回报，clapi 把它记为正式密钥
+- 移除客户端：就是移除节点（任务 `remove_node`，§8.5）：前提是节点上没有挂着这个集群存储池里的卷的云服务器；`remove_host` 对不是 cephadm 主机的节点跳过，`leave` 删配置文件、密钥环和 libvirt secret
+- mon 变化后其余成员的配置由 `client_refresh` 重写（§8.1）
 
 ### 8.5 加主机、加盘、移除
 
 | 操作 | 步骤 | 前提 |
 |---|---|---|
-| 加主机 | 预检 → 加入 → 安装 → 拉镜像 → SSH 信任 → `ceph orch host add` → 按角色放置 → 客户端配置；带盘的接着加 OSD | 这台主机没有为别的 Ceph 集群运行守护进程（§4.1） |
-| 加盘 | `resolve_disks` → `ceph orch daemon add osd`；之后 Ceph 自动把一部分数据迁到新盘（见表后），不需要另发起重新均衡 | — |
-| 移除 OSD | `ceph orch osd rm <编号> --zap`，等数据迁完（`ceph orch osd rm status` 轮询进度）→ 盘已被 `--zap` 清掉，再触发扫描 | `ceph osd ok-to-stop`；剩余 OSD 主机数不少于各池副本数；剩余容量够 |
-| 换坏盘 | `ceph osd out` → `ceph orch daemon rm osd.<编号> --force` → `ceph osd destroy <编号> --force --yes-i-really-mean-it`（保留编号）→ 新盘用同一编号加入。不用 `orch osd rm --replace`：它要等 `safe-to-destroy`，OSD 主机数等于副本数时永远等不到 | — |
-| 移除主机 | `ceph orch host drain <主机>`（迁走全部守护进程，包括 OSD）→ 等完成 → `ceph orch host rm <主机>` → 删客户端配置与 `authorized_keys` 那一行 | 移除后 mon 仍是奇数且不少于 3（先缩 mon）；主机上没有使用本集群存储池的云服务器（先迁走） |
-| 离线移除主机 | 主机已经永久坏了：`ceph orch host rm <主机> --offline --force`，它的 OSD `ceph osd purge <编号> --yes-i-really-mean-it`，等数据在其余 OSD 上恢复 | 主机离线超过 30 分钟；要求输入主机名确认 |
+| 加主机 | 预检 → 加入 → 安装（含拉镜像）→ SSH 信任（全部成员）→ `add_hosts`（`ceph orch host add` 并按标签放置）→ 带盘的接着 `resolve_disks` → `create_osds` → 新主机有 mon 时 `mon_addrs`，已有成员 `client_refresh` → 新主机 `client_setup` → `finish` | 这台主机没有为别的 Ceph 集群运行守护进程（§4.1）；跑守护进程的新主机与已有的守护进程节点同一个发行版（§8.1） |
+| 加盘 | `resolve_disks` → `create_osds`（同 §8.2）→ `finish`（重算内存预留）；之后 Ceph 自动把一部分数据迁到新盘（见表后），不需要另发起重新均衡 | — |
+| 移除 OSD | `ceph orch osd rm <编号> --zap`，等这些 OSD 从 osd map 里消失（进度取 `ceph orch osd rm status`）→ `release_disks`（核对身份后擦盘、释放认领）→ `finish`（重算内存预留），触发扫描 接口检查移除后的布局：有 OSD 的主机数不少于副本数（`CheckLayout`），以及**每个存储池按它的介质，剩下有这种 OSD 的主机数不少于它的副本数**（`storageRemovalChecker`，Ceph 的 `CheckRemoval`；`CheckLayout` 把所有介质的主机算在一起，移走某台主机最后一块 SSD 会让 SSD 池的副本无处可放，Ceph 就永远在往外迁数据）。节点上 `orch osd rm` 之前检查**剩余容量**（`ceph_cluster.sh` 的 `removal_room`）：按设备类，留下的 OSD 已用量加上要迁走的数据（`kb_used_data`）不能达到 `nearfull_ratio`，某类没有剩下的 OSD 而要迁走的数据不为 0 也拒绝（2026-10-07 补）。原设计的 `ceph osd ok-to-stop` **决定不做**：移除是先排空再停（`orch osd rm` 先标 out、等 PG 迁完，OSD 在这之前一直在服务），停掉时数据已经在别处，不会让 PG 变得不可用；而单副本的测试布局里 `ok-to-stop` 永远不通过，恢复中的集群也常常不通过 |
+| 换坏盘 | 先 `ceph orch osd rm stop <编号>`（停掉手工或旧版本排队的移除）；旧 OSD 还是 `up` 时拒绝（盘是好的，走移除）；`ceph osd out` → `ceph orch daemon rm osd.<编号> --force` → `ceph osd destroy <编号> --force --yes-i-really-mean-it`（保留编号）→ 新盘建 OSD，cephadm 把保留的编号给它 → `ceph osd in` → `ceph orch set-unmanaged osd.default`；坏盘不擦，只释放认领。不用 `orch osd rm --replace`：它要等 `safe-to-destroy`，OSD 主机数等于副本数时永远等不到 | 新盘与坏盘在同一台主机；界面只在盘的状态不是 `up` 时给「换盘」 |
+| 移除主机 | `ceph orch host drain <主机> --zap-osd-devices`（迁走全部守护进程，OSD 的数据先迁走）→ 等这些 OSD 离开 osd map、主机上的守护进程都走了 → `ceph orch host rm <主机>`；还在 map 里的 OSD 补做 `osd purge` → 走的是 mon 时 `mon_addrs` + 其余成员 `client_refresh` → 这台主机 `leave`（删客户端配置、`authorized_keys` 那一行、内存预留、成员标记，擦盘） | 主机在线；移除后的布局仍满足规则（mon 是奇数且不少于 3，先缩 mon；mgr 1–2 台；有管理节点；有 OSD 的主机数不少于副本数）；主机上没有挂着本集群存储池里的卷的云服务器（先迁走） |
+| 离线移除主机 | 主机已经永久坏了，不在它上面执行任何命令：`ceph orch host rm <主机> --offline --force`，它的 OSD `ceph osd out` + `ceph osd purge <编号> --yes-i-really-mean-it`，等数据在其余 OSD 上恢复；走的是 mon 时刷新其余成员的配置；没有 `leave` 步骤 | 主机当前离线；要求输入主机名确认；cland 判为离线的主机要离线满 30 分钟（与 §7.5 相同，2026-10-07 补）。不检查按介质的主机数：主机已经坏了，它的副本已经没了 |
+| 改角色（S5） | 节点第一次拿到守护进程角色时先 `install`（cephadm、镜像、`ceph-ctr`、unit drop-in）→ SSH 信任（全部成员）→ `set_labels`（`mon`、`mgr`、`_admin` 标签可加可减，`osd` 只加，跟着盘走；还不是 cephadm 主机的先 `host add`），cephadm 按标签增减守护进程，等 mon 数稳定、有 active mgr → mon 变了时 `mon_addrs` + `client_refresh` → `finish`（重算内存预留）。集群命令在改之前就是管理节点的主机上执行（新加的管理节点还没有 admin keyring） | 改后的布局满足建集群时的规则（§6.3） |
 
 **数据的重新分布与可用性**（Ceph 自身的行为，决定了上面各项操作和节点故障时的预期）：
 
@@ -1305,22 +1537,33 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 - **3 副本（`size 3`、`min_size 2`）时的可用性**：一台节点离线，它上面的数据在别处还有两份，读写照常，集群显示降级；同时离线两台，有些数据只剩一份、低于 `min_size`，这部分数据的读写会卡住，直到有节点回来
 - **只有 3 台 OSD 节点时，坏一台补不回副本**：分布规则按节点放副本（§8.3），没有第 4 台节点可以放第三份，集群一直降级，直到节点回来，或者离线移除后加上新节点；这期间再坏一台就卡住。节点有 4 台以上时，一台离线超过 10 分钟（`mon_osd_down_out_interval`，默认 600 秒）后，它的 OSD 被标记为移出，Ceph 在其余节点上补齐副本。正式使用建议 OSD 节点不少于 4 台
 - **mon 的法定人数**：3 台 mon 允许 1 台不在，同时少 2 台集群就失去法定人数、停止服务；5 台 mon 允许 2 台不在
-- **计划内维护**：单台节点重启（10 分钟以内）不用额外操作；要停更久时，先在管理节点执行 `ceph orch host maintenance enter <主机>`（停掉这台主机上的守护进程，并让它的 OSD 不被标记为移出，免得白白迁移一遍数据），完成后 `ceph orch host maintenance exit <主机>`（附录 F.4）
+- **计划内维护**：单台节点重启（10 分钟以内）不用额外操作；要停更久时，先在管理节点执行 `ceph orch host maintenance enter <主机>`（停掉这台主机上的守护进程，并让它的 OSD 不被标记为移出，免得白白迁移一遍数据），完成后 `ceph orch host maintenance exit <主机>`（附录 F.4）。平台没有这个操作，要在命令行执行
 
 ### 8.6 删除集群
 
-前提：集群上没有 CloudLand 存储池。先在管理节点上 `ceph mgr module disable cephadm`（否则还活着的 mgr 会把守护进程重新部署到正在清理的主机上），再在每台主机执行 `cephadm rm-cluster --fsid <fsid> --zap-osds --force`，删客户端配置、libvirt secret、`authorized_keys` 那一行和成员标记，可选卸载软件包，内存预留清零，触发磁盘扫描。与 §7.6 相同：每一步可重入，能清理任何阶段的半成品；离线主机的本地清理等它回来后补做。
+前提：集群上没有 CloudLand 存储池。任务两步：
+
+1. `teardown`（任一管理节点）：集群能应答时 `ceph mgr module disable cephadm`（否则还活着的 mgr 会把守护进程重新部署到正在清理的主机上）；不应答就跳过，由各主机自己清理
+2. `leave`（**在线的**成员，`OnlineOnly`）：`cephadm rm-cluster --force --zap-osds --fsid <fsid>`，删 unit drop-in（`cloudland-order.conf`、`cloudland-oom.conf`），删 `/etc/ceph` 里属于这个集群的文件、客户端配置、libvirt secret、回环盘的卷组，再按身份核对后擦盘，删 `authorized_keys` 那一行，内存预留清零，删成员标记。可选卸载软件包：只在 CloudLand 装过、节点上没有别的集群时 purge `cephadm` 并删 `quay.io/ceph/ceph:*` 镜像；`ceph-common`、`qemu-block-extra` 留着（QEMU 与其他集群还要用），私有仓库来的镜像不删
+
+成功后 clapi 删记录，触发磁盘扫描。与 §7.6 相同：每一步可重入，能清理任何阶段的半成品（中止的部署里节点还是 `joining`，删除时不按状态挑执行者）。离线的成员也与 §7.6 相同（2026-10-07 修复缺陷 b）：`leave` 跳过它们，回来后由补清理任务做；Ceph 的 `leave` 只动这个集群（按 fsid 删守护进程、配置、卷组），所以节点那时已加入别的 Ceph 集群也伤不到（加入本身也被拒绝）。离线主机上的 mon 与 OSD 回来时还在跑，只是找不到集群的其余部分，补清理的 `cephadm rm-cluster` 把它们删掉。
 
 ### 8.7 升级
 
-`ceph orch upgrade start --image <新镜像>` 逐个守护进程滚动升级，`ceph orch upgrade status` 轮询进度（阶段 S6）。云服务器用的是节点上的 `librbd1`（QEMU 进程启动时加载），升级节点软件包后要重启或迁移云服务器才生效；Ceph 兼容旧客户端，不急。
+升级任务（阶段 S6）两步：
+
+1. `install`（全部成员，同部署的安装步骤）：装发行版现在的版本（`ceph-common`、守护进程节点的 `cephadm`，`librbd1` 随依赖），守护进程节点拉新版本的镜像（默认 `quay.io/ceph/ceph:v<新版本>`，可以指定）。Done 钩子核对：守护进程节点同一版本、同一镜像；镜像不比集群现在的版本旧；客户端不比镜像旧
+2. `upgrade`（任一管理节点）：`ceph orch upgrade start --image <新镜像>` 逐个守护进程滚动升级，每 15 秒取 `ceph orch upgrade status` 报进度；出现 `UPGRADE_*` 健康项或升级被暂停就失败（修好后重试，会接着跟这次升级）；最后用 `ceph versions` 核对所有守护进程都是新版本
+
+用自定义镜像（私有仓库）部署的集群必须指定新镜像；不收安装包，也没有 finalize。不用先迁走云服务器：云服务器用的是节点上的 `librbd1`（QEMU 进程启动时加载），节点软件包升级后要重启或迁移云服务器才用上新版本；Ceph 兼容旧客户端，不急。发行版没有新版本时无事可升；真实节点上只验证了这条路径（§16 S6）。
 
 ### 8.8 外部 Ceph 集群
 
-- **导入**（任务 `import`）：填 fsid、mon 地址、客户端用户名与密钥（密钥加密保存，§5.1）、要使用它的节点（或可用区）。客户端的权限要求：`mon 'profile rbd'`、`osd 'profile rbd pool=<要用的池>'`。CloudLand 对这些节点执行客户端配置（§8.4）
+- **导入**（任务 `import`，一步 `check_import`）：填 fsid、mon 地址（1–9 个，`ip` 或 `ip:port`，不写端口按 6789）、客户端用户名（不带 `client.` 前缀）与密钥（密钥加密保存，§5.10）、要使用它的节点。**只能选节点**：原设计的「或可用区」没做（自动加入只对托管集群开放）；导入之后也不能再加减节点（外部集群只有导入、删除、登记 / 取消登记池这几个任务）。客户端的权限要求：`mon 'profile rbd'`、`osd 'profile rbd pool=<要用的池>'`。每台节点没装就补装 `ceph-common qemu-block-extra`，写客户端配置（§8.4），用客户端身份 `ceph fsid` 核对是这个集群，对不上就删掉刚写的东西
 - **存储池**：登记已有的池名（§8.3 末尾）
-- **健康**：由一台客户端节点用客户端身份执行 `ceph health -f json`（`profile rbd` 的 mon 权限能否执行，待验证，V14）
-- `profile rbd` 本身包含把失联客户端加入黑名单的权限（librbd 打破排他锁时就靠它），所以外部集群同样支持节点宕机后的隔离（§11；能否执行 `blocklist range`，待验证，V14）
+- **健康**：由一台客户端节点用客户端身份执行 `ceph health detail -f json`、`ceph osd tree`、`ceph df`（`profile rbd` 能执行这些，V14 已验证）；不看主机（不执行 `orch host ls`）
+- **监控曲线**（2026-10-07 第二轮）：mgr 不归 CloudLand，不采集；由客户端节点用客户端身份读 `ceph -s -f json`（容量、OSD up / in）与 `ceph df detail -f json`（各池读写字节数与次数求和），写成 `cloudland_ceph_*` 指标，clapi 取各节点的最大值（`backends/ceph.sh` 的 `backend_metrics`，§14.3）。没部署，没在真实节点上跑过（§16 S7 E16）
+- **隔离**：`profile rbd` 本身包含把失联客户端加入黑名单的权限（librbd 打破排他锁时就靠它），所以外部集群同样支持节点宕机后的隔离（§11）：由集群里另一台节点用客户端身份执行 `ceph osd blocklist range add <地址>/32 <有效期>`。**客户端身份只能加、不能移除**：解除隔离要对方管理员手工执行 `ceph osd blocklist range rm <地址>/32`（任务失败时的提示里给出这条命令）。用客户端身份执行 `range add` 没在真实环境测过（V14 的这一半）
 - **删除**（取消登记）：池都删了才能删；清理各节点上的客户端配置、密钥环与 libvirt secret，不碰 Ceph 本身
 
 ---
@@ -1346,119 +1589,125 @@ GPFS 的管理命令和 cephadm 都要求能免密以 root 登录其他成员。
 | 「已落盘」怎么判断 | `hyper > 0` | `hyper > 0` | 已离开 `pending`（§5.6） | 同左 |
 | 镜像基础 | 节点本地缓存 | 节点本地缓存 | `images/image-<镜像ID>-<前缀>.qcow2` | `image-<镜像ID>-<前缀>@base` |
 | UEFI NVRAM | `$image_dir` | `<池>/nvram/` | `<池>/nvram/`（跟着系统盘，迁移、恢复后都在） | 节点本地 `$image_dir`，迁移时照旧复制（§10） |
-| 磁盘 XML | `type='file'`，`error_policy='enospace'` | 同左 | `type='file'`，`cache='none' error_policy='stop'` | `type='network'`、`protocol='rbd'`，cephx 走 libvirt secret，`cache='writeback' discard='unmap'` |
-| 写入前的保护 | `pool_guard`（xfs、挂载点、hostid） | 同左 | `pool_guard`（文件系统类型 `gpfs`、标记文件） | 标记对象（§9.2） |
+| 磁盘 XML | `type='file'`，`error_policy='enospace'` | 同左 | `type='file'`，`cache='none' discard='unmap' error_policy='stop'` | `type='network'`、`protocol='rbd'`，cephx 走 libvirt secret，`cache='writeback' discard='unmap' error_policy='stop'` |
+| 写入前的保护 | `pool_guard`（xfs、挂载点、hostid） | 同左 | `drv_guard`（文件系统类型 `gpfs`、标记文件） | `drv_guard`（本机有集群配置、标记对象，§9.2） |
 | `volumes.hyper` | 文件所在节点 | 文件所在节点 | 0 | 0 |
 
-节点侧的改动：
+节点侧：
 
-- `pool_guard`（`scripts/kvm/storage_lib.sh:54-72`）现在只认 xfs、挂载点和带 `driver=local`、`hostid` 的标记文件，它留给本地池用。共享池的检查是驱动的 `drv_guard`（§4.5.2）：文件型的公共实现核对文件系统类型与标记文件（`driver=<驱动>`、`pool_uuid=<UUID>` 两行，不校验 hostid），GPFS 要求 `timeout 10 stat -f -c %T <根>` 等于 `gpfs`（fileset 入口不是挂载点，不能用 `mountpoint`）；RBD 读池的标记对象
-- `pool_root`（`storage_lib.sh:20-28`）和 `pool_enter` 把池根写死成 `/opt/cloudland/pools/<UUID>`；GPFS 池的根要从这个集群的共享池清单（`shared_pools.json`，§9.2）读，或者由 clapi 在命令里给出
+- `pool_guard`（`scripts/kvm/storage_lib.sh`）只认 xfs、挂载点和带 `driver=local`、`hostid` 的标记文件，只给本地池用。共享池的检查是驱动的 `drv_guard`（§4.5.2）：文件型的公共实现（`drivers/file.sh`）核对文件系统类型与标记文件（`driver=<驱动>`、`pool_uuid=<UUID>` 两行，不校验 hostid），GPFS 要求 `timeout 10 stat -f -c %T <根>` 等于 `gpfs`（fileset 入口不是挂载点，不能用 `mountpoint`）；RBD 先确认本机有 `/etc/ceph/<集群UUID>.conf`，再读池的标记对象
+- `pool_root` 和 `pool_enter` 只管本地池（池根写死成 `/opt/cloudland/pools/<UUID>`）。共享池的根由 clapi 在命令的 JSON 里给出（`root`），`drv_init` 要求它是规范化的绝对路径（`realpath -m` 后不变），`drv_volume` 再要求卷的路径正好是 `<根>/volumes/volume-<卷ID>.disk`（RBD 是 `volume-<卷ID>`）
 - 脚本里不对池根目录做 `mkdir -p`，子目录在建池时一次建好（§7.4）
 
 ### 9.2 节点可用性
 
-照搬已实施的本地池探测做法（`pool_probe.sh`）：**每个池一个常驻的后台探测进程，心跳只读它写的状态文件**。原因是访问挂起的 GPFS 时进程会卡在不可中断状态，`timeout` 也杀不掉；如果检查是心跳或同步命令里做的，cloudlet 的串行队列和心跳都会被拖死，VPN 切换、负载均衡、中转网关的命令全排在它后面。
+照搬已实施的本地池探测做法（`pool_probe.sh`）：**探测在后台进程里做，心跳只读它写的状态文件**。原因是访问挂起的 GPFS 时进程会卡在不可中断状态，`timeout` 也杀不掉；如果检查是心跳或同步命令里做的，cloudlet 的串行队列和心跳都会被拖死，VPN 切换、负载均衡、中转网关的命令全排在它后面。
 
-- **池清单下发**：clapi 在建池、改池、删池、节点加入集群时，以及每 5 分钟一轮（兜底丢掉的命令），对每个集群的成员和客户端（列表非空才发）下发 `sync_shared_pools.sh <集群UUID>`（同步、很快），stdin 是这个集群的全部池：`[{uuid, driver, root | ceph_pool, conf, user, fs_type}]`。节点存成 `/opt/cloudland/run/storage/<集群UUID>/shared_pools.json`（每集群一份，开机和待启动列表合并读取，§9.9），并确保每个池的探测进程在跑、清单里没有的池的探测进程停掉
-- **探测**（`shared_pool_probe.sh <集群UUID> <池UUID>`，每 30 秒一次，结果写 `run/storage/<集群UUID>/probe-<池UUID>`）：
+- **池清单下发**：节点存成 `/opt/cloudland/run/storage/<集群UUID>/shared_pools.json`（每集群一份，开机和待启动列表合并读取，§9.9），每项是这个池的 `DriverArgs`：文件型 `{driver, pool, root, fs_type}`，RBD `{driver, pool, cluster, conf, user, secret_uuid, ceph_pool, quota_bytes}`（`pool` 是池 UUID）；清单里是 `active`、`disabled`、`creating` 的池。几条下发路径：
+  - 建池、删池：任务里的 `sync_pools` 一步（`stc_pools.sh`，只在任务开始时在线的节点上跑；建池时当场探测一次新池并回报，作为各节点的第一行）。改配额的任务不重发清单：Ceph 池清单里的 `quota_bytes` 要等下一轮兜底才到节点，期间探测仍按旧配额算容量
+  - 节点加入集群：收尾时给它每个池写一行 `unavailable`（「等它第一次上报」），3 秒后补发一轮
+  - 兜底：存储后台循环每 5 分钟（`SyncSharedPools`）对每个 ready 集群的每台在线成员和客户端下发 `sync_shared_pools.sh <集群UUID>`（同步、很快），stdin 是这个集群的全部池，空列表也发
+  - 远程挂载（§7.11）：挂载方集群的节点另收所属集群里、在被挂载文件系统上的池，`sync_shared_pools.sh <所属集群UUID> remote`
+- 节点收到清单只写文件，并停掉已不在任何清单里的池的探测（`shared_pools_prune`）；拉起探测是心跳的事
+- **探测**（`shared_pool_probe.sh <池UUID> <集群UUID>`）：心跳发现这个池没有探测在跑、且上次结果已超过 30 秒时，用 `setsid` 在后台拉起一次，探测写完状态就退出。状态写在 `run/pools/<池UUID>.state`（和本地池的放在一起），旁边的 `<池UUID>.shared` 记集群 UUID：
   - 探测进程调用驱动的 `drv_probe`（§4.5.2）：
   - 文件型（GPFS）：`drv_guard`，再在 `tmp/` 里建一个临时文件然后删掉，验证可写；同时读 `df` 的容量
-  - Ceph：`timeout 15 rados --conf <conf> --id <用户> -p <池> get cloudland-pool -`，内容等于池 UUID（连错集群、池被删除重建都能发现）
+  - Ceph：`drv_guard`（本机有 `/etc/ceph/<集群UUID>.conf`；`rados ... -p <池> get cloudland-pool -` 超时 20 秒，内容要有 `driver=ceph_rbd`、`pool_uuid=<池UUID>` 两行，连错集群、池被删除重建都能发现）；再写入并删除一个测试对象 `.probe-<节点>-<pid>`（集群写满时写会阻塞，20 秒写不进就判不可用）；容量取 `ceph df` 的 `stored + max_avail`，池有配额且配额更小时取配额
   - 判活看 `/proc/<pid>/cmdline`（沿用 `probe_alive`，pid 文件跨重启保留，不能只 `kill -0`）
-- **上报**：心跳的 `report_rc.sh` 读各探测状态，结果变化或距上次上报满 5 分钟时回调 `shared_pool_status '<NODE_ID>' '<base64 JSON>'`，每个池一项 `ready` / `unavailable` 加原因；状态文件超过 2 分钟没更新报 `unavailable`（原因「探测卡住」，通常就是存储挂起了）
-- **过期**：clapi 维护循环把超过 15 分钟没有上报的共享池行置为 `unavailable`。这是一条单独的规则：现有的过期规则要求 `capacity_at` 不为空（`storage_callbacks.go:312-317`），而共享池的行不填这一列
-- 不是集群成员或客户端的节点（例如 26.04 节点之于 GPFS 集群）根本没有这一行，等于不可用，调度和挂载时自然排除
+- **上报**：心跳的 `report_rc.sh`（`shared_pool_report`）读各探测状态，结果变化、用量跨过 80% / 85% / 90%，或距上次上报满 5 分钟时回调 `shared_pool_status '<NODE_ID>' '<base64 JSON>'`，每个池一项：`ready` / `unavailable`、原因和 `size` / `used` / `avail`。探测进程跑了超过 2 分钟、或状态文件超过 2 分钟没更新时报 `unavailable`（原因「probe stuck」，通常就是存储挂起了）；本次开机之前留下的状态报 `unavailable`（「开机后还没检查过」）
+- **clapi 接收**（`HandleSharedPoolStatus`）：只接受这个池所在集群的成员或客户端、以及经远程挂载用它的节点的上报；正在删除或出错的池不处理。每个节点一行 `hyper_storage_pools`（只有 `ready` / `unavailable`），报 `ready` 且带容量时同时更新池的容量（§9.5）
+- **过期**：clapi 维护循环（`maintainSharedPools`）把超过 15 分钟没有上报的共享池 `ready` 行置为 `unavailable`。这是一条单独的规则：本地池的过期规则要求 `capacity_at` 不为空，而没挂上池、从没报过容量的节点的行没有这一列
+- 不是集群成员或客户端、也没经远程挂载用这个池的节点（例如 26.04 节点之于 GPFS 集群）根本没有这一行，等于不可用，调度和挂载时自然排除。挂载方集群的节点退出集群时，它在所属方池上的行随之删除（`remoteMountHostLeft`），并收到所属方的空清单（`clearRemotePoolLists`）
 
 ### 9.3 Ceph RBD 驱动
 
 下表各操作在节点上由通用脚本（`*_volume_shared.sh` 等）调用 `drivers/ceph_rbd.sh` 的函数完成（§4.5.2）。
 
-**派给哪台节点**：不需要在云服务器所在节点执行的操作（建卷、未挂载时扩容、删卷、导入基础副本），由 clapi 从这个池 `ready` 的节点里挑一台（优先最近上报过的），用 `inter=` 下发，两种驱动共用一个函数（`pickPoolHost`）。不用 cland 的 `select=`：它会按 CPU / 内存挑，可能回 `error=resource`。
+**派给哪台节点**：不需要在云服务器所在节点执行的操作（建卷、未挂载时扩容、删卷、删基础副本），由 clapi 从这个池 `ready` 的在线节点里挑一台（优先最近上报过的），用 `inter=` 下发，两种驱动共用一个函数（`pickPoolHost`）。导入基础副本另用 `pickImportHost`（挑当前导入最少的，§9.6）。不用 cland 的 `select=`：它会按 CPU / 内存挑，可能回 `error=resource`。
 
 | 操作 | 在哪执行 | 做法 |
 |---|---|---|
-| 建卷 | `pickPoolHost` | `rbd create <池>/volume-<id> --size <MiB> --image-feature layering,exclusive-lock,object-map,fast-diff,deep-flatten`；回调 `create_volume_shared '<id>' 'available\|error' '<原因>'` |
-| 挂载 | 云服务器所在节点（该节点对这个池必须可用，否则 400） | `attach_volume_shared.sh`：驱动的 `drv_disk_xml` 生成 network 磁盘 XML（附录 F.1），`virsh attach-device --live --config`；回调不写 `hyper` |
+| 建卷 | `pickPoolHost` | `rbd create <池>/volume-<id> --size <GB>G --image-feature layering,exclusive-lock,object-map,fast-diff,deep-flatten`；回调 `create_volume_shared '<id>' 'available\|error' '<原因>'` |
+| 挂载 | 云服务器所在节点（该节点对这个池必须可用，否则 400） | `attach_volume_shared.sh`：驱动的 `drv_disk_xml` 生成 network 磁盘 XML（附录 F.1），`virsh attach-device --config --persistent`（运行中等于 `--live --config`）；回调不写 `hyper` |
 | 卸载 | 同上 | 与本地盘相同，用保存下来的磁盘 XML |
-| 扩容 | 已挂载且云服务器开着：所在节点 `virsh blockresize`（QEMU 会调用 RBD 的扩容）；否则 `pickPoolHost` 执行 `rbd resize` | 失败时按实际大小回滚，沿用 `rpcs/resize_volume.go` |
-| 删卷 | `pickPoolHost` | `rbd rm`。镜像还有监听者（有 QEMU 开着它）时 Ceph 拒绝删除，脚本把 `rbd status` 列出的监听者写进失败原因。这只是额外的检查：网络分区时监听会在约 30 秒后超时消失，真正的保证是 §12.3 的删除顺序 |
-| 系统盘 | 云服务器将要启动的节点 | 基础副本已 `synced` 后 `rbd clone <池>/image-<id>-<前缀>@base <池>/volume-<id>`，再 `rbd resize` 到规格大小；`clone_mode=copy` 时 `rbd deep cp` |
-| 捕获镜像 | 云服务器所在节点 | `qemu-img convert -f raw -O qcow2 'rbd:<池>/volume-<id>:id=<用户>:conf=<conf>' <临时文件>`，之后沿用现有的上传流程 |
+| 扩容 | 已挂载：发到云服务器所在节点（必须可用），开着时 `virsh blockresize`（QEMU 会调用 RBD 的扩容），关着时 `rbd resize`；未挂载：`pickPoolHost` 执行 `rbd resize` | 失败时按实际大小回滚，沿用 `rpcs/resize_volume.go` |
+| 删卷 | `pickPoolHost` | 先查 `rbd status` 的监听者，有就失败并把地址写进原因；再 `rbd rm`，只有 `No such file or directory` 才当作已不在，超时或其他错误一律失败、保留记录。监听者检查只是额外的：网络分区时监听会在约 30 秒后超时消失，真正的保证是 §12.3 的删除顺序 |
+| 系统盘 | 云服务器将要启动的节点 | 基础副本已 `synced` 后 `rbd clone --rbd-default-clone-format 2 <池>/image-<id>-<前缀>@base <池>/volume-<id>`，克隆失败退回整盘复制；`clone_mode=copy` 时 `rbd cp <池>/image-<id>-<前缀>@base <池>/volume-<id>`（不用 `rbd deep cp`：它连快照一起复制，V13）；比规格小时再 `rbd resize` 到规格大小 |
+| 捕获镜像 | 云服务器所在节点 | `async_job/capture_image.sh`：`qemu-img convert -U -f raw -O qcow2 'rbd:<池>/volume-<id>:id=<用户>:conf=<conf>' $cache_tmp_dir/...`，之后沿用现有的上传流程 |
 | 救援 | 云服务器所在节点 | 救援盘照旧在本地；原系统盘用它自己的 network XML 挂成 `vdb` |
 
-磁盘 XML 里的用户名用集群 `attrs` 里的 `client_user`（外部集群不一定叫 `cloudland`）。mon 地址：写死在 XML 里的话，mon 换了地址后，已运行的云服务器不受影响（librbd 会从集群学到新的 mon 表），但持久化的域定义里还是旧地址，下次启动可能连不上。优先用 libvirt 的 `<config file='/etc/ceph/<集群UUID>.conf'/>` 引用配置文件（libvirt 12 是否支持 RBD 磁盘的这个写法，待验证，V12）；不支持时，mon 变更后由编排器刷新所有相关域定义里的地址。
+磁盘 XML 里的用户名用集群 `attrs` 里的 `client_user`（外部集群不一定叫 `cloudland`）。mon 地址不写进 XML：用 libvirt 的 `<config file='/etc/ceph/<集群UUID>.conf'/>` 引用配置文件（V12 已验证：libvirt 12 / QEMU 10.2 与 24.04 的 libvirt 10.0 / QEMU 8.2 上热挂、在线扩容、热迁移都正常），mon 换了地址只要更新这个文件，域定义不用改。
 
 ### 9.4 GPFS 驱动
 
-GPFS 是文件型：下表的大部分操作是 `drivers/file.sh` 的公共实现，`drivers/gpfs.sh` 只覆盖 `drv_guard`、`drv_import_image`、`drv_clone`（§4.5.2）。
+GPFS 是文件型：下表的操作都是 `drivers/file.sh` 的公共实现，`drivers/gpfs.sh` 只覆盖 `drv_base_seal`（导入完成后 `mmclone snap`）和 `drv_clone_fast`（`mmclone copy`），并把出错策略设为 `error_policy='stop'`（公共实现是 `enospace`）（§4.5.2）。
 
 | 操作 | 在哪执行 | 做法 |
 |---|---|---|
-| 建卷 | `pickPoolHost` | `drv_guard`，`qemu-img create -f qcow2 -o cluster_size=2M <绝对路径> <大小>`（目标已存在则失败，不覆盖）；回调 `create_volume_shared`。建卷时就落盘：不依赖任何节点，还能尽早发现池不可用或空间不足 |
-| 挂载 | 云服务器所在节点（必须可用） | `attach_volume_shared.sh`：`drv_guard`，磁盘 XML 用 `cache='none' error_policy='stop'`；回调不写 `hyper` |
+| 建卷 | `pickPoolHost` | `drv_guard`，先用 noclobber 占住文件名，再 `qemu-img create -f qcow2 -o cluster_size=2M <绝对路径> <大小>`（目标已存在则失败，不覆盖）；回调 `create_volume_shared`。建卷时就落盘：不依赖任何节点，还能尽早发现池不可用或空间不足 |
+| 挂载 | 云服务器所在节点（必须可用） | `attach_volume_shared.sh`：`drv_guard`，磁盘 XML 用 `cache='none' discard='unmap' error_policy='stop'`；回调不写 `hyper` |
 | 卸载 | 同上 | 与本地盘相同 |
-| 扩容 | 开着：`virsh blockresize`；关着或未挂载：`pickPoolHost` 执行 `qemu-img resize` | 与本地盘相同，只是路径由 clapi 下发 |
-| 删卷 | `pickPoolHost` | `drv_guard`，只删 `volumes/` 下文件名与卷 ID 对应的那个文件；路径用 `realpath -m` 规范化后必须在池根内（沿用 `pool_enter` 的做法） |
+| 扩容 | 已挂载：发到云服务器所在节点（必须可用），开着时 `virsh blockresize`，关着时 `qemu-img resize`；未挂载：`pickPoolHost` 执行 `qemu-img resize` | 与本地盘相同，只是路径由 clapi 下发 |
+| 删卷 | `pickPoolHost` | `drv_guard`，只删 `<根>/volumes/` 下文件名是 `volume-<卷ID>.disk` 的那个文件（`drv_volume` 要求路径正好是这个，`drv_init` 要求池根是规范化路径，`drv_delete` 再核对目录与文件名） |
 | 系统盘 | 将要启动的节点 | 基础副本已 `synced` 后 `mmclone copy <基础副本> <系统盘>`，失败退回整盘复制（回调里报告实际用了哪种，§9.7）；`clone_mode=copy` 时 `qemu-img convert`；再 `qemu-img resize`；NVRAM 从模板复制到池里 |
 | 捕获镜像、救援 | 云服务器所在节点 | 与本地盘相同，路径由 clapi 下发 |
 
-`mm*` 命令默认不在 `PATH` 里，脚本一律写全路径 `/usr/lpp/mmfs/bin/`。
+`mm*` 命令默认不在 `PATH` 里，脚本一律写全路径（`${gpfs_bin:-/usr/lpp/mmfs/bin}`）。
 
 ### 9.5 容量与准入
 
-**容量口径**（健康看护每分钟采集，§14.1）：
+**容量口径**：各节点的探测进程（§9.2）每 30 秒取一次，随 `shared_pool_status` 上报；clapi 用任一报 `ready` 的节点报来的值更新 `storage_pools.capacity_bytes` / `used_bytes` / `capacity_at`（`recordSharedPoolCapacity`）。健康看护（§14.1）的 `mmdf` 只写文件系统的容量（`storage_filesystems`），不写池。
 
 | | 设了配额 | 没设配额 |
 |---|---|---|
-| GPFS 池 | fileset 配额（`mmlsquota -j`） | 池所在 **GPFS 存储池**（`system` / `data`）的容量（`mmdf -Y` 按存储池的部分），不是整个文件系统 |
-| Ceph 池 | 池配额 | `stored + max_avail` |
+| GPFS 池 | fileset 配额：建池时给文件系统打开 `--filesetdf`（`gpfs_pool.sh`），fileset 根的 `df` 显示的就是配额 | fileset 根的 `df`，即**整个文件系统**的容量。原设想的「池所在 GPFS 存储池（`system` / `data`）的容量（`mmdf -Y` 按存储池的部分）」没实现：有两种介质、池又没设配额时容量偏大 |
+| Ceph 池 | `stored + max_avail`，配额更小时取配额 | `stored + max_avail` |
 
-**同一个 GPFS 存储池（或同一个 Ceph CRUSH 规则下）有几个不设配额的 CloudLand 池时，它们共享同一份容量**：准入时这几个池的已分配量合并计算，不能各自按整份容量 × `over_ratio` 分配。界面建池时建议设配额。
+**同一个 GPFS 存储池（或同一个 Ceph CRUSH 规则下）有几个不设配额的 CloudLand 池时，它们共享同一份容量**：准入时这几个池的已分配量合并计算，不能各自按整份容量 × `over_ratio` 分配。分组由驱动的 `CapacityGroup` 给出：GPFS 是同一文件系统、同一 `gpfs_pool` 参数，Ceph 是同一集群、同一 `crush_rule`；导入的 Ceph 集群的池各自单算（不知道它的 RBD 池还和谁共用 OSD）。界面建池时建议设配额。
 
-**准入**：建卷、建云服务器（系统盘）、扩容时，在事务里 `FOR UPDATE` 锁 `storage_pools` 那一行（共享容量时锁同组的所有池行，按 ID 排序加锁）：
+**准入**（`admitShared`）：建卷、建云服务器（系统盘）、扩容（含重装改大系统盘）时，在事务里 `FOR UPDATE` 锁 `storage_pools` 那一行（共享容量时锁同组的所有池行，按 ID 排序加锁）：
 
-- 已分配（这些池里所有卷的 `size` 之和）加本次新增，不超过 `容量 × over_ratio`
+- 已分配（这些池里所有卷的 `size` 之和）加本次新增，不超过 `容量 × over_ratio`（取本池的容量与比例）
 - 实际用量低于容量的 90%
-- **容量未知时拒绝**（与现有的本地池一致，`storage_admission.go:142-147`）。Ceph 写满会阻塞整个集群，不能放过
+- **容量未知时拒绝**（与本地池一致，`storage_admission.go` 的 `admit`）。Ceph 写满会阻塞整个集群，不能放过
 
-现有的准入（`services/storage_admission.go:57-165`）按「机器 × 池」锁 `hyper_storage_pools` 的行、要求每台机器都有一行，这是本地池的口径；共享池改走上面这条池级的分支。
+本地池的准入（`storage_admission.go` 的 `admit`）按「机器 × 池」锁 `hyper_storage_pools` 的行、要求每台机器都有一行；共享池走上面这条池级的分支。
 
-**调度**：系统盘放共享池时，候选节点 = 可用区内的活动节点 ∩ 该池可用的节点，交给 cland 的 `select=` 挑（CPU、内存照常检查；磁盘维度为 0，因为调度器的磁盘需求只算内置池，`services/instance_placement.go` 的 `schedulerResources`）。现在非内置池走的是 clapi 自选节点加预留（`services/instance.go:304-317` 调用 `instance_placement.go:210` 的 `bootHost`），那是给按机器计容量的本地池用的，共享池不需要。**放置组的路径**（`instance_placement.go:98-180` 的 `startCreationPlacement`）同样对非内置池按「机器 × 池」做准入，共享池要改成池级准入，候选节点同样与「该池可用的节点」取交集。指定了宿主机时，该节点必须在候选集合里。
+**调度**：系统盘放共享池时，候选节点 = 可用区内的活动节点 ∩ 该池 `ready` 的节点（`sharedPoolHostsOfZone`），交给 cland 的 `select=` 挑（CPU、内存照常检查；磁盘维度为 0，因为调度器的磁盘需求只算内置池，`services/instance_placement.go` 的 `schedulerResources`）。本地池（非内置）的系统盘才走 clapi 自选节点加预留（`bootHost`），共享池不走。**放置组的路径**（`startCreationPlacement`）对共享池同样用池级准入，候选节点取 `sharedPoolHostsOfZone`，磁盘需求置 0，只按 CPU、内存放置。指定了宿主机时，该节点必须在候选集合里，否则 400。
 
 **写满时的表现不同**，这一点要在界面和文档里说清楚：
 
 | | GPFS | Ceph |
 |---|---|---|
-| 到配额 | 写操作返回 `EDQUOT`。QEMU 默认只对 `ENOSPC` 暂停云服务器，所以 GPFS 盘用 `error_policy='stop'`，出错就暂停，不把 I/O 错误交给客户机（是否生效待验证，V8） | 池被标成「配额已满」，**写操作阻塞**（librbd 一直等），云服务器表现为 I/O 卡住，而不是暂停 |
+| 到配额 | 写操作返回 `EDQUOT`。QEMU 默认只对 `ENOSPC` 暂停云服务器，所以 GPFS 盘用 `error_policy='stop'`，出错就暂停，不把 I/O 错误交给客户机（是否生效待验证，V8） | 池被标成「配额已满」，**写操作阻塞**（librbd 一直等），云服务器表现为 I/O 卡住，而不是暂停。V8 的 Ceph 一半已验证：池到配额约 108% 时 `POOL_FULL`，来宾写入阻塞、云服务器保持 running，各节点的探测 30–50 秒判池不可用；配额改大后写入立即完成 |
 | 整体写满 | 文件系统满，同上 | 集群到 `full_ratio`（默认 95%）后**全集群所有池的写都阻塞**；85% 起是 `nearfull` |
 
-Ceph 写满的后果更重，所以 Ceph 池默认 `over_ratio=1`（不超分），`nearfull` 与池用量 80% / 90% 都告警（§14）。本地池的「写满后自动暂停、空间回落后自动恢复」（本地方案 §6.1）只针对本地盘，共享盘导致的暂停不自动恢复。
+Ceph 写满的后果更重，所以共享池默认 `over_ratio=1`（不超分；GPFS 池默认也是 1），`nearfull` 与池用量 80% / 90% 都告警（§14）。本地池的「写满后自动暂停、空间回落后自动恢复」（本地方案 §6.1）只针对本地盘，共享盘导致的暂停不自动恢复。
 
 ### 9.6 镜像基础副本
 
-**由 clapi 串行导入**：第一次在某个共享池里用某个镜像建云服务器时，clapi 建 `image_storages` 记录（`syncing`），用 `pickPoolHost` 挑一台节点，以后台作业导入（`import_image_shared.sh` 调用驱动的 `drv_import_image`，经 `async_exec`，不占串行队列），回调 `image_storage_status '<id>' 'synced|error' '<原因>'` 后，才下发创建云服务器的命令；同一镜像同一池同时只有一个导入，其余创建请求排在后面（实例停在 `pending`，回调到了再下发）。
+**由 clapi 串行导入**：第一次在某个共享池里用某个镜像建云服务器（或重装到这个镜像、预热）时，clapi 建 `image_storages` 记录（`syncing`），用 `pickImportHost` 挑一台节点（池 `ready`、在线、当前导入最少的），以后台作业导入（`import_image_shared.sh` 调用驱动的 `drv_import_image`，经 `async_exec`，不占串行队列），回调 `image_storage_status '<id>' 'synced|error' '<原因>'` 后，才下发创建云服务器的命令；同一镜像同一池同时只有一个导入（先锁池行、再锁副本行），其余创建请求排在后面：实例停在 `provisioning`（reason 写明在等副本），命令存进 `image_storage_waiters`，回调到了、核对实例还处于原来的状态（`waiterStillValid`）再下发。只有派去导入的那台节点的回报被采纳（`image_storages.hostid`）。
 
 不在 `launch_vm.sh` 里导入：它是同步执行的，导入 20 GB 镜像（Ceph 要写三份）会占住这台节点的串行队列好几分钟；几台节点同时抢着导入还会成倍增加 I/O。
 
 **预热、进度、并发（2026-10-07 第二轮）**：
-- 系统管理员可以预先把镜像导入指定共享池（`POST /images/:id/storage_copies {storage_pools}`），删除没有云服务器引用的副本（`DELETE /images/:id/storage_copies/:pool`，有引用时 409），在镜像详情页的「共享池副本」卡片里看每个池的状态、进度与导入节点（每 3 秒刷新）
-- 导入作业分阶段写进度（`$run_dir/image_imports/`：等槽位 / 下载 / 写入，`curl -#` 与 `qemu-img convert -p` 的百分比），心跳转发 `image_storage_progress`，记在 `image_storages.phase` / `progress`
-- 每台节点同时导入的数量受 `image_import_concurrency` 限制（`cloudrc`，默认 2，`flock` 槽位）；clapi 挑导入节点时选当前导入最少的
+- 系统管理员可以预先把镜像导入指定共享池（`POST /images/:id/storage_copies {storage_pools}`，已同步或正在导入的池不动，失败的重新导入；救援镜像不行），列出各池的副本（`GET /images/:id/storage_copies`），删除没有云服务器引用的副本（`DELETE /images/:id/storage_copies/:pool`：有系统盘从它克隆、有命令在等它、或导入还在进行（3 小时内）时 409；从没导入成功或失败的副本直接删记录，已同步的置 `deleting` 交节点删），在镜像详情页的「共享池副本」卡片里看每个池的状态、进度与导入节点（每 3 秒刷新）
+- 导入作业分阶段写进度（`$run_dir/image_imports/`：等槽位 `wait` / 下载 `download` / 写入 `write`，`curl -#` 与 `qemu-img convert -p` 的百分比），心跳转发 `image_storage_progress`，记在 `image_storages.phase` / `progress`
+- 每台节点同时导入的数量受 `image_import_concurrency` 限制（默认 2，写在 `storage_lib.sh`，可在 `cloudrc.local` 改；`flock` 槽位，抢不到每 5 秒再试）；clapi 挑导入节点时选当前导入最少的
 
 导入的做法（节点上）：
 
-- **GPFS**：本地缓存镜像（`ensure_image_cached`）→ `qemu-img convert -O qcow2 -o cluster_size=2M` 到 `tmp/image-<镜像ID>-<前缀>.<节点>-<进程>.import` → `mmclone snap`（变成只读的克隆父文件；**不论池的 `clone_mode` 都做**，之后把池改成克隆方式也能直接用，复制方式从只读父文件整盘复制同样可以）→ 拿到这个副本的锁目录 `tmp/image-<镜像ID>-<前缀>.place`（`mkdir` 是原子的，GPFS 上跨节点也是）后先查再 `mv` 到正式路径，目标已存在则删掉自己的临时文件、视为成功；锁目录超过 10 分钟算作业死掉留下的、直接清掉。**不用 `ln` 硬链接**：GPFS 拒绝给克隆父文件建硬链接（`Operation not permitted`，2026-10-03 在 `gp1` 上实测）
+- **GPFS**：本地缓存镜像（`ensure_image_cached`）→ `qemu-img convert -O qcow2 -o cluster_size=2M` 到 `tmp/image-<镜像ID>-<前缀>.<节点>-<进程>.import` → `mmclone snap`（`drv_base_seal`，变成只读的克隆父文件；**不论池的 `clone_mode` 都做**，之后把池改成克隆方式也能直接用，复制方式从只读父文件整盘复制同样可以）→ 拿到这个副本的锁目录 `tmp/image-<镜像ID>-<前缀>.place`（`mkdir` 是原子的，GPFS 上跨节点也是；最多等 1 分钟，拿不到这次导入失败）后先查再 `mv` 到正式路径，目标已存在则删掉自己的临时文件、视为成功；锁目录超过 10 分钟算作业死掉留下的、直接清掉。**不用 `ln` 硬链接**：GPFS 拒绝给克隆父文件建硬链接（`Operation not permitted`，2026-10-03 在 `gp1` 上实测）
 - **Ceph**：本地缓存镜像 → `qemu-img convert -W -m 16 -O raw` 到 `rbd:<池>/tmp-image-<镜像ID>-<前缀>-<节点>-<进程>`（乱序写、16 个协程：按顺序写时每块都要等三副本写完，测试集群上慢 4.6 倍） → `rbd snap create ...@base` → `rbd rename` 到正式名（`rbd rename` 遇到同名直接失败；失败时正式名已在就删掉自己的临时镜像、视为成功）。**快照不保护**，克隆用格式 v2（V13：24.04 的 19.2 上可用），所以删副本前要先数子镜像（`rbd children`），有就拒绝——格式 v2 下删有子镜像的快照只会把它移进回收站
 - 作业中断留下的临时文件 / 临时 RBD 镜像由下一次导入同一副本时先清理：一小时没修改的一律删除（clapi 同一副本同时只发一个导入，超时重发要等 3 小时）
 
-节点脚本：`import_image_shared.sh`（同步检查后交给 `async_job/import_image_shared.sh`）、`delete_image_shared.sh`，驱动函数 `drv_base_check` / `drv_base_exists` / `drv_base_missing` / `drv_import_image` / `drv_import_cleanup` / `drv_base_delete`（`drivers/file.sh`、`gpfs.sh`、`ceph_rbd.sh`）。导入超过 3 小时没有任何回报就判失败，等着它的命令一并失败，下次使用重新导入（节点上已经有副本时直接回 `synced`）；每次进度回报都把 `sent_at` 推到当时，节点对没变的阶段每 10 分钟再报一次，所以排队等导入槽位、下载很慢的导入不会被误判（代码审查前从下发时刻算，排队超过 3 小时的副本被判失败）。删除没回报 30 分钟后重发。两者都由存储看护（`maintainImageStorages`）做。
+节点脚本：`import_image_shared.sh`（同步检查后交给 `async_job/import_image_shared.sh`）、`delete_image_shared.sh`，驱动函数 `drv_base_check` / `drv_base_exists` / `drv_base_missing` / `drv_import_image` / `drv_import_cleanup` / `drv_base_delete`（`drivers/file.sh`、`ceph_rbd.sh`；GPFS 只另有 `drv_base_seal`，在 `gpfs.sh`）。导入超过 3 小时没有任何回报就判失败，等着它的命令一并失败，下次使用重新导入（节点上已经有副本时直接回 `synced`）；每次进度回报都把 `sent_at` 推到当时，节点对没变的阶段每 10 分钟再报一次，所以排队等导入槽位、下载很慢的导入不会被误判（代码审查前从下发时刻算，排队超过 3 小时的副本被判失败）。删除没回报 30 分钟后重发。两者都由存储看护（`maintainImageStorages`）做。
 
-~~可选预热：`PATCH /images/:id` 带 `storage_pools: [...]`，提前导入。~~ S4 没做。
+~~可选预热：`PATCH /images/:id` 带 `storage_pools: [...]`，提前导入。~~ S4 没做；第二轮改为 `POST /images/:id/storage_copies`（见上）。
 
-**删除**：删除镜像时，对每个共享池里的基础副本统计引用数（`volumes.base_image_storage_id` 指向它且没删的卷）。为 0 就由 `pickPoolHost` 删除并删记录；不为 0 就置 `deleting`，之后删除或重装云服务器时再检查，归零再删（看护每次看到还有克隆就把下次检查推后，`sent_at` 刷新，不是每分钟都查；看护重发前在行锁下再核对一次 `sent_at`，别的 clapi 刚处理过的跳过）。**副本还在导入（`syncing`、3 小时内）时拒绝删镜像**（`ErrImageInUse`）：删了的话导入完成时副本会放到位、却没有记录，成了孤儿；用这个镜像的云服务器本来就会挡住删除，所以不会有命令在等这个副本。
+**删除**：删除镜像时，对每个共享池里的基础副本统计引用数（`volumes.base_image_storage_id` 指向它且没删的卷）。副本先都置 `deleting`；为 0 的由 `pickPoolHost` 下发删除，节点回 `deleted` 后删记录；不为 0 的留在 `deleting`，之后删除或重装云服务器时再检查，归零再删（看护每次看到还有克隆就把下次检查推后，`sent_at` 刷新，不是每分钟都查；看护重发前在行锁下再核对一次 `sent_at`，别的 clapi 刚处理过的跳过）。**副本还在导入（`syncing`、3 小时内）时拒绝删镜像**（`ErrImageInUse`）：删了的话导入完成时副本会放到位、却没有记录，成了孤儿；用这个镜像的云服务器本来就会挡住删除，所以不会有命令在等这个副本。
 
-**只有确定不在才算不在**：`drv_base_delete` 遇到存储不应答（GPFS 上 `stat` 超时、Ceph 命令超时或其他错误）一律失败、保留记录，只有文件不存在 / `rbd` 报 `No such file or directory` 才当作已删；`drv_base_missing` 同理。建系统盘时副本确定不在池里（被手工删掉、从备份恢复），节点回 `create_boot_shared '<卷>' 'nocopy' '<副本 ID>' '<原因>'`，clapi 把这个副本从 `synced` 改成 `error`，下一台云服务器重新导入，不会一直按「已同步」去克隆一个不存在的文件。GPFS 是否允许删除还有子克隆的父文件不确定，Ceph 明确不允许（要先 `rbd flatten` 子镜像），引用计数对两者都适用。删池时引用数为 0 的副本随池删除（§7.4、§8.3）。
+**只有确定不在才算不在**：`drv_base_delete` 遇到存储不应答（GPFS 上 `stat` 超时、Ceph 命令超时或其他错误）一律失败、保留记录，只有文件不存在 / `rbd` 报 `No such file or directory` 才当作已删；`drv_base_missing` 同理。建系统盘时副本确定不在池里（被手工删掉、从备份恢复），节点回 `create_boot_shared '<卷>' 'nocopy' '<副本 ID>' '<原因>'`，clapi 把这个副本从 `synced` 改成 `error`，下一台云服务器重新导入，不会一直按「已同步」去克隆一个不存在的文件。GPFS 拒绝删除还有克隆的父文件（V4 已验证），Ceph 明确不允许（要先 `rbd flatten` 子镜像），引用计数对两者都适用。删池时引用数为 0 的副本随池删除（§7.4、§8.3）。
 
 ### 9.7 创建云服务器（系统盘在共享池）
 
@@ -1468,23 +1717,24 @@ clapi（`services/instance.go` 的 `Create`）：
 2. 候选节点按 §9.5 过滤
 3. 系统盘记录：`storage_pool_id`、路径（§9.1）、状态 `pending`
 4. 基础副本：`image_storages(镜像, 池)` 不是 `synced` 时先按 §9.6 导入，导入完成后再继续下面一步（`clone_mode=copy` 的池也一样，节点从池内的基础副本整盘复制，不再各自下载）
-5. 元数据（stdin 里的 JSON）的 `boot_disk` 带上驱动相关的全部参数，脚本不再推算：
+5. 元数据（stdin 里的 JSON）的 `boot_disk` 带上驱动相关的全部参数（`sharedBootDisk`：池的 `DriverArgs`，加卷与副本），脚本不再推算：
 
 ```json
 "boot_disk": {
   "volume_id": 12,
   "driver": "ceph_rbd",
   "pool": "<pool uuid>",
+  "cluster": "<cluster uuid>",
   "ceph_pool": "cl_1a2b3c4d",
   "image": "volume-12",
   "conf": "/etc/ceph/<cluster uuid>.conf",
   "user": "cloudland",
   "secret_uuid": "<libvirt secret uuid>",
+  "quota_bytes": 0,
   "size_gb": 40,
-  "image_base": "image-3-ab12cd34@base",
+  "image_base": "image-3-ab12cd34",
   "image_storage_id": 7,
-  "clone_mode": "clone",
-  "existing": false
+  "clone_mode": "clone"
 }
 ```
 
@@ -1493,39 +1743,39 @@ clapi（`services/instance.go` 的 `Create`）：
   "volume_id": 12,
   "driver": "gpfs",
   "pool": "<pool uuid>",
-  "pool_root": "/gpfs/fs1/cl_1a2b3c4d",
+  "root": "/gpfs/fs1/cl_1a2b3c4d",
   "fs_type": "gpfs",
   "path": "/gpfs/fs1/cl_1a2b3c4d/volumes/volume-12.disk",
   "size_gb": 40,
   "image_base": "/gpfs/fs1/cl_1a2b3c4d/images/image-3-ab12cd34.qcow2",
   "image_storage_id": 7,
   "clone_mode": "clone",
-  "nvram": "/gpfs/fs1/cl_1a2b3c4d/nvram/inst-9_VARS.fd",
-  "existing": false
+  "nvram": "/gpfs/fs1/cl_1a2b3c4d/nvram/inst-9_VARS.fd"
 }
 ```
 
-~~本地系统盘同样用这个结构（`driver=local`，没有 `image_base`）。~~ 实现里本地系统盘仍走原来的位置参数，只有共享池的系统盘带 `boot_disk`（S4）。**决定不统一**（S4 定下，2026-10-07 第二轮再次确认）：改成一种传法用户看到的行为不变，却要动绝大多数云服务器走的默认路径——创建之外，重装、救援、迁移、扩容、删除也都读系统盘位置，改错一处影响几乎所有云服务器。将来本来就要大改本地系统盘流程时再顺带合并。`existing=true` 只用于宕机恢复（§11.3）：跳过克隆和扩容，直接用已有的盘（S6 再做）。
+RBD 的 `image_base` 是副本的镜像名，不带快照名，驱动自己加 `@base`；RBD 云服务器没有 `nvram`（NVRAM 在节点本地）。
 
-节点（`launch_vm.sh`）按驱动：可用性检查（失败就回调 `error`，实例进入 `error`）→ **目标已存在就失败**（`qemu-img convert` 会静默覆盖已存在的文件，不能让它发生；`existing=true` 时反过来要求目标存在）→ 克隆或复制 → 校验镜像虚拟大小不超过规格后扩到规格大小 → NVRAM → 定义并启动域 → 回调。回调 `create_boot_shared '<卷 ID>' 'attached|error|nocopy' '<克隆来源的副本 ID，整盘复制为 0；nocopy 时是找不到的副本>' '<原因>'`（实现里是独立的回调，不与数据卷的 `create_volume_shared` 共用），clapi 据此写 `base_image_storage_id`。磁盘元素由驱动的 `drv_disk_xml` 生成，换掉模板里的文件盘、保留它的 PCI 地址（`storage_lib.sh` 的 `xml_replace_disk`，只改这一个元素，其余逐字节不变）。**克隆或复制开始之后**任何一步失败，删掉这次生成的系统盘（路径唯一，不会误删）；`existing=true` 时绝不删盘。
+~~本地系统盘同样用这个结构（`driver=local`，没有 `image_base`）。~~ 实现里本地系统盘仍走原来的位置参数，只有共享池的系统盘带 `boot_disk`（S4）。**决定不统一**（S4 定下，2026-10-07 第二轮再次确认）：改成一种传法用户看到的行为不变，却要动绝大多数云服务器走的默认路径——创建之外，重装、救援、迁移、扩容、删除也都读系统盘位置，改错一处影响几乎所有云服务器。将来本来就要大改本地系统盘流程时再顺带合并。正常创建的 `boot_disk` 里没有 `existing`；`existing=true` 只出现在宕机恢复（§11.3）的元数据里（S6 已实现），同时还有 `evacuate {migration, start}` 与 `data_disks [{…, device}]`：跳过克隆和扩容，直接用已有的盘。
+
+节点（`launch_vm.sh`）按驱动：可用性检查（失败就回调 `error`，实例进入 `error`）→ **目标已存在就失败**（`qemu-img convert` 会静默覆盖已存在的文件，不能让它发生；`existing=true` 时反过来要求目标存在）→ 克隆或复制 → 校验镜像虚拟大小不超过规格后扩到规格大小 → NVRAM → 回调 → 定义并启动域 → 回报 `launch_vm.sh`。回调 `create_boot_shared '<卷 ID>' 'attached|error|nocopy' '<克隆来源的副本 ID，整盘复制为 0；nocopy 时是找不到的副本>' '<原因>'`（实现里是独立的回调，不与数据卷的 `create_volume_shared` 共用；`storage_lib.sh` 的 `shared_boot_report`），clapi 据此写 `base_image_storage_id`。磁盘元素由驱动的 `drv_disk_xml` 生成，换掉模板里的文件盘、保留它的 PCI 地址（`storage_lib.sh` 的 `xml_replace_disk`，只改这一个元素，其余逐字节不变）。克隆或复制、读大小、扩容、复制 NVRAM 任一步失败，删掉这次生成的系统盘（路径唯一，不会误删）。**磁盘做好、回了 `attached` 之后**，定义或启动域失败（`xml_replace_disk`、VNC 密码、`virsh define` / `start`）不删盘：只回报 `launch_vm.sh` 的 `error`，实例进 `error`、系统盘是已挂载，删云服务器时再按 §9.8 删盘。`existing=true` 时绝不删盘。
 
 ### 9.8 重装、救援、捕获、删除云服务器
 
-- **删除云服务器**：删除请求不删共享系统盘的记录，而是置 `deleting`，`clear_vm.sh` 收到的系统盘参数是 `-`（不碰它）。clapi 收到 `clear_vm` 回调（域已经销毁）后，在同一个事务里用 `pickPoolHost` 组好 `delete_volume_shared.sh`（GPFS 池带上 `nvram`，脚本只删 `<池>/nvram/inst-<ID>_VARS.fd` 这种名字的文件），提交后下发；`clear_volume` 回来删记录、检查基础副本的引用数（§9.6）。云服务器所在节点离线时 `clear_vm` 没法执行，共享系统盘先保留。删除失败的系统盘置 `delete_failed`（不像数据卷那样回到 `available`；按卷再删时删除命令发不出去也一样留在 `delete_failed`），云服务器已经不在时可以按卷再删一次（`VolumeAdmin.Delete` 放行「实例已删的系统盘」）。`clear_vm` 回调来得比看护判超时晚（节点上命令排队很久）时，已经是 `delete_failed` 的系统盘同样在这时删掉（先改回 `deleting`，`clear_volume` 只认 `deleting`）。等着基础副本的启动命令随云服务器一起删掉
+- **删除云服务器**：删除请求不删共享系统盘的记录，而是置 `deleting`，`clear_vm.sh` 收到的系统盘参数是 `-`（不碰它）。clapi 收到 `clear_vm` 回调（域已经销毁）后，在同一个事务里用 `pickPoolHost` 组好 `delete_volume_shared.sh`（GPFS 池带上 `nvram`，脚本只删 `<池>/nvram/inst-<ID>_VARS.fd` 这种名字的文件），提交后下发（`SharedBootRemoval`）；`clear_volume` 回来删记录、检查基础副本的引用数（§9.6）。云服务器所在节点离线时 `clear_vm` 没法执行，共享系统盘先保留；节点回来后对账（§11.4）发现删除已超过 2 分钟还在 `deleting`，会重发 `clear_vm.sh`。删除失败的系统盘置 `delete_failed`（不像数据卷那样回到 `available`；按卷再删时删除命令发不出去也一样留在 `delete_failed`），云服务器已经不在时可以按卷再删一次（`VolumeAdmin.Delete` 放行「实例已删的系统盘」）。`clear_vm` 回调来得比看护判超时晚（节点上命令排队很久）时，已经是 `delete_failed` 的系统盘同样在这时删掉（先改回 `deleting`，`clear_volume` 只认 `deleting`）。等着基础副本的启动命令随云服务器一起删掉
 - **重装**：先从新镜像的基础副本做一块临时盘（`drv_temp_of`：GPFS `tmp/volume-<ID>.reinstall.disk`，RBD `volume-<ID>-reinstall`），销毁域（`--keep-nvram`）之后删旧盘、把临时盘改名到原来的位置；删旧盘失败就按原定义把云服务器拉回来并报错，旧盘始终不先删（比原设想的「先删再克隆到同一路径」稳妥）。clapi 更新 `base_image_storage_id` 并检查旧基础副本的引用数。新镜像在池里还没有副本时，重装命令同样排在导入后面；导入失败时云服务器置 `error`（它的记录已经写上新镜像、规格、密码，只能再重装一次），系统盘没动、容量记录改回原值；导入好了但重装命令发不出去时同样处理。**云服务器在 `reinstalling` 时拒绝再次重装、救援和调整规格**：等副本的重装会在之后执行，中间插进来的操作会被它覆盖（原来重装、救援只挡 `rescuing`，调整规格只挡 `resizing`）
-- **救援**：救援盘永远在本地，原系统盘按驱动的磁盘 XML（`boot_disk` 放在元数据里，位置参数给 `-`）挂进救援虚拟机；救援时挂的数据盘按 `<source>` 的 `file` 或 `name` 认，RBD 数据盘也能挂进去（原来只认文件盘）
+- **救援**：救援盘永远在本地，原系统盘按驱动的磁盘 XML（`boot_disk` 放在元数据里，位置参数给 `-`）挂进救援虚拟机；救援时挂的数据盘按 `<source>` 的 `file` 或 `name` 认，RBD 数据盘也能挂进去（原来只认文件盘）。clapi 先确认这台节点能用系统盘的池；节点在关机之前再做一次 `drv_guard`，不通过就回报 `'<当前域状态>' 'refused'`，clapi 按它恢复云服务器的状态
 - **捕获镜像**：源磁盘由 clapi 下发（`BootDiskSource`：GPFS 是文件路径，Ceph 是 `rbd:<池>/<镜像>:id=<用户>:conf=<配置>`），`async_job/capture_image.sh` 对 `rbd:` 按 raw 读，临时文件放 `$cache_tmp_dir`
-- **扩容**：共享池里的系统盘没有 `disk-<ID>.xml`，在线扩容按域定义里 `source` 是这块盘的那个设备找（`resize_volume_shared.sh`）；clapi 同时改 `instances.disk`（本地池原来就改，共享分支漏了；扩容失败的回调与命令发不出去时都改回原值）
+- **扩容**：共享池里的系统盘没有 `disk-<ID>.xml`，在线扩容按域定义里 `source` 是这块盘的那个设备找（`resize_volume_shared.sh`，`drv_dev_of`）；clapi 同时改 `instances.disk`（本地池原来就改，共享分支漏了；扩容失败的回调与命令发不出去时都改回原值）
 - **调整规格**：只改 CPU 和内存，不涉及磁盘
 
 ### 9.9 节点开机
 
 沿用本地方案的待启动列表（`$cache_dir/pending_start`，已实施）：磁盘所在的池没就绪的云服务器先不启动，之后每次心跳检查，池就绪了再启动并补发同步回调。
 
-- **现在的判断对共享盘无效**：`report_rc.sh:302-311` 的 `instance_pools` 把不在 `/opt/cloudland/pools/` 下的磁盘路径一律算作内置池、视为就绪，而且只看 `source/@file`，RBD 这种网络磁盘直接跳过。要改成：路径在某个 GPFS 池根下的，归到那个池；`<source protocol='rbd' name='<池>/...'>` 的，按池名归到对应的 Ceph 池（都查合并后的 `shared_pools.json`）；池是否就绪读探测状态（§9.2）
+- **共享盘的归池**（S2 / S3 已实现，`report_rc.sh` 的 `instance_pools`）：改造前只看 `source/@file`，不在 `/opt/cloudland/pools/` 下的路径一律算内置池、视为就绪，RBD 网络磁盘直接跳过。现在：文件路径在某个共享池根（清单的 `root`）下的，归到那个池；`<source protocol='rbd' name='<池>/...'>` 按池名和 `<config file>` 一起对上清单里的 `ceph_pool` 与 `conf`，归到对应的 Ceph 池，对不上的记为 `unknown-rbd`、照样等待（都查合并后的 `shared_pools.json`）；池是否就绪读探测状态（§9.2，状态必须是本次开机之后写的）
 - 所有判断都只读状态文件，**不能在心跳里等存储**（心跳被阻塞会让节点被判离线）
-
-这一条随 S2 / S3 一起做：一挂上共享数据盘，节点开机就需要它。阶段 S6 还要改掉「开机就把所有云服务器拉起来」这个行为，见 §11.4。
+- 开机前先关掉所有域的 autostart；**带共享盘的云服务器开机时一律先等对账**（S6 已实现，§11.4）：进待启动列表并加入对账等待（`reconcile_hold`），对账确认它还归本节点才启动；只有本地盘的照常按池是否就绪启动
 
 ---
 
@@ -1535,17 +1785,17 @@ clapi（`services/instance.go` 的 `Create`）：
 
 | 磁盘组成 | 源节点在线，云服务器运行中 | 源节点在线，云服务器已关机 | 源节点离线（`force`） |
 |---|---|---|---|
-| 全部本地 | 现状：`--live --copy-storage-all` | 现状：先复制磁盘，再 `--offline` | 不支持（现状） |
-| 本地与共享混合 | `--live --copy-storage-all --migrate-disks` **只列本地盘** | 只复制本地盘，再 `--offline` | 不支持 |
-| 全部共享（GPFS / Ceph） | `--live`，不复制磁盘 | `--offline`，只转移域定义 | **阶段 S6 起支持**，走 §11 |
+| 全部本地 | 现状：`--live --copy-storage-all` | 现状：先复制磁盘，再 `--offline` | 不支持（源节点离线时非强制迁移 400；强制迁移被疏散拒绝） |
+| 本地与共享混合 | `--live --copy-storage-all --migrate-disks` **只列本地盘** | 只复制本地盘，再 `--offline` | 不支持（疏散拒绝：本地盘在宕机的节点上） |
+| 全部共享（GPFS / Ceph） | `--live`，不复制磁盘 | `--offline`，只转移域定义 | 支持（S6），按源节点委托给疏散，走 §11 |
 
-- **目标节点**：对这台云服务器用到的所有共享池都必须可用；自动选目标时按这个条件过滤，手动指定时同样校验
-- **迁移计划**（`services/migration_plan.go:92-140` 的 `planDisks`，现在默认每块盘都复制）：共享盘的动作为「保留」，不进复制列表、不占目标端的预留
+- **目标节点**：对这台云服务器用到的所有共享池都必须可用；自动选目标时按这个条件过滤，手动指定时同样校验（`planDisks` 里对共享盘调用 `poolUsableOn`）
+- **迁移计划**（`services/migration_plan.go` 的 `planDisks`）：共享盘的计划项标 `shared: true`，目标池、路径与源相同，不进复制列表、不占目标端的预留（`admitPlan` 跳过）。迁移时共享盘不能换池（请求里给它指定别的池 400），本地盘也不能迁进共享池（400）
 - **NVRAM**：在 GPFS 池里的不用复制；在本地的（含 Ceph 云服务器的）照旧复制
 - **脚本**：`source_migration.sh` 只对本地盘做「目标上已有同名文件就中止」的检查、预建和复制（**共享盘在目标上本来就在，不排除的话每次都会中止**），没有本地盘时去掉 `--copy-storage-all`；`finish_source_migration.sh`、`clear_target_migration.sh` 只删清单里的本地盘；`complete_migration.sh` 刷新域定义的步骤对所有驱动都做
-- **clapi**：迁移完成时只更新本地池卷的 `hyper`。写库的是 `services/migration_plan.go:250-264` 的 `ApplyMigrationPlan`（由 `rpcs/migrate_vm.go:377` 调用），其中没有迁移计划时的兼容分支会把这台云服务器所有卷的 `hyper` 改成目标节点，同样要排除共享卷；有任何本地盘时不允许 `force`
+- **clapi**：迁移完成时只更新本地池卷的 `hyper`、池与路径。写库的是 `services/migration_plan.go` 的 `ApplyMigrationPlan`（由 `rpcs/migrate_vm.go` 调用），共享盘的计划项跳过；没有迁移计划时的兼容分支也只改非共享卷的 `hyper`。有任何本地盘时 `force` 被拒（疏散要求全部磁盘在共享池）
 - **阶段**：带共享数据盘的迁移（共享盘不复制）随 S2（GPFS）、S3（Ceph）各自一起做，不等 S4：一挂上共享数据盘，迁移就必须认得它，否则迁移会去复制一块在目标上本来就有的盘
-- **缓存模式**：libvirt 对共享存储上的磁盘做热迁移时，缓存模式不安全会拒绝（除非 `--unsafe`）。GPFS 盘用 `cache='none'`；RBD 盘 libvirt 按网络磁盘处理，`writeback` 是否被接受待验证（V6）
+- **缓存模式**：libvirt 对共享存储上的磁盘做热迁移时，缓存模式不安全会拒绝（除非 `--unsafe`）。GPFS 盘用 `cache='none'`；RBD 盘用 `writeback`，V6 已验证（2026-10-03，24.04 的 libvirt 10.0）：带 RBD 盘（同时带 GPFS 盘）的热迁移 10 秒完成，没有报不安全
 - RBD 的排他锁在热迁移时由 librbd 在源、目标两个 QEMU 之间交接，这是 OpenStack 的常规用法
 
 ---
@@ -1556,45 +1806,53 @@ clapi（`services/instance.go` 的 `Create`）：
 
 同时满足才能把一台云服务器从宕机节点恢复到别的节点：
 
-- 这台云服务器的**全部磁盘**都在共享池上（本地盘随节点一起不可用）；Ceph 云服务器的 NVRAM 在本地，恢复时从模板重建（UEFI 启动项丢失，靠默认的回退启动路径；对 Windows 等依赖启动项的系统要验证）
-- 源节点离线（`status=10`）超过宽限期（建议 5 分钟，长于 cland 的 90 秒）
+- 这台云服务器的**全部磁盘**都在共享池上（本地盘随节点一起不可用），且没有 `lost` / `deleting` 的盘；Ceph 云服务器的 NVRAM 在本地，恢复时从模板重建（UEFI 启动项丢失，靠默认的回退启动路径；对 Windows 等依赖启动项的系统要验证，V16）
+- 源节点离线（`status=10`）超过宽限期：固定 5 分钟（`evacuateGrace`，长于 cland 的 90 秒），从 `hypers.offline_at` 起算；带 `confirm_fenced` 时不等
 - **已确认隔离**（§11.2）
+- 云服务器不在删除、迁移中，也没有等基础副本的重装（`refuseWhileWaiting`）；不满足的在结果里列为 `not_doing` 并给原因
 
 ### 11.2 隔离（fencing）
 
 **风险**：cland 判定节点离线，可能只是管理网断了；节点本身活着，存储网正常，云服务器还在写盘。这时在别处再起一份，两个进程同时写同一块盘，数据损坏。
 
+隔离按存储集群做：云服务器的盘涉及哪几个集群，就在每个集群上隔离这台节点（经远程挂载用池的节点在它自己的集群里隔离，§7.11）。隔离是不占槽的存储任务（`fence` / `unfence`），在集群里另一台在线的管理节点上执行（导入的 Ceph 集群是另一台有 CloudLand 客户端的节点）。
+
 | | GPFS | Ceph |
 |---|---|---|
-| 隔离手段 | 管理节点执行 `mmexpelnode -N <节点>`：被驱逐的节点在执行 `mmexpelnode -r` 之前不能重新加入，即使它的网络恢复、重启后 GPFS 自动启动（`-A`）也一样。**不依赖 GPFS 自己按租约驱逐**：那种驱逐在网络恢复后会自动重新加入并挂载 | `ceph osd blocklist range add <节点内网地址>/32 <很长的有效期>`（按地址把这台节点上的所有客户端加入黑名单，之后它的任何读写都被拒绝）。**有效期必须显式给一个很长的值**（如 10 年）：不给时默认 1 小时（`mon_osd_blocklist_default_expire`）就自动解除，旧写入者恢复写盘。`profile rbd` 的客户端身份有加黑名单的权限，外部集群同样能用（`range` 是否允许，待验证，V14） |
-| 判定已隔离 | `mmexpelnode -L` 列出它，`mmlsmount <fs> -L` 里没有它 | 黑名单里有这个地址且有效期正确；`rbd status` 的监听者里不再有它 |
-| 解除 | 节点回来、完成 §11.4 的对账（被恢复到别处的云服务器已在它上面 `virsh destroy` 并取消定义），**再过 5 分钟**（让节点先做完开机同步，见 §16 S6 真实节点验收第 2 条）才 `mmexpelnode -r -N <节点>` | 同样对账完成 5 分钟后 `ceph osd blocklist range rm` |
+| 隔离手段 | 管理节点执行 `mmexpelnode -N <节点>`：被驱逐的节点在执行 `mmexpelnode -r` 之前不能重新加入，即使它的网络恢复、重启后 GPFS 自动启动（`-A`）也一样。**不依赖 GPFS 自己按租约驱逐**：那种驱逐在网络恢复后会自动重新加入并挂载。导入的 GPFS 集群 CloudLand 不执行管理命令，隔离不了 | `ceph osd blocklist range add <节点内网地址>/32 315360000`（10 年；按地址把这台节点上的所有客户端加入黑名单，之后它的任何读写都被拒绝）。**有效期必须显式给一个很长的值**：不给时默认 1 小时（`mon_osd_blocklist_default_expire`）就自动解除，旧写入者恢复写盘。托管集群用管理节点的 admin 钥匙；导入的集群用 `profile rbd` 的客户端身份（`range` 是否允许，待验证，V14） |
+| 判定已隔离 | `mmexpelnode -l` 的列表里有它（按 `<地址> (<节点名>)` 匹配），然后等执行隔离的节点上所有 GPFS 挂载点在 5 分钟内恢复应答（驱逐活着的节点后要等它的租约过期，文件系统会冻结约一分钟）。原设想的「`mmlsmount <fs> -L` 里没有它」没实现 | `osd blocklist ls` 里有 `cidr:<地址>:0/32`。原设想的「有效期正确」「`rbd status` 的监听者里不再有它」两项检查没实现 |
+| 解除 | 节点回来、完成 §11.4 的对账、它上面被恢复到别处的副本都已清理（`source_cleaned`），**再过 5 分钟**（让节点先做完开机同步，见 §16 S6 真实节点验收第 2 条）才 `mmexpelnode -r -N <节点>` | 同样条件满足 5 分钟后 `ceph osd blocklist range rm`。导入的集群用客户端身份删不掉，撤销任务失败：要集群管理员手工删除，再调 `POST /hypers/:uuid/unfence {"forget": true}` 忘掉这条记录 |
 
-两种隔离都是主动、持久的，具体命令的效果在 S6 实测（§18.2）。自动执行隔离失败时（例如 GPFS 的管理节点也在故障的那一侧），管理员在确认节点已断电（例如经 SoftLayer 或 IPMI 关机）后可以带 `confirm_fenced=true` 强制执行，记入审计。
+两种隔离都是主动、持久的，S6 已在 work-x 上实测（§16 S6、§18.2）。执行失败的隔离在节点回来后同样会尝试撤销（命令可能已经生效），5 分钟重试一次。
+
+**管理员确认（`confirm_fenced=true`，记入审计）**：确认节点已断电（例如经 SoftLayer 或 IPMI 关机）后，一是不等宽限期；二是 CloudLand 根本发不出隔离命令时（导入的 GPFS 集群、这台节点是唯一的管理节点、能执行的节点都不在线）代替隔离，隔离记为 `confirmed`、不执行任何命令，节点回来、对账与清理完成后不再等 5 分钟就直接删掉。**隔离命令能下发、但执行失败时，带确认也不能跳过**：会重新跑隔离任务，再失败疏散就失败（原设想的「自动执行隔离失败时可以强制执行」这一半没实现）。
 
 ### 11.3 流程
 
-1. 管理员调用 `POST /hypers/:uuid/evacuate`（可以指定 `target_hyper`、`confirm_fenced`），或者对单台云服务器 `POST /migrations {force: true, confirm_fenced}`（2026-10-07 第二轮实现：按源节点委托给疏散，`AllOrNothing`——一次请求里有一台不能疏散就都不疏散；**一次请求只能是同一台离线节点上的云服务器**，多台节点直接 400、什么都不做——代码审查前第一台节点已被隔离、疏散已开始，第二台才被拒；界面迁移弹窗在源节点离线时给出说明与「已确认隔离」）
-2. clapi 检查 §11.1，按驱动执行隔离（§11.2），为每台云服务器建一条 `evacuate` 类型的迁移记录
-3. 目标节点以「使用已有磁盘」的方式执行 `launch_vm.sh`（`boot_disk.existing=true`，跳过克隆和扩容；按元数据重新挂数据盘）
-4. 之后复用冷迁移的回调链：`LaunchVM` 以 `sync` 更新 `instances.hyper` 和网卡，同步浮动 IP，预写转发条目
-5. 源节点的清理推迟到它恢复时（§11.4）
+1. 管理员调用 `POST /hypers/:uuid/evacuate`（可以指定 `target_hyper`、`confirm_fenced`，`instances` 只恢复其中几台；按台处理，能恢复的照常恢复，其余列为 `not_doing` 并给原因），或者对一台或多台云服务器 `POST /migrations {force: true, confirm_fenced}`（2026-10-07 第二轮实现：按源节点委托给疏散，`AllOrNothing`——一次请求里有一台不能疏散就都不疏散；**一次请求只能是同一台离线节点上的云服务器**，多台节点直接 400、什么都不做——代码审查前第一台节点已被隔离、疏散已开始，第二台才被拒；界面迁移弹窗在源节点离线时给出说明与「已确认隔离」）。目标节点给了的话必须是活动节点、不是源节点
+2. clapi 检查 §11.1，在每个涉及的集群上发起隔离（§11.2），为每台云服务器建一条 `evacuate` 类型的迁移记录（状态 `fencing`，云服务器置 `migrating`）。存储后台循环（每 15 秒，`advanceEvacuations`）等到这台云服务器涉及的所有集群都 `fenced` / `confirmed` 才下发；隔离失败则疏散失败
+3. 目标节点以「使用已有磁盘」的方式执行 `launch_vm.sh`（`boot_disk.existing=true`，跳过克隆和扩容；按元数据的 `data_disks` 用原来的设备名重新挂数据盘；原来在运行、暂停或状态不明的才启动，关机的留在关机）。下发用 `select=`，候选是可用区里能用它所有池的活动节点（给了目标就只有目标）；放置组成员由放置组选定目标（`placeEvacuee`）。记录转 `in_progress`；cland 回 `error=resource`、目标节点报错、或 30 分钟没回报，疏散失败：云服务器恢复原来的状态、网卡归还源节点，仍归源节点
+4. 目标节点以 `launch_vm.sh '<ID>' '<状态>' '<NODE_ID>' 'evacuate'` 回报（不是 `sync`）。`EvacuationLaunched` 把记录置 `completed`、云服务器的 `hyper` / 可用区 / 状态和网卡改到目标节点，随后建浮动 IP、同步 VPN 与中转网关路由、在目标上 `post_migration_net.sh garp` 宣告网关
+5. 源节点的清理推迟到它恢复时（§11.4）；疏散完成时源节点已经回来的，立即让它清理（`CleanEvacuatedSource`）
 
-### 11.4 原节点恢复：必须先改
+### 11.4 原节点恢复：先对账
 
-**现在的行为**：节点开机后 `report_rc.sh` 的 `sync_instance` 把本机定义的**每一台**云服务器都启动（池没就绪的进待启动列表，就绪后照样启动），并以本节点身份回调 `launch_vm.sh ... 'sync'`，clapi 会把 `instances.hyper` 改回这个节点。
+**改造前的行为**：节点开机后 `report_rc.sh` 的 `sync_instance` 把本机定义的**每一台**云服务器都启动（池没就绪的进待启动列表，就绪后照样启动），并以本节点身份回调 `launch_vm.sh ... 'sync'`，clapi 会把 `instances.hyper` 改回这个节点。后果是已经恢复到别处的云服务器在原节点上又起一份（两个进程写同一块盘），数据库里的归属也被抢回来。
 
-**后果**：已经恢复到别处的云服务器在原节点上又起一份（两个进程写同一块盘），数据库里的归属也被抢回来。
+**现在的做法**（S6 已实现）：
 
-**要改成**：
-
-1. **不只是开机时**：cloudlet 每次向 cland 重新注册（开机、cloudlet 重启、断网后重连）都触发对账。只断管理网、节点没重启的情况下，旧的 QEMU 一直开着（写被黑名单或驱逐挡住），而 `report_rc.sh` 只上报相对 `old_inst_list` 有变化的云服务器，它永远不会被上报，只有对账能发现它
-2. 节点上报本机定义的所有域：`node_recovered '<NODE_ID>' '<boot_id>' '<实例ID 列表>'`；开机时在对账结果回来之前不启动任何云服务器
-3. clapi 逐台对账：数据库里归属本节点且没删的，下发启动（已在运行的不动）；其他的下发 `clear_stale_vm.sh`：`virsh destroy`（还开着的话）、取消域定义，删除 XML、ISO 和本地 NVRAM，**不碰任何共享盘**，不改数据库
-4. `inst_status` 和 `launch_vm sync` 回调加保护：实例有一条已完成的 `evacuate` 记录、上报的正好是它的源节点、并且这个节点的对账还没完成时，不改 `hyper`，只记告警。对账完成后保护解除，以后合法地迁回这个节点不受影响
+1. **不只是开机时**：心跳（`report_rc.sh` 的 `reconcile_check`）在两种情况下发起对账：本次开机还没对账过（`reconciled_boot` 不是当前 boot_id），或两次心跳间隔超过 60 秒（心跳只在 cloudlet 连着时跑，间隔大说明 cloudlet 重启或断网后重连，期间节点可能已被判死、云服务器已被恢复到别处）。没收到答复就每分钟再问一次。只断管理网、节点没重启的情况下，旧的 QEMU 一直开着（写被黑名单或驱逐挡住），而 `report_rc.sh` 只上报相对 `old_inst_list` 有变化的云服务器，它永远不会被上报，只有对账能发现它。原设想的「cloudlet 每次向 cland 重新注册时触发」没有这样做，改为按心跳间隔判断
+2. 节点上报本机定义的所有域：`node_recovered '<NODE_ID>' '<boot_id>' '<boot|reconnect>' '<base64 JSON [{id, state}]>'`。开机时**带共享盘的**云服务器在对账结果回来之前不启动（`reconcile_hold`，上报为 `pending_reconcile`，clapi 显示为 `shut_off`、原因 `reconcile_pending`）；只有本地盘的不等
+3. clapi 逐台对账（`planReconcile`），答复 `node_reconcile.sh {boot, reason, start, stale}`：
+   - start：数据库里归属本节点且没删的，解除等待、按待启动列表启动（已在运行的不动）
+   - stale：已删除的、已疏散到别处的、带共享盘而数据库记在别的节点上的，节点执行 `clear_stale_vm.sh`：`virsh destroy`（还开着的话，含救援域）、取消域定义，删除 XML、配置盘 ISO、本地 NVRAM、安全组链和不再用的路由器，**不碰任何共享盘**（共享池里的 NVRAM 也保留）；节点本身不改数据库，只回报 `clear_stale_vm.sh '<ID>' 'done|error'`
+   - 不动（leave）：有涉及本节点的迁移在进行、正在创建、只有本地盘而数据库记在别的节点上（两份写不到同一块盘，照旧不动）；还在等的节点每分钟再问一次
+   - 重发：归属本节点、`deleting` 已超过 2 分钟的（删除命令在节点离线时丢了），clapi 重发 `clear_vm.sh`
+   - 答复属于之前一次开机的，只做 stale 的清理，不启动任何云服务器
+4. `inst_status` 和 `launch_vm` 回调加保护（`EvacuatedFrom`）：实例有一条源节点是上报者、状态不是 failed / not_doing（进行中的也算）、源节点副本还没清理（`source_cleaned=false`）的 `evacuate` 记录时，这个节点对它的上报整个忽略，只记告警。`clear_stale_vm.sh` 回报 `done` 后 clapi 把 `source_cleaned` 置 true、撤掉源节点上残留的浮动 IP 与辅助地址，保护随之解除，以后合法地迁回这个节点不受影响
 5. 清理完成后才解除隔离（§11.2）
 
-**这一节先实现并测试通过，才能开放宕机恢复。**
+这一节已在 S6 实现，并在 work-x 上按 TC-24 验收（含真实断电、重启，§16 S6）。
 
 ---
 
@@ -1605,29 +1863,29 @@ clapi（`services/instance.go` 的 `Create`）：
 | 层 | GPFS | Ceph |
 |---|---|---|
 | clapi 状态机 | 卷只有 `available` 时能挂载；一台云服务器任一时刻只归属一个节点；迁移、恢复都有明确的状态流转 | 同左 |
-| QEMU 镜像锁 | QEMU 对打开的镜像文件加 OFD 锁。GPFS 支持集群范围的 POSIX 字节范围锁，如果 OFD 锁也在集群范围生效，另一个节点再打开同一块盘就会失败（待验证，V5） | **没有**：RBD 的排他锁是协作式的，另一个客户端请求时锁会被交出去，挡不住两个写入者 |
-| 兜底 | 第二层无效时启用 libvirt 的 virtlockd（锁空间放在 GPFS 上） | virtlockd 只管文件路径，管不了网络磁盘。**所以 Ceph 的恢复必须先加黑名单**（§11.2），这是硬性要求 |
+| QEMU 镜像锁 | QEMU 对打开的镜像文件加 OFD 锁，GPFS 上在集群范围生效（V5 已验证，2026-10-03：一台节点开着，另一台节点上 `qemu-img info` 与写入都因拿不到锁被拒） | **没有**：RBD 的排他锁是协作式的，另一个客户端请求时锁会被交出去，挡不住两个写入者 |
+| 兜底 | 第二层已经成立，没有启用 virtlockd（原设想第二层无效时启用，锁空间放在 GPFS 上） | virtlockd 只管文件路径，管不了网络磁盘。**所以 Ceph 的恢复必须先加黑名单**（§11.2），这是硬性要求 |
 
 ### 12.2 缓存模式与出错策略
 
-- GPFS 盘 `cache='none'`、`error_policy='stop'`
-- RBD 盘 `cache='writeback'`（打开 librbd 的缓存）、`discard='unmap'`（客户机删除文件后空间能回收，精简配置才有意义）
+- GPFS 盘 `cache='none'`、`discard='unmap'`、`error_policy='stop'`
+- RBD 盘 `cache='writeback'`（打开 librbd 的缓存）、`discard='unmap'`（客户机删除文件后空间能回收，精简配置才有意义）、`error_policy='stop'`（集群写满时写是阻塞的，stop 管的是真的返回了的错误）
 - 本地盘不变（`error_policy='enospace'`）
 
 ### 12.3 删除共享盘的规则
 
 - 只删 clapi 点名的那一个（文件名或镜像名与卷 ID 对应），不用通配符、不按前缀
 - 必须先确认云服务器已销毁（`clear_vm` 回调、迁移已完成，或 §11.2 的隔离已确认）
-- 迁移的清理脚本、`clear_vm.sh`、`end_rescue.sh` 都只处理本地文件
-- RBD 镜像还有监听者时 `rbd rm` 会失败（§9.3），这是额外的检查；网络分区时监听会超时消失，不能当作保证
+- 迁移的清理脚本、`clear_vm.sh`、`end_rescue.sh`、`clear_stale_vm.sh` 都只处理本地文件
+- RBD 镜像还有监听者时删卷脚本直接失败（§9.3），这是额外的检查；网络分区时监听会超时消失，不能当作保证
 
 ### 12.4 凭据与权限
 
-- 集群 SSH 私钥只在 GPFS 管理节点上（Ceph 的在集群配置库里），`client.admin` 密钥环只在 Ceph 的 `_admin` 主机上；普通计算节点只有 CloudLand 的客户端身份（权限限于 CloudLand 的池）
+- 集群 SSH 私钥只在 GPFS 管理节点上（Ceph 的在集群配置库里），`client.admin` 密钥环只在 Ceph 的 `_admin` 主机上；普通计算节点只有 CloudLand 的客户端身份。托管 Ceph 集群的客户端身份是不限池的 `profile rbd`（集群里的 RBD 池都是 CloudLand 的）；导入的集群用管理员给的身份
 - 下发凭据经过没有 TLS 的 gRPC（待办 A6），与 VPN 凭据同一个问题
 - 节点脚本里的 `ceph` / `rbd` / `rados` 命令一律显式带 `--conf` 和 `--id`，不依赖默认的 `/etc/ceph/ceph.conf`（多个集群时会连错）
-- libvirt 的动态属主会在启动时把 GPFS 上的磁盘文件改成 `libvirt-qemu` 所有，在共享文件系统上的表现、迁移时的属主处理待验证（V7）
-- AppArmor：Ubuntu 的 libvirt 为每台云服务器动态生成规则，GPFS 路径会被加进去；RBD 盘时 QEMU 里的 librbd 可能要读 `/etc/ceph/` 下的配置、在 `/var/run/ceph/` 建管理套接字，可能被拦，要看 `journalctl -k | grep DENIED`（V7）
+- libvirt 的动态属主会在启动时把 GPFS 上的磁盘文件改成 `libvirt-qemu` 所有，在共享文件系统上的表现、迁移时的属主处理待验证（V7 的 GPFS 一半）
+- AppArmor：Ubuntu 的 libvirt 为每台云服务器动态生成规则，GPFS 路径会被加进去（待验证，V7 的 GPFS 一半）；RBD 盘已验证（2026-10-03）：热挂、在线扩容、热迁移都正常，libvirt 的 AppArmor 抽象本来就放行 `/etc/ceph/*.conf`，不用另加规则。被拦时看 `journalctl -k | grep DENIED`
 
 ---
 
@@ -1635,7 +1893,7 @@ clapi（`services/instance.go` 的 `Create`）：
 
 ### 13.1 clapi 接口
 
-除特别说明外都只给系统管理员。长操作一律返回 202 和任务 ID。
+除特别说明外都只给系统管理员。长操作一律返回 202 和任务 ID（例外：疏散同步返回逐台结果，见「其他」）。
 
 **软件包**（阶段 S2）
 
@@ -1654,42 +1912,49 @@ clapi（`services/instance.go` 的 `Create`）：
 | 接口 | 说明 |
 |---|---|
 | `GET /storage_backends` | 支持的存储类型：每种的角色、贡献磁盘的角色、建议角色、支持的系统、是否要内核模块或容器（§4.5.1）；界面按它渲染（S1 已实现） |
-| `GET /storage_clusters`、`GET /storage_clusters/:id` | 列表、详情（节点、磁盘、文件系统、存储池摘要、健康、正在跑的任务）；节点与磁盘的类型专用属性在 `attrs` 里原样返回 |
+| `GET /storage_clusters`、`GET /storage_clusters/:id` | 列表、详情（节点、磁盘、文件系统、存储池摘要、健康、正在跑的任务，以及按布局取的 `capabilities`、按布局给出的摘要 `layout_info`（纠删码的恢复组、纠删码卷等）、是否测试布局 `test_layout`（数据只有一份，由后端的可选接口 `storageTestLayout` 判断，2026-10-07 补）、自动加入设置 `auto_join`）；节点与磁盘的类型专用属性在 `attrs` 里原样返回。详情不返回集群参数 `params` |
 | `POST /storage_clusters/precheck` | 只做预检：`{kind, nodes, disks, params, allow_unsupported}`，返回任务 ID（任务种类 `precheck`，不占集群）。`kind` 与角色由后端校验；`params` 是 JSON 对象，原样交给该类型的后端解析，不认识的键返回 400 |
-| `POST /storage_clusters` | 新建托管集群：`{kind, name, layout, package_id \| image, nodes:[{hypervisor, roles}], disks:[{hypervisor, disk_id, media, wipe}], params, allow_unsupported}`；节点用 UUID 指定，与其他接口一致 |
-| `POST /storage_clusters/import` | 导入外部集群（§7.8、§8.8） |
-| `PATCH /storage_clusters/:id` | 名称、说明、自动加入客户端的可用区等不影响集群运行的设置 |
+| `POST /storage_clusters` | 新建托管集群：`{kind, name, description, package_id, nodes:[{hypervisor, roles}], disks:[{hypervisor, disk_id, media, wipe}], params, allow_unsupported}`；节点用 UUID 指定，与其他接口一致。布局与容器镜像都在 `params` 里：GPFS 的 `layout`（`replica` / `ece` / `san`），Ceph 的 `image`、`registry`、`registry_user`、`registry_password`（口令拆进 `secrets` 加密保存，§5.1）；`package_id` 只有要软件包的类型（GPFS）才用 |
+| `POST /storage_clusters/import` | 导入外部集群：`{kind, name, description, hypervisors, params}`（§7.8、§8.8） |
+| `PATCH /storage_clusters/:id` | `description`、自动加为客户端的可用区 `auto_join_zones`（托管集群）、`auto_join_new_only`（只加之后注册的节点）、`retry_auto_join`（重试加入失败的节点）（S5 / S7，§6.3）。**名称改不了**（原设计可改，没实现） |
 | `PATCH /storage_clusters/:id/nodes/:hypervisor` | 改角色（任务 `change_roles`）：GPFS 增减仲裁 / 管理节点（`mmchnode`），Ceph 改 mon / mgr / `_admin` 的放置（改标签后 `ceph orch apply`）；校验同 §6.3 |
-| `DELETE /storage_clusters/:id` | `?confirm_name=&purge_packages=`（网关转发 DELETE 时丢掉请求体，确认放查询参数）；托管集群的盘一律擦除；外部集群是取消登记（§7.8、§8.8） |
-| `POST /storage_clusters/:id/nodes`、`DELETE .../nodes/:hypervisor` | 加节点（可带盘）、移除节点（`?offline=true&confirm=<主机名>` 为离线移除，`purge_packages=true` 同时卸载软件，§7.5、§8.5） |
-| `POST /storage_clusters/:id/disks`、`DELETE .../disks/:id`、`POST .../disks/:id/replace` | 加盘、移除盘、换盘 |
-| `POST /storage_clusters/:id/filesystems`、`DELETE .../filesystems/:id` | 只有 GPFS |
-| `POST /storage_clusters/:id/rebalance` | 只有 GPFS |
-| `POST /storage_clusters/:id/clients`、`DELETE .../clients/:hypervisor` | 只有 Ceph：给计算节点配置、移除客户端 |
-| `POST /storage_clusters/:id/upgrade`、`POST .../rotate_keys` | 升级、轮换集群 SSH 密钥与 Ceph 客户端密钥（阶段 S6） |
-| `GET /storage_clusters/:id/metrics` | 监控曲线（§14），时段与步长的限制同 VPN 流量接口 |
+| `DELETE /storage_clusters/:id` | `?confirm_name=&purge_packages=`（网关转发 DELETE 时丢掉请求体，确认放查询参数）；托管集群的盘一律擦除；外部集群是取消登记（§7.8、§8.8）。有远程挂载时拒绝。有成员离线时照常删除：`leave` 跳过离线成员，它们回来后由补清理任务做（§7.6，2026-10-07 修复） |
+| `POST /storage_clusters/:id/nodes`、`DELETE .../nodes/:hypervisor` | 加节点（`{nodes, disks, allow_unsupported}`，可带盘）、移除节点（`?offline=true&confirm=<主机名>` 为离线移除，`purge_packages=true` 同时卸载软件，§7.5、§8.5）。给计算节点配置 Ceph 客户端也走这里：加节点时角色只给 `client`，移除客户端就是移除节点 |
+| `POST /storage_clusters/:id/disks`、`DELETE .../disks/:disk_id`、`POST .../disks/:disk_id/replace` | 加盘（`{disks, filesystem}`，GPFS 可指定进哪个文件系统）、移除盘、换盘（`{disk_id, media, wipe}`）；`:disk_id` 是集群里这块盘的 UUID |
+| `POST /storage_clusters/:id/filesystems`、`DELETE .../filesystems/:name` | 只有 GPFS：新建文件系统 `{name, block_size, data_replicas, disks, allow_unsupported}`，按名字删除 |
+| `POST /storage_clusters/:id/rebalance` | 只有 GPFS：`{filesystem}` |
+| `GET` / `POST /storage_clusters/:id/remote_mounts`、`DELETE .../remote_mounts/:mount_id` | 只有 GPFS（S7 第二轮，§7.11；已提交，没部署、没在真实节点上跑过）：列出这个集群被挂载的和它挂载别人的文件系统；让另一个集群挂载本集群的文件系统 `{filesystem, cluster}`（`:id` 是所属集群，任务在挂载方集群上跑）；取消挂载 |
+| `POST /storage_clusters/:id/upgrade`、`POST .../rotate_keys` | 升级 `{package, finalize, image}`（GPFS 给新版本的软件包、另行 `finalize` 提升集群与文件系统格式；Ceph 给 `image` 或留空用发行版对应的镜像）、轮换 `{ssh, client}`（集群 SSH 密钥与 Ceph 客户端密钥，都不给时两样都换）（阶段 S6） |
+| `GET /storage_clusters/:id/metrics` | 监控曲线（S5，§14.3）：`start` / `end` / `step`，返回按图表分组的曲线；时段与步长的限制同 VPN 流量接口 |
+
+上面的结构操作按集群的能力（详情里的 `capabilities`，由布局决定）开放：纠删码与 SAN 布局不能建第二个文件系统；纠删码布局不能移除盘、重新均衡；SAN 布局不能换盘。原设计单列的 `POST /storage_clusters/:id/clients`、`DELETE .../clients/:hypervisor` 没有做成单独的接口（客户端走加节点 / 移除节点）。
 
 **任务**
 
 | 接口 | 说明 |
 |---|---|
-| `GET /storage_tasks?cluster_id=&status=` | 分页列表；`cluster_id=0` 列出不占集群的任务（预检、自测） |
+| `GET /storage_tasks?cluster_id=&status=&offset=&limit=` | 分页列表；`cluster_id` 是集群 UUID，`0` 列出不属于集群的任务（预检、自测），不给时列出全部 |
 | `GET /storage_tasks/:id` | 步骤、每台节点的结果与日志尾部 |
-| `GET /storage_tasks/:id/runs/:run/log` | 完整日志（阶段 S5）：第一次调用让节点上传，返回 202；之后再调用，上传完成时返回 200 和日志内容（§6.2.6） |
-| `GET /storage_clusters/:id/metrics` | 监控曲线（S5，§14.3）：`start` / `end` / `step`，返回按图表分组的曲线 |
-| `PATCH /storage_clusters/:id` | 描述、自动加为客户端的可用区（`auto_join_zones`）、重试加入失败的节点（`retry_auto_join`）（S5，§6.3） |
-| `POST /storage_pools/:id/reconcile`、`GET /storage_pools/:id/reconcile` | 共享池孤儿对账（S5）：一台能访问池的节点列出对象，clapi 比对，只报告不删除 |
+| `GET /storage_tasks/:id/runs/:run/log` | 完整日志（阶段 S5）：第一次调用让节点上传，返回 202；之后再调用，上传完成时返回 200 和日志内容（最后 16 MiB，§6.2.6） |
+| `POST /storage_tasks/selftest` | 自测任务（S1）：`{hypervisors, steps, sleep_sec, fail_hypervisors, fail_attempts, fail_step, lock, timeout_sec}`，脚本只睡眠、报进度、按要求失败，用来检查到节点的任务链路 |
 | `POST /storage_tasks/:id/retry`、`POST /storage_tasks/:id/abort` | 重试、中止 |
 
-**存储池**（已有的接口，`api/src/apis/routes.go:175-181`）
+**存储池**（已有的接口，`apis/routes.go` 的 `/storage_pools` 一组）
 
-- `POST /storage_pools` 增加 `driver`（`gpfs` / `ceph_rbd`）、`cluster_id`；托管集群的 GPFS 池另带 `filesystem_id`、`media`、`quota_gb`、`inode_limit`，Ceph 池带 `media`、`replicas`、`quota_gb`；外部集群带已有的 `mount_path` + `fileset` 或 `ceph_pool`。共享池返回 202 和任务 ID
-- `PATCH /storage_pools/:id` 增加 `quota_gb`
-- `DELETE /storage_pools/:id` 对托管集群的池发起删除任务
+- `POST /storage_pools` 带 `cluster: {id: <集群 UUID>}` 即建共享池（驱动由集群类型决定，不传 `driver`），另带 `media`、`quota_gb`、`over_ratio`、`is_default`、`params`：托管 GPFS 池 `{filesystem: <文件系统名，空为第一个>, inode_limit}`；托管 Ceph 池不接受参数，副本数取集群的 `replicas`（原设计按池指定 `replicas` 没实现）；外部 GPFS 池 `{path, fileset, filesystem}`；外部 Ceph 池 `{ceph_pool}`。共享池不能设 `fallback_group`。共享池返回 202 和 `{storage_pool, task}`
+- `PATCH /storage_pools/:id` 增加 `quota_gb`（只有共享池），必须单独发：和别的字段放在同一个请求里时整体拒绝；返回 202 和任务
+- `DELETE /storage_pools/:id` 对共享池一律发起删除任务（外部集群的池是取消登记）
 - `GET /storage_pools/:id/hypers` 已有，共享池返回各节点的可用性
-- 普通成员的 `GET /storage_pools` 多返回 `shared`（已有）与集群类型，不返回集群细节
+- `POST /storage_pools/:id/reconcile`、`GET /storage_pools/:id/reconcile`：共享池孤儿对账（S5）：一台能访问池的节点列出对象，clapi 比对，只报告不删除
+- 普通成员的 `GET /storage_pools` 多返回 `shared`（已有）与集群类型 `cluster_kind`，不返回集群细节
 
-**其他**：`POST /hypers/:uuid/evacuate`（阶段 S6，§11.3）；`GET /hypers/:uuid` 返回这台节点在各集群里的角色；`PATCH /images/:id` 增加 `storage_pools: [...]`，预热镜像基础副本（§9.6）。
+**其他**
+
+- `POST /hypers/:uuid/evacuate {target_hyper, confirm_fenced, instances}`（阶段 S6，§11.3）：同步返回 200 和逐台结果 `{instances: [...]}`，不是任务
+- `POST /hypers/:uuid/unfence {forget}`：马上解除这台节点的隔离，或只删掉隔离记录（管理员已手工解除时），返回 204
+- `POST /migrations` 带 `force: true`：源节点离线时把单台云服务器疏散到别处，`confirm_fenced` 表示管理员确认源节点已断电、不等宽限期
+- `GET /hypers/:uuid` 返回隔离记录 `fences`、离线时间 `offline_at`、`offline_seconds`、`evacuate_grace_seconds`、上次对账时间 `reconciled_at`，以及待补清理 `storage_cleanups`（集群名与 UUID、类型、尝试次数、上次尝试时间、失败原因、上一次任务的 UUID，§7.6，2026-10-07 补）。原设计「返回这台节点在各集群里的角色」没实现
+- 镜像基础副本（§9.6；预热与进度是 S7 第二轮，已提交，没部署、没在真实节点上跑过）：`GET /images/:id/storage_copies`（各共享池里的副本，含导入阶段 `phase`、进度 `progress`、执行节点、克隆出的系统盘数）、`POST /images/:id/storage_copies {storage_pools: [{id}]}` 预热、`DELETE /images/:id/storage_copies/:pool` 删除一份副本（还有系统盘克隆自它或正在导入时 409）。原设计在 `PATCH /images/:id` 里加 `storage_pools` 的做法没采用
 
 ### 13.2 cpgateway
 
@@ -1699,35 +1964,35 @@ clapi（`services/instance.go` 的 `Create`）：
 
 ### 13.3 界面
 
-侧边栏新建「存储」分组（现在「存储池」只是「管理」下的一个条目，`Layout.vue:420-422`，移进这个分组）：存储池、**存储集群**（新）、**软件包**（新，S2）。页面一律复用现有的基础组件（`BaseModal`、`DataTable`、`StatusBadge`、`PaginationBar`、`useListQuery`、`DetailTabs`、`InfoRow`、`CapacityBar`、`MonitoringPanel`），长表单弹窗的报错放在底栏按钮旁。
+侧边栏「存储」分组（`views/dashboard/Layout.vue`）：存储池、**存储集群**、**软件包**（S2）。页面一律复用现有的基础组件（`BaseModal`、`DataTable`、`StatusBadge`、`PaginationBar`、`useListQuery`、`DetailTabs`、`InfoRow`、`CapacityBar`、`MonitoringPanel`），长表单弹窗的报错放在底栏按钮旁。
 
 - **软件包页**：列表；上传弹窗（分片上传、进度条、断点续传，也可以填下载地址）；许可证弹窗（全文 + 「我已阅读并接受」）
-- **存储集群列表**：名称、类型（GPFS / Ceph）、模式（托管 / 外部）、版本、状态、健康、节点数、磁盘数、容量条、存储池数、正在跑的任务
-- **创建向导**（整页，不用弹窗，步骤太多）：
-  1. 类型与模式：GPFS 副本 / Ceph / 导入外部 GPFS / 导入外部 Ceph（GPFS 纠删码灰显，标「后续版本」）
-  2. 软件：GPFS 选一个已接受许可证的软件包（显示它支持的系统）；Ceph 填镜像地址与仓库口令
-  3. 节点与角色：区域内的在线节点，每行显示系统 / 内核（不在支持范围内标红并说明原因）、内存余量、已在哪个集群；勾角色，实时校验（仲裁节点奇数、mon 奇数、副本数与节点数）
-  4. 磁盘：每台节点的空闲盘（来自磁盘扫描，显示型号、大小、介质、扫描时间，超过 24 小时提示重新扫描）；`dirty` 的盘要单独勾选「擦除」
-  5. 参数：§7.2、§8.2 列的参数，带默认值
-  6. 预检：一键执行，逐节点逐项显示结果；有不通过的项不能继续，系统不在支持范围的那一项可以勾「允许不受支持的系统（仅用于测试）」
-  7. 确认：汇总将占用的盘、每台节点将预留的内存，提交后跳到集群详情的任务页
-- **集群详情**（标签页）：
-  - 概览：状态、健康摘要、版本、参数；不受支持的系统、正在跑的任务以横幅显示
-  - 节点：主机、角色、状态、存储软件报告的状态、预留内存；加节点、移除节点
-  - 磁盘：主机、设备、NSD 名或 OSD 编号、介质、大小、所属文件系统或池、状态；加盘、移除、换盘
-  - 文件系统（只有 GPFS）：容量、副本数、块大小；新建、删除、重新均衡
-  - 存储池：这个集群上的 CloudLand 存储池（容量、配额、可用节点数 x/y）；新建、改配额、删除
-  - 任务：历史任务列表；任务详情抽屉显示步骤时间线、每台节点的状态与进度、日志尾部（任务运行中每 3 秒静默刷新），重试 / 中止 / 下载完整日志（S5）
-  - 监控：容量、读写吞吐与 IOPS（§14）
-- **节点详情的存储标签**（已有）：增加「所属存储集群与角色」；磁盘表里被集群占用的盘显示集群名与 NSD / OSD
-- **存储池页**（已有）：新建弹窗先选类型（本地 / GPFS / Ceph），共享类型再选集群和参数；列表增加类型与集群列
+- **存储集群列表**：两个标签页。「集群」：名称（正在跑的任务以标签显示在名称旁）、类型（GPFS / Ceph）、模式（托管 / 外部）、状态、健康、节点 / 磁盘 / 存储池数、容量条、创建时间；版本没有单独一列（没实现）。「任务」：全部存储任务（含预检、自测）。工具栏有自测、预检、新建
+- **创建向导**（整页，不用弹窗，步骤太多）。托管集群 6 步：类型 → 软件（只有要软件包的类型，即 GPFS）→ 节点与磁盘 → 参数 → 预检 → 确认；外部集群 4 步：类型 → 节点 → 参数 → 确认
+  1. 类型：每种存储一张「部署 <类型>」卡片，GPFS 另有「纠删码」和「SAN」两张（纠删码布局没有单节点测试形态）；支持导入的类型另有「导入外部 <类型>」
+  2. 软件：GPFS 选一个软件包，显示版本、版本类型、支持的发行版；许可证没接受的不能选，纠删码布局要纠删码版。Ceph 没有这一步，镜像地址与私有仓库在参数步骤里填
+  3. 节点与磁盘（同一步，`StorageHostPicker`）：区域内的节点（显示主机名、IP、状态，状态 4 / 5 / 10 的不能选），勾角色；贡献磁盘的节点列出扫描到的盘（型号、大小、介质、扫描时间，超过 24 小时提示重新扫描），`dirty` 的盘要单独勾「擦除」；SAN 布局列的是共享 LUN，在每台服务它的节点下都要勾。原设计的每行系统 / 内核（不在支持范围标红）、内存余量、已在哪个集群，以及勾角色时的实时校验（仲裁节点奇数、mon 奇数、副本数与节点数）都没实现，这些在预检和提交时由后端检查
+  4. 参数：§7.2、§8.2 列的参数，带默认值；纠删码布局有纠删码参数；导入 Ceph 填 fsid、mon 地址、客户端用户与密钥
+  5. 预检：一键执行，逐节点逐项显示结果；有不通过的项不能继续，系统不在支持范围的那一项可以勾「允许不受支持的系统（仅用于测试）」
+  6. 确认：填集群名称，汇总类型、软件包、节点、将占用的盘数与要擦除的盘数、参数（JSON），提交后跳到集群详情的任务页。原设计的「每台节点将预留的内存」没实现。参数摘要里键名以 `password`、`secret`、`token`、`_key` 结尾的值一律显示为 `******`（2026-10-07 修复缺陷 d：原来只遮 `client_key`，Ceph 私有仓库的 `registry_password` 明文显示）
+- **集群详情**（标签页；顶部按钮：加节点、加盘、轮换密钥、升级、删除，外部集群为「取消登记」）：
+  - 概览：类型、模式、布局（纠删码的恢复组与纠删码卷）、版本、集群标识、状态、健康、节点 / 磁盘 / 存储池数、容量；健康卡片（检查时间、摘要、标志、消息、告警）；托管集群另有「自动加为客户端」卡片（可用区、只加新节点、等待加入的节点与重试）；测试布局（2026-10-07 补）、不受支持的系统、正在跑的任务以横幅显示。原设计的「参数」没显示（接口也不返回）
+  - 节点：主机、角色、状态、存储软件报告的状态、故障组、预留内存；改角色、移除节点
+  - 磁盘（只有托管集群）：主机、设备、NSD 名或 OSD 编号（纠删码为物理盘名）、介质、大小、GPFS 用途与存储池、状态、存储软件报告的状态；移除、换盘（按集群能力开放）。原设计的「所属文件系统」没显示
+  - 文件系统（只有 GPFS）：名称、挂载点、块大小、副本数、状态、容量；新建、删除、重新均衡；下方是远程挂载（`StorageRemoteMounts`，托管集群）
+  - 存储池：这个集群上的 CloudLand 存储池（状态、介质、路径、配额、容量）；新建、改配额、删除。原设计的「可用节点数 x/y」没实现
+  - 任务：历史任务列表，点进去是**任务详情页**（`StorageTaskDetail.vue`，不是抽屉）：步骤时间线、每台节点的状态与进度、日志尾部（任务运行中每 3 秒静默刷新），重试 / 中止 / 下载完整日志（S5）
+  - 监控：容量、读写吞吐与 IOPS、存储池用量，以及节点数、OSD 数、GPFS 存储池、fileset 的 inode 用量（§14）
+- **节点详情**：离线、有隔离记录或有待补清理时显示恢复卡片（隔离状态、解除隔离、只删记录；待补清理的集群、尝试次数、上次任务与失败原因），离线节点的操作菜单有「疏散」（`HostEvacuateModal`，结果逐台列出）。存储标签（已有）原设计要加的「所属存储集群与角色」没实现；磁盘表里被集群占用的盘只显示状态 `gpfs_nsd` / `ceph_osd`（SAN 的 LUN 为 `shared`），不显示集群名与 NSD / OSD（没实现）
+- **存储池页**（已有）：工具栏「新建共享池」（`SharedPoolModal`：选集群、填参数）和「新建本地池」两个按钮；列表的名称旁有类型标签（「共享 · GPFS / Ceph」或「本地」），另有集群列。共享池的详情页有孤儿对账（`StoragePoolReconcile`，S5）
+- **镜像详情**：「共享池副本」卡片（`ImageStorageCopies`）：每个池的副本状态、导入阶段与进度、执行节点、克隆出的系统盘数；预热到更多池、删除副本（S7 第二轮）
 - **云硬盘挂载弹窗**：共享卷把所在节点对这个池不可用的云服务器置灰并说明原因
-- **迁移弹窗**：逐盘列出「复制」或「共享，不复制」
+- **迁移弹窗**：逐盘列出「复制」或「共享，不复制」；选中的云服务器所在节点离线时变为强制疏散（`force`），并给出「确认源节点已断电」勾选框（勾上即 `confirm_fenced`，不等宽限期）
 - 新增文案三种语言都加，`npm run i18n:check` 通过
 
 ### 13.4 审计
 
-`audit_actions.go` 的 `auditRoutes` 增加：`storage_package.upload`、`storage_package.accept_license`、`storage_package.delete`；`storage_cluster.precheck`（预检也会往节点下发命令）、`create`、`import`、`update`、`delete`、`change_roles`、`add_nodes`、`remove_node`、`add_disks`、`remove_disk`、`replace_disk`、`create_fs`、`delete_fs`、`rebalance`、`add_clients`、`remove_clients`、`upgrade`、`rotate_keys`；`storage_task.retry`、`abort`；`hyper.evacuate`（带 `confirm_fenced`）。存储池的动作已有。勾选「允许不受支持的系统」记在 `storage_cluster.create` / `precheck` 的审计里。
+`audit_actions.go` 的 `auditRoutes` 增加：`storage_package.upload`、`storage_package.accept_license`、`storage_package.delete`；`storage_cluster.precheck`（预检也会往节点下发命令）、`create`、`import`、`update`、`delete`、`change_roles`、`add_nodes`、`remove_node`、`add_disks`、`remove_disk`、`replace_disk`、`create_filesystem`、`delete_filesystem`、`rebalance`、`create_remote_mount`、`delete_remote_mount`、`upgrade`、`rotate_keys`；`storage_task.selftest`、`retry`、`abort`；`storage_pool.reconcile`；`image.preheat`、`image.drop_copy`；`hyper.evacuate`（带 `confirm_fenced` 时由接口细化为 `hyper.evacuate_confirmed`）、`hyper.unfence`。存储池的增删改动作已有。没有 `add_clients` / `remove_clients`（客户端走 `add_nodes` / `remove_node`）。原设计「勾选『允许不受支持的系统』记在 `storage_cluster.create` / `precheck` 的审计里」**决定不做**（2026-10-07）：审计日志不记请求体（请求体里有密钥类参数），这个选择已经落在集群的 `unsupported` 列（详情页有横幅）和任务参数的 `allow_unsupported` 里，查得到。
 
 ---
 
@@ -1735,19 +2000,24 @@ clapi（`services/instance.go` 的 `Create`）：
 
 ### 14.1 健康看护（clapi 后台）
 
-每个 `ready` 的集群（包括健康已经变差的、包括外部集群）每分钟一轮，只在拿到选主锁的那台 clapi 上跑（§6.2.1），以 `tracing.StartBackground` 起根 span。健康检查脚本以后台作业执行（`async_exec`，命令全部加 `timeout`），回调 `storage_health '<集群UUID>' '<base64 JSON>'`，结果写回集群的 `health` / `health_info`、节点的 `state`、磁盘的 `status`、文件系统与存储池的容量：
+每个 `ready` / `degraded` 的集群（包括健康已经变差的、包括外部集群）每分钟一轮，只在拿到选主锁的那台 clapi 上跑（§6.2.1），在存储后台循环的根 span（`storage.tasks`，`tracing.StartBackground`）里。clapi 挑一台在线的主机（托管集群：有 `admin` 角色的成员；外部集群：任一成员；正在加入、离开的不算；按 hostid 取第一台），下发 `stc_health.sh '<集群UUID>'`。它以后台作业执行（`async_exec`，同一集群在一台节点上同时最多一个），调用类型的钩子 `backend_health`（`backends/<类型>.sh`），命令全部加 `timeout`，回调 `storage_health '<集群UUID>' '<base64 JSON>'`；报告各类型同一格式（`health`、`summary`、`messages`、`nodes`、`disks`、`filesystems`、`capacity`、`flags`），clapi 只收集群成员发来的。结果写回集群的 `health` / `health_info`（最近一次的摘要、消息和告警状态）、节点的 `state` 与 `checked_at`（按主机短名对上）、磁盘的 `state` 与 `checked_at`（按存储软件里的名字对上；磁盘的 `status` 是认领状态，健康检查不改）、已挂载文件系统的容量。共享池的容量和可用性不来自健康检查，来自节点上的池探测（§9.2、§9.5）。健康报告超过 5 分钟没更新时，集群健康置 `unknown`（还没报过的集群从它变成 ready 起算）。
 
-| | GPFS（`gpfs_health.sh`） | Ceph（`ceph_health.sh`） |
+| | GPFS（`backends/gpfs.sh`） | Ceph（`backends/ceph.sh`） |
 |---|---|---|
-| 在哪执行 | 托管：一台在线的管理节点；外部：一台在线的成员 | 托管：一台在线的 `_admin` 主机；外部：一台在线的客户端 |
-| 集群健康 | `mmhealth cluster show -Y` | `ceph health detail -f json` |
-| 节点 | `mmgetstate -a -Y` | `ceph orch host ls -f json`、`ceph orch ps -f json` |
-| 磁盘 | `mmlsdisk <fs> -Y`（`availability`、`status`） | `ceph osd tree -f json`（`up` / `in`） |
-| 容量 | `mmdf <fs> -Y`（含每个 GPFS 存储池）；每个池 `mmlsquota -j <fileset> <fs> -Y` | `ceph df detail -f json` |
+| 在哪执行 | 托管：一台在线的管理节点；外部：一台在线的成员 | 托管：一台在线的 `_admin` 主机，以 client.admin、用 `/var/lib/ceph/<fsid>/config/` 的配置；外部：一台在线的客户端，以集群的客户端用户 |
+| 集群健康 | `mmhealth cluster show -Y` 的 Summary：有组件 failed 是 error，degraded 是 warning；另外节点不是 active、盘不是 up 至少是 warning，本机没挂上某个文件系统是 error；`mmgetstate` 没有回答时报 `unknown` | `ceph health detail -f json`（HEALTH_OK / WARN / ERR）；检查项里有 `OSD_NEARFULL`、`POOL_NEARFULL`、`*_BACKFILLFULL`、`*_FULL` 时带上标志 `nearfull`；mon 不回答时报 `unknown` |
+| 节点 | `mmgetstate -a -Y` | `ceph orch host ls -f json`（只托管集群） |
+| 磁盘 | `mmlsdisk <fs> -Y` 的 `availability`；纠删码布局另读 `mmvdisk pdisk list -Y` 的物理盘状态 | `ceph osd tree -f json` 里每个 OSD 的状态（up / down） |
+| 容量 | 本机挂载点：`stat -f` 判断挂没挂上，`df` 取容量（只报本机挂上的文件系统） | `ceph df -f json` 的 `stats` |
 
-外部集群只做能做的那部分（GPFS 外部集群只有挂载状态和 `df`，§7.8）。
+外部集群两种类型跑同样的查询：GPFS 的 `backend_health` 不区分托管和外部（原设计「GPFS 外部集群只有挂载状态和 df」没有照做）；外部 Ceph 的客户端用户可能看不到主机和 OSD。⚠️ 风险（2026-10-07 设计复查发现，没验证）：外部 GPFS 集群里，CloudLand 的主机如果不是对方的管理节点，`mmgetstate -a` 要经 ssh 去问其他节点，问不到时都报 unknown，可能产生误报的 `StorageNodeDown`。
 
-看护还顺带做两件修复：GPFS 的 NSD 节点回来后它的盘仍 `down` 时自动 `mmchdisk <fs> start`（§7.1）；离线时没做完的节点本地清理（§7.6、§8.6），节点回来后补做。
+看护还顺带做几件事：
+- GPFS（托管、非纠删码布局，集群 ready 且没有结构任务时）：在一台在线的管理节点上起 `gpfs_disks_up.sh`，所有节点都 active 之后，文件系统里 availability 是 `down` / `unrecovered` 的盘自动 `mmchdisk <fs> start -a`，最多 10 分钟一次（§7.1）
+- 托管 Ceph：mgr 的 prometheus 模块没开就打开（健康检查里做，§14.3）
+- 自动加入客户端的一轮（§6.3）
+
+另外一件：集群删除时离线的节点，回来后由看护补做它错过的 `leave`（导入集群是 `forget`）：每分钟看一遍 `storage_pending_cleanups`，节点在线就起补清理任务，失败的记下原因、中止，按退避再试（§7.6，2026-10-07 修复设计复查发现的缺陷 b；原来删除托管集群时离线节点让 `leave` 失败、任务停住，导入集群的 `forget` 跳过离线节点后不补做）。
 
 ### 14.2 告警
 
@@ -1755,51 +2025,56 @@ clapi（`services/instance.go` 的 `Create`）：
 
 | 告警 | 条件 | 级别 |
 |---|---|---|
-| `StorageClusterUnhealthy` | 健康变为 `warning` / `error`（持续 2 分钟） | 按健康级别 |
-| `StorageNodeDown` | 成员节点在存储软件里不是 `active` / 不在线（持续 2 分钟） | warning |
-| `StorageDiskDown` | NSD 不是 `up` / OSD 不是 `up`（持续 2 分钟） | warning |
-| `StoragePoolUsageHigh` | 共享池用量（口径同 §9.5 的准入）≥ 80% / 90% | warning / critical |
-| `CephNearFull` | Ceph 报 `nearfull` | critical |
-| `StorageFsUnmounted` | 某个成员上 GPFS 文件系统没挂上（来自 §9.2 的探测） | critical |
+| `StorageClusterUnhealthy` | 健康变为 `warning` / `error`（持续告警延迟，默认 2 分钟） | 按健康级别（warning / critical） |
+| `StorageClusterUnhealthy`（无法检查） | 没有在线的主机能检查、健康报告超过 5 分钟没更新，或者检查的主机答不上来（`unknown`），持续告警延迟 | critical |
+| `StorageNodeDown` | `active` 的成员节点在存储软件里不是 `active`（持续告警延迟）；报告里没列出的节点保持原状 | warning |
+| `StorageDiskDown` | `active` 的盘不是 `up`（持续告警延迟），同一个 SAN LUN 只算一条；报告里没列出的盘保持原状 | warning |
+| `StoragePoolUsageHigh` | 共享池用量（口径同 §9.5 的准入）≥ 80% / 90%，立即 | warning / critical |
+| `CephNearFull` | Ceph 报 `nearfull`（含 backfillfull、full），立即 | critical |
+| `StorageFsUnmounted` | 文件型共享池（GPFS）在某个在线的 `active` 成员上不可用（来自 §9.2 的探测，不是 ready），持续告警延迟；离线节点归 `StorageNodeDown` | critical |
 
-阈值放系统设置（常规类），默认值如上。告警属于集群所在区域的系统组织，走系统组织的通知渠道。
+- 条件按键区分（`storage_health.go` 的 `storageAlarmTransitions`）：`cluster`、`reach`（无法检查）、`flag:nearfull`、`node:<hostid>`、`disk:<名字>`、`pool:<池UUID>`、`mount:<hostid>:<池UUID>`。健康报告管 `cluster`、`reach`、`flag`、`node`、`disk`；看护每轮按池探测的结果评估 `pool`、`mount`，并在没人能检查时评估 `reach`。级别变了（如 critical → warning → critical）先解除旧事件再发新事件，每次触发用新的指纹。发起删除集群时解除它的所有告警（之后看护不再管它）
+- 阈值与延迟放系统设置（常规类）：`STORAGE_ALERT_DELAY_MINUTES`（默认 2，1–60）、`STORAGE_POOL_USAGE_WARN_PERCENT`（默认 80，50–99）、`STORAGE_POOL_USAGE_CRITICAL_PERCENT`（默认 90，50–100）；clapi 读镜像值，越界回退默认值，cpgateway 与 clapi 两边的默认值和范围要同步改
+- 告警属于集群所在区域的系统组织，走系统组织的通知渠道
 
 ### 14.3 指标与曲线
 
-**实施时的做法（S5，2026-10-03）**：下面几条是原设计；实际做法与它不同的地方：Ceph mgr 的采集目标由 clapi 的 http_sd 接口给出（`/api/v1/prometheus/sd/storage`，Prometheus 任务 `storage_clusters`，每个目标带 `storage_cluster` 标签），没有写 file_sd 目标文件；GPFS 的成员指标由心跳每分钟在后台起 `storage/stc_metrics.sh` 写出（`/var/lib/node_exporter/cloudland_storage_<集群UUID>.prom`），没有装 systemd 定时器，另外导出 mmpmon 的读写计数；共享池的用量由每个池的探测进程写出（`cloudland_shared_pool_{up,size_bytes,used_bytes}`，两种驱动同一口径），没有导出 fileset 配额；Grafana 面板没做。界面「监控」标签按后端给的查询画图：存储池用量、容量、吞吐、IOPS，GPFS 另有「节点」（GPFS 运行中的节点数、每个文件系统挂载的节点数），Ceph 另有「OSD」（运行 / 在集群内）
+原设计（clapi 把 mgr 地址写进 file_sd 目标文件 `ceph_targets.json`、GPFS 成员装 systemd 定时器、Grafana 里 Ceph 用官方面板、GPFS 用自带的简单面板）实施时（S5，2026-10-03；S7 第二轮，2026-10-07）改成了下面的做法。指标只用于看曲线，告警由健康看护产生（§14.2）。
 
-- **Ceph**：启用 mgr 的 `prometheus` 模块（端口 9283，只有活动的 mgr 输出数据）。clapi 在部署、mgr 放置变化后把所有 mgr 主机的地址写进 Prometheus 的目标文件 `/etc/prometheus/lists/ceph_targets.json`（与 `matched_vms.json` 同一种 file_sd 做法，Prometheus 自己重读，不用重载），Prometheus 配置加一个 `ceph-mgr` 采集任务
-- **GPFS**：每个成员上一个 node_exporter textfile 采集脚本（附录 E），导出挂载状态、文件系统容量、组件健康。不装 IBM 的性能采集（zimon）
-- 界面的监控标签由 clapi 查 Prometheus（`GET /storage_clusters/:id/metrics`），限制与 VPN 流量接口相同：先限定时段（跨度不超过 31 天）再运算，步长取整秒
-- Grafana：Ceph 用官方面板；GPFS 用 CloudLand 自带的简单面板（挂载状态、容量、组件健康）。指标只用于看曲线，不用于告警
-- **第二轮（2026-10-07）**：
-  - GPFS 成员另外导出每个 GPFS 存储池的容量（`cloudland_gpfs_pool_total_bytes` / `free_bytes{fs, gpfs_pool}`，来自 `mmdf -Y`）和每个共享池 fileset 的 inode（`cloudland_gpfs_fileset_inodes_used` / `max{pool}`），界面多了「GPFS 存储池容量」「共享池 inode 用量」两张图
-  - 导入的 Ceph 集群的 mgr 不由 CloudLand 采集，改由它的客户端节点以客户端身份执行 `ceph -s` / `ceph df detail`，导出 `cloudland_ceph_*`
-  - 每个集群在每台成员上一行 `cloudland_storage_cluster_info{cluster, kind, mode}`
-  - 远程挂载的节点上，所属集群的池清单带 `remote` 标记，`stc_metrics.sh` 跳过它（所属集群由它自己的成员上报；代码审查前会被当成导入的外部集群、用所属方的 uuid 报本机集群的指标）
-  - Grafana 看板 `deploy/docker/config/grafana/dashboards/storage.json`（uid `cloudland-storage`，按集群选择：共享池、GPFS、平台部署的 Ceph、导入的 Ceph）
+- **共享池**（两种驱动同一口径）：每台能访问池的节点由池探测（`shared_pool_probe.sh`，§9.2）写 `cloudland_shared_pool_{up,size_bytes,used_bytes}{cluster, pool}`（文件 `cloudland_shared_pool_<池UUID>.prom`）；没有导出 fileset 配额
+- **GPFS**：每个成员上，心跳每分钟在后台起 `storage/stc_metrics.sh`（`report_rc.sh` 的 `storage_metrics`；同一台节点同时只跑一个，命令卡在坏掉的挂载上也拖不住心跳），调用 `backends/gpfs.sh` 的 `backend_metrics`，写 `cloudland_storage_<集群UUID>.prom`：本机 GPFS 是否 active、每个文件系统在本机是否挂载与容量、mmpmon 的读写字节与次数、mmhealth 各组件的状态；第二轮另外导出每个 GPFS 存储池的容量（`mmdf -Y`）和每个共享池 fileset 的 inode（附录 E.1）。不装 IBM 的性能采集（zimon）
+- **平台部署的 Ceph**：mgr 的 `prometheus` 模块（端口 9283，只有活动的 mgr 输出数据），部署时打开，健康检查发现没开时再打开。采集目标由 clapi 的 http_sd 接口给出（`GET /api/v1/prometheus/sd/storage`，`storage_metrics.go` 的 `StorageScrapeTargets`：ready / degraded 的托管集群里 mgr 主机的内网地址 9283，每个目标带 `storage_cluster` 标签），Prometheus 任务 `storage_clusters`（`deploy/docker/config/prometheus/prometheus.yml`，60 秒刷新一次目标）。每个 mgr 的模块只监听所在主机的这个地址（`ceph_prometheus_bind`，部署时与每次健康检查时核对，§8.2；2026-10-07 修复：原来在所有网卡上监听 9283）
+- **导入的 Ceph**（第二轮）：它的 mgr 不由 CloudLand 采集，改由客户端节点以客户端身份执行 `ceph -s` / `ceph df detail`，导出 `cloudland_ceph_*`（附录 E.2）
+- 每个集群在每台有它的节点上一行 `cloudland_storage_cluster_info{cluster, kind, mode}`（第二轮，Grafana 按它列出集群）；节点已不在其中的集群，它的指标文件由 `stc_metrics.sh` 删掉
+- 远程挂载的节点上，所属集群的池清单带 `remote` 标记，`stc_metrics.sh` 跳过它（所属集群由它自己的成员上报；代码审查前会被当成导入的外部集群、用所属方的 uuid 报本机集群的指标）
+- 界面的「监控」标签由 clapi 查 Prometheus（`GET /storage_clusters/:id/metrics`，查询由各类型后端的 `MetricQueries` 给出），限制与 VPN 流量接口相同：先限定时段（结束不晚于当前 1 小时后、跨度不超过 31 天）再运算，步长取整秒，点数有上限。图：存储池用量、容量、吞吐、IOPS；GPFS 另有「节点」（GPFS 运行中的节点数、每个文件系统挂载的节点数）、「GPFS 存储池容量」「共享池 inode 用量」（后两张是第二轮加的）；Ceph 另有「OSD」（运行 / 在集群内）
+- **Grafana**（第二轮）：一个看板 `deploy/docker/config/grafana/dashboards/storage.json`（uid `cloudland-storage`，按 `cloudland_storage_cluster_info` 选集群，分共享池、GPFS、平台部署的 Ceph、导入的 Ceph 四段），不用 Ceph 官方面板
+- 第二轮（S7）的指标、看板与界面图表已提交推送（`88c36ce8`..`e8c96655`），没有部署，没在真实节点上运行过；S5 的部分 2026-10-04 起在 work-x 上运行过
 
 ## 15. 部署与配置
 
 ### 15.1 控制面
 
-- **托管 GPFS 需要 S3**（`minio` profile 或外部 S3），用来放安装包和完整日志
-- 凭据沿用 `VPN_SECRET_KEY`（§5.10，改名待决策 D7）
-- Prometheus 配置加 `ceph-mgr` 采集任务（file_sd，§14.2）
+- **托管 GPFS 需要 S3**（`minio` profile 或外部 S3），只用来放安装包：没配 S3 时上传安装包返回 `ErrStorageNeedsS3`（`services/storage_package.go` 的 `storageS3Core`），托管 GPFS 也就建不了（决策 D6）。完整日志原计划也放 S3，**实际存在数据库**（`storage_run_logs`，`services/storage_run_log.go`）：S3 端点是浏览器访问不到的内部 MinIO，日志又小
+- 取完整日志要 `CAPTURE_UPLOAD_SECRET`（节点上传日志的令牌是它的 HMAC，没配时上传一律拒绝）和 `CLAPI_INTERNAL_URL`（节点上传的地址，没配时按 clapi 主机名拼默认值，`services/services.go` 的 `fillClapiInternalURL`）
+- 凭据沿用 `VPN_SECRET_KEY`（§5.10，改名待决策 D7）：没配时托管集群的 SSH 密钥、导入集群的客户端密钥都存不了，建集群、导入直接报错
+- Prometheus 配置加采集任务 `storage_clusters`（http_sd，目标由 clapi 的 `/api/v1/prometheus/sd/storage` 给出，现在只有托管 Ceph 集群的 mgr，§14.3），地址沿用 `CLAPI_SD_ENDPOINT`（`deploy/docker/config/prometheus/prometheus.yml`）。部署新版本时 prometheus 容器要重建或重载才会加上这个任务
+- Grafana 看板 `deploy/docker/config/grafana/dashboards/storage.json`（uid `cloudland-storage`，§14.3）随 compose 挂载的看板目录自动加载
+- 系统设置加了三项（界面「系统设置 → 常规 → 存储告警」，cpgateway 校验范围）：`STORAGE_ALERT_DELAY_MINUTES`、`STORAGE_POOL_USAGE_WARN_PERCENT`、`STORAGE_POOL_USAGE_CRITICAL_PERCENT`（§14.2）
 - 不新增容器
 
 ### 15.2 计算节点
 
-- `deploy-compute-node.sh` 与 Ansible 的 hyper 角色**默认不装任何存储软件**：节点加入存储集群时由任务按需安装（§7.2、§8.2）。把 `qemu-block-extra`（QEMU 的 RBD 块驱动）显式加进两个版本的包列表：现在两处都没写，26.04 节点上有它只是因为 `qemu-system-x86` 的推荐依赖把它带了进来；`lvm2` 已在列表里
+- `deploy-compute-node.sh` 与 Ansible 的 hyper 角色**默认不装任何存储软件**：节点加入存储集群时由任务按需安装（§7.2、§8.2）。`qemu-block-extra`（QEMU 的 RBD 块驱动）原计划显式加进两处的包列表，**实际没加**，改由 Ceph 的安装步骤（`storage/ceph_install.sh`）和导入集群的客户端步骤（`storage/ceph_client.sh`）与 `ceph-common` 一起装，所以不依赖 `qemu-system-x86` 的推荐依赖；`lvm2` 已在部署脚本的列表里
 - **要用 GPFS 的节点装 Ubuntu 24.04**（§2.2）。部署脚本本来就支持 24.04
-- GPFS 节点的内核元包被 `apt-mark hold`（§7.7）
-- 节点之间的内网放行沿用现状（节点 INPUT 对私网地址全放行）；收紧防火墙的环境要放行 §3.1 列的端口
+- GPFS 节点的内核包在加入集群时被 `apt-mark hold`（`storage/stc_join.sh`，`linux-generic`、`linux-image-generic`、`linux-headers-generic` 和运行中内核的 image / headers / modules），离开集群时解除（`storage/stc_leave.sh`，§7.7）
+- 节点之间的内网放行沿用现状（节点 INPUT 对私网地址全放行）；收紧防火墙的环境要放行 §3.1 列的端口。Ceph mgr 的 prometheus 模块只监听节点的内网地址（§8.2，2026-10-07 修复：原来监听所有接口，只靠这条基础防火墙挡住非私网来源）
 - cephadm 用节点上已有的 docker
 
 ### 15.3 文档
 
-- 部署文档新增一页 `docs/deployment/09-shared-storage.md`（前提、节点系统要求、S3、上传安装包、建集群、排障），`index.md` 的快速导航加一条
-- 使用指南新增 `docs/guide/storage-clusters.md`（概念、模式怎么选、向导各步、写满时的表现差异、限制）
+- 部署文档新增两页：`docs/deployment/09-shared-storage.md`（GPFS：概念、前置要求、上传安装包、扫描磁盘、建集群、纠删码布局、SAN 布局、多集群远程挂载、建共享存储池、使用、运维、常见问题）和 `docs/deployment/10-ceph-storage.md`（Ceph：与 GPFS 不同的地方、前置要求、部署、导入、建 RBD 存储池、写满时的表现、使用、运维、常见问题），`index.md` 的快速导航各加了一条
+- 使用指南原计划新增 `docs/guide/storage-clusters.md`，**实际没有这一页**：普通用户看得到的部分（存储池、系统盘放本地还是共享池）写进了 `docs/guide/volumes.md`；集群的概念、向导各步、写满时的表现、限制在上面两篇部署文档里
 
 ---
 
@@ -1810,7 +2085,9 @@ S0 可行性验证 ──▶ S1 共用框架 ──┬─▶ S2 GPFS（托管副
                                 └─▶ S3 Ceph（托管 + 外部 + 数据卷）──────┘
 ```
 
-GPFS 优先：S2 先于 S3 开工。S2 的任何真实验证都要 24.04 的节点（决策 D1）——WSL 沙箱跑不了 GPFS（§2.5、V22）；节点没到位之前，GPFS 的节点脚本只能先写、不能执行，S3 可以并行，用它把 S1 的框架在真实节点上跑通。
+GPFS 优先：S2 先于 S3 开工。S2 的任何真实验证都要 24.04 的节点（决策 D1）——WSL 沙箱跑不了 GPFS（§2.5、V22）。2026-10-01 时节点还没到位，GPFS 的节点脚本只能先写、不能执行，S3 并行；2026-10-02 work-x 重装为 24.04 后 D1 解决，S2–S6 都在 work-x 上做了真实节点验收。
+
+**提交与部署现状**（2026-10-07）：下面各阶段记录里的「未提交」「未部署」是写记录当时的状态。现在各阶段的代码都已提交并推送到 `origin/stage-01`：S1–S3 `c8804380`..`e1a8c167`（2026-10-03 提交），S4 `fbda1252`..`c9f12ee4`（2026-10-03），S5 `2f780768`..`ad9da6f2`（2026-10-04），S6 `64cf45be`..`cb4c8250`（2026-10-06），S7 纠删码第一版 `3a8cd3ab`..`f8e0fe41` 与 `9a7ba1a1`，存储进程的 OOM 保护 `38011e0b`..`6a69e161` 与 `9b3c2322`，S7 第二轮 `88c36ce8`..`e8c96655` 与 `7072b00f`（2026-10-07）。S1–S6、纠删码第一版、OOM 保护都以叠加文件的方式部署到 work-x 验收过（纠删码第一版按代码审查改过的节点脚本没部署）；**S7 第二轮没部署，一项都没有在真实节点上跑过**（实验 E1–E17）。各阶段「没做」的项后来补上的，在原处加了注。
 
 ### S0：可行性验证
 
@@ -1902,7 +2179,7 @@ GPFS 优先：S2 先于 S3 开工。S2 的任何真实验证都要 24.04 的节�
   9. 「NSD 节点回来后它的盘被自动拉起」原属健康看护（§14.1、S5），S2 先单独做了：任务循环每分钟给每个托管 GPFS 集群的一台管理节点发 `gpfs_disks_up.sh`（后端可选接口 `storageClusterMaintainer`）
   10. 导入的集群：`gpfs_import.sh` 只检查不改；池是登记已有目录（`register_pool`、`unregister_pool`，不执行任何 `mm` 命令，克隆方式 `copy`）；删除就是取消登记（`forget`）。没有另一组节点，导入**没有在真实节点上测过**
   11. 系统盘放共享池的请求直接拒绝（S4）；迁移时本地盘不能换到共享池、共享盘不能换池
-- **没做**：第二个文件系统（`create_fs` / `delete_fs`）、改角色（`change_roles`）、两种介质的放置规则（代码有，测试环境只有 HDD，没在真实节点上验证）、按 GPFS 存储池算容量（S5）、健康看护与告警（S5，只做了拉起 `down` 的盘）、Ceph（S3）、系统盘（S4）
+- **没做**：第二个文件系统（`create_fs` / `delete_fs`）、改角色（`change_roles`）、两种介质的放置规则（代码有，测试环境只有 HDD，没在真实节点上验证）、按 GPFS 存储池算容量（S5）、健康看护与告警（S5，只做了拉起 `down` 的盘）、Ceph（S3）、系统盘（S4）。（后来补上：改角色、健康看护与告警在 S5；第二个文件系统在 S7 第二轮，只在代码层面）
 - **测试**：
   - PostgreSQL（`services/storage_pool_shared_pg_test.go`、`storage_gpfs_ops_pg_test.go`）：建池全过程（参数校验、介质、池槽、离线节点被跳过、各节点的检查结果写进 `hyper_storage_pools`）、心跳上报（非成员被忽略）、共享卷的建 / 挂 / 扩 / 卸 / 删与池级准入（超分、用量 95%、失败的卷照样占容量）、带共享数据盘的迁移计划（共享盘不复制、不预留、目标够不到就拒绝、`ApplyMigrationPlan` 不给共享卷写 `hyper`）、配额任务、删池（有卷拒绝、先撤清单再删 fileset）、建池失败中止后再删、维护规则；加盘、加节点（新主机的预检、全体 SSH 信任、`known_hosts` 带上旧成员记下的公钥、故障组 4）、移除盘（`nsddevices` 留下的盘、擦掉的盘）、移除节点（实例在用池时拒绝、唯一管理节点拒绝、离线移除要输入主机名、剩两个故障组拒绝）、重新均衡、每分钟的拉盘命令；导入、登记与取消登记目录、取消登记集群。原有的 PostgreSQL 测试、WSL 端到端测试全部通过
   - WSL（`gpfs-spike/stc-test3.sh`，31 项，tmpfs 冒充 GPFS 文件系统、`fs_type` 给 `tmpfs`）：清单的校验与写入、探测（缺标记、类型不对、就绪、卡住）、心跳只在变化或满 5 分钟时上报、建卷（不覆盖已有文件、路径必须是这个卷的、`..`、根目录 `/`、坏的驱动名）、离线与在线扩容（假 `virsh`）、缩小被拒并报实际大小、挂载生成的磁盘 XML（`cache='none' error_policy='stop'`）、删卷只删这个卷的文件、池没挂上时不在底下的根文件系统写任何东西、`stc_pools.sh` 当场探测、清单里没了的池停探测、待启动列表把共享盘归到对应的池、`register` 拒绝不在 GPFS 上的目录。原有 43 项照常通过
@@ -1959,7 +2236,7 @@ GPFS 优先：S2 先于 S3 开工。S2 的任何真实验证都要 24.04 的节�
   - 节点：`storage/ceph_install.sh`、`ceph_cluster.sh`（bootstrap / add_hosts / configure / create_osds / remove_osds / remove_host / teardown）、`ceph_client.sh`（setup / import / remove）、`ceph_pool.sh`（create / quota / delete / register / unregister）、`drivers/ceph_rbd.sh`、`backends/ceph.sh`（`backend_existing`、`backend_disk_path`、`backend_disks_resolved`、`backend_leave`、`backend_forget`）；`stc_resolve_disks.sh` 调新钩子 `backend_disk_path`，`stc_forget.sh` 调 `backend_forget`；`source_migration.sh`、`resize_volume_shared.sh`、`report_rc.sh` 认 RBD 盘（下面第 10 条）
   - 界面：向导里 Ceph 的部署参数与导入参数（密钥是密码框，确认页打码）、按存储类型的节点与导入说明；共享池弹窗按类型（Ceph 没有 inode 上限，导入的 Ceph 集群填 RBD 池名）；集群概览的「集群标识」；三种语言的文案，步骤名 `create_pool` / `delete_pool` 改成不带 fileset 的说法
 - **与上文（§8）不同的地方**：
-  1. **版本**：每台节点装自己发行版的 `ceph-common`（24.04 是 19.2.3，26.04 是 20.2.0），**一个集群的节点必须是同一个发行版**（预检步骤的 Done 钩子比较 `os`，加节点时和已记录的节点比）；没有做「混用时改用 download.ceph.com」。容器镜像默认 `quay.io/ceph/ceph:v<节点 ceph-common 的版本>`，**比节点新的镜像安装步骤拒绝**：探路时 cephadm 打包的默认镜像 `:v20` 是 20.2.4，它生成的密钥（`AgD…`，新的密钥类型）20.2.0 的客户端读不出（`Malformed input`），所以镜像必须钉到节点客户端的版本（V10）
+  1. **版本**：每台节点装自己发行版的 `ceph-common`（24.04 是 19.2.3，26.04 是 20.2.0），**一个集群的节点必须是同一个发行版**（预检步骤的 Done 钩子比较 `os`，加节点时和已记录的节点比；S7 第二轮放宽为只要求跑守护进程的节点同一发行版，纯客户端的 `ceph-common` 不低于镜像版本即可，见 §8.1）；没有做「混用时改用 download.ceph.com」。容器镜像默认 `quay.io/ceph/ceph:v<节点 ceph-common 的版本>`，**比节点新的镜像安装步骤拒绝**：探路时 cephadm 打包的默认镜像 `:v20` 是 20.2.4，它生成的密钥（`AgD…`，新的密钥类型）20.2.0 的客户端读不出（`Malformed input`），所以镜像必须钉到节点客户端的版本（V10）
   2. 步骤合并：`pull_image` 并进 `install`（守护进程节点才拉镜像，只当客户端的节点只装 `ceph-common qemu-block-extra`），`place_daemons` 并进 `add_hosts`（先按标签应用 mon / mgr / crash 的放置，再加主机，等 mon 法定人数与 active mgr）。共 11 步
   3. bootstrap：加 `--orphan-initial-daemons`（不建 cephadm 默认的「5 个 mon、2 个 mgr」放置，由 `add_hosts` 按标签放）、`--skip-pull`、`--allow-fqdn-hostname`，`--output-dir` 放在 `/var/lib/ceph/<fsid>/bootstrap`（不写 `/etc/ceph`）。cephadm 往 `authorized_keys` 写的那一行公钥不带限制，与公钥文件内容完全相同，bootstrap 后按整行删掉，留下 `ssh_trust` 写的带 `from=` 的那行（V17）。管理命令一律用 cephadm 在 `_admin` 主机上维护的 `/var/lib/ceph/<fsid>/config/ceph.conf` 与 admin keyring（cephadm 仍会写 `/etc/ceph/ceph.conf`，平台不用它）
   4. **客户端权限**：托管集群上客户端用户 `client.cloudland` 是**不限池**的 `profile rbd`（集群归 CloudLand，上面的池都是 CloudLand 的），省掉了建池 / 删池时改权限这一步；导入的集群按对方建的权限。`configure` 没有启用 mgr 的 prometheus 模块（S5），没有设 `auth_allow_insecure_global_id_reclaim`；1 副本（测试布局）时打开 `mon_allow_pool_size_one`（不开时 `pool set size 1` 被拒）并关掉 `mon_warn_on_pool_no_redundancy`
@@ -1971,7 +2248,7 @@ GPFS 优先：S2 先于 S3 开工。S2 的任何真实验证都要 24.04 的节�
   10. 通用脚本里原来只认文件盘的三处：`source_migration.sh` 先在文件盘列表里找计划里的每块盘（RBD 盘不是文件，迁移直接失败）→ 共享盘在查找前跳过；`resize_volume_shared.sh` 在线扩容用卷路径做 `virsh blockresize` 的参数 → 改用 `disk-<卷>.xml` 里的设备名；`report_rc.sh` 的 `instance_pools` 只认 `source/@file` → 加上 `protocol='rbd'` 的盘（按 RBD 池名与配置文件对应到池；本机清单里没有的池按「不可用」，云服务器等着）
   11. Ubuntu 26.04 的 Rust 版 coreutils `install -o 167` 不认没有对应用户的数字 uid，cephadm 建守护进程目录时失败（`invalid user: '167'`）：安装步骤在没有 uid 167 的用户时建系统用户 `ceph-ctr`（24.04 不受影响）
   12. 删除集群：`teardown` 只在管理节点上停掉编排器（`mgr module disable cephadm`），每台节点的 `stc_leave` 里 `backend_leave` 做 `cephadm rm-cluster --force --zap-osds`、删 `/etc/ceph` 里属于这个集群的文件、客户端配置与 secret、回环盘的卷组，再擦盘
-- **没做**：加 mon 节点后已有节点的客户端配置不更新 `mon_host`（旧 mon 在就能用，客户端会从 mon map 学到新的；要更新得重跑客户端配置）、换坏盘（`osd rm --replace`）、改角色、`add_clients` / `remove_clients` 单独的任务（加节点时选「客户端」角色即可）、mgr prometheus 与健康看护（S5）、blocklist（S6）、混用 24.04 与 26.04、私有镜像仓库的口令
+- **没做**：加 mon 节点后已有节点的客户端配置不更新 `mon_host`（旧 mon 在就能用，客户端会从 mon map 学到新的；要更新得重跑客户端配置）、换坏盘（`osd rm --replace`）、改角色、`add_clients` / `remove_clients` 单独的任务（加节点时选「客户端」角色即可）、mgr prometheus 与健康看护（S5）、blocklist（S6）、混用 24.04 与 26.04、私有镜像仓库的口令。（后来补上：换坏盘、改角色、mgr prometheus 与健康看护在 S5，blocklist 在 S6；加 / 删 mon 后刷新客户端的 `mon_host`、混用发行版、私有镜像仓库在 S7 第二轮，只在代码层面；`add_clients` / `remove_clients` 仍没有单独的任务）
 - **测试**：
   - 探路（WSL，`gpfs-spike/ceph/spike1.sh`、`spike2.sh`）：上面第 1、3、4、7、8 条的结论都来自这里；WSL 的根挂载是 private，ceph-volume 容器要 `rslave`，测试前 `mount --make-rshared /`（真实节点默认 shared）
   - PostgreSQL（`services/storage_ceph_pg_test.go`）：部署每一步的输入（发行版不一致时预检失败、客户端节点只装客户端、SSH 信任的来源、bootstrap / 加主机 / 配置 / 建 OSD 的输入、客户端配置带解密后的密钥）、配置步骤把密钥加密保存并从运行结果里删掉、收尾后的集群 / 盘 / 节点；建池（参数校验、介质的副本数检查、规则名、驱动参数、清单内容）、RBD 卷的命令（`image` 而不是 `path`）、改配额、删池；加盘（回环盘的逻辑卷与内核名）、移除盘、离线移除客户端节点；删除；导入（密钥不进 `params`、mon 地址补端口、登记与重复登记、取消登记、forget 带存储类型）
@@ -2034,7 +2311,7 @@ GPFS 优先：S2 先于 S3 开工。S2 的任何真实验证都要 24.04 的节�
   5. 等副本的重装在导入失败时让云服务器进 `error`（记录里已经是新镜像、新规格、新密码，回到原状态会显示错的东西），系统盘没动、容量记录改回原值
   6. 本地系统盘不改用 `boot_disk` 结构，仍走位置参数
   7. 救援时原系统盘的磁盘 XML 由驱动生成（元数据里的 `boot_disk`），不从原域定义里抠
-- **没做**：预热（`PATCH /images/:id` 带 `storage_pools`）；`existing=true`（宕机恢复，S6）；导入进度；每台节点同时导入的数量限制；GPFS 克隆父文件与 RBD 副本的孤儿对账（S5）；本地系统盘的元数据结构统一
+- **没做**：预热（`PATCH /images/:id` 带 `storage_pools`）；`existing=true`（宕机恢复，S6）；导入进度；每台节点同时导入的数量限制；GPFS 克隆父文件与 RBD 副本的孤儿对账（S5）；本地系统盘的元数据结构统一。（后来：`existing=true` 在 S6，孤儿对账在 S5；预热（改为 `POST /images/:id/storage_copies`）、导入进度、每台节点的导入并发在 S7 第二轮，只在代码层面；本地系统盘统一元数据决定不做，见 S7）
 - **测试**：
   - PostgreSQL：新增 `TestImageStoragePG`（第一次使用导入、同时的第二个请求等同一个导入、只认被派去的节点的回报、导入失败时启动与重装的处理、重试、同步后发出等着的命令、重复回报不重发、启动参数、系统盘回调的节点与副本校验、删镜像时有克隆则保留、删云服务器的系统盘连同 NVRAM、最后一块克隆删掉后删副本、删副本失败重发、删除失败的系统盘按卷再删、活着的云服务器的系统盘按卷删被拒、`sharedPoolHostsOfZone`、有导入时拒绝删池、删池带走副本）与 `TestImageStorageRBDRefs`；`services`、`rpcs`、`apis` 的 PostgreSQL 测试全部重跑通过
   - WSL 节点脚本：新增 `gpfs-spike/stc-test5.sh`（38 项，tmpfs 冒充 GPFS、假 `mmclone`：导入与它的后台作业、过期临时文件、副本已在、镜像不可得、池没检查过、系统盘的各项校验、克隆与整盘复制、规格太小时删掉做出来的盘、`xml_replace_disk`、重装换盘、`drv_drop` 不删别的、删副本、删系统盘连同 NVRAM、`nvram_undefine_flag`）；`stc-test1`–`4` 重跑通过（第一次跑时 2、3 各有失败，是第一次失败的 Ceph 端到端测试在 WSL 里留下的集群目录：内存预留与池列表，清掉后通过）
@@ -2126,7 +2403,7 @@ GPFS 优先：S2 先于 S3 开工。S2 的任何真实验证都要 24.04 的节�
   - WSL：新增 `gpfs-spike/stc-test6.sh`（21 项：GPFS 指标钩子用假 mm 命令、挂载点解码与记住、GPFS 不应答、`stc_metrics.sh` 写文件与删掉离开的集群和 Ceph 的文件、锁、池探测写指标与池被移出后删掉、孤儿列表的 gzip 回调、未在本机的池、上传日志到本机 HTTP 服务、拒绝 / 没有日志 / 坏参数、坏盘释放不擦）；`stc-test1`–`5` 重跑通过（18 / 31 / 32 / 20 / 63）
   - 界面：会话临时目录 `pw/stc-ui-s5.js`（20 项，接口全在浏览器里模拟）：健康卡片与告警、自动加入卡片与设置 / 重试、磁盘状态列与只给 down 的盘「换盘」、换盘弹窗只列空闲盘、改角色不给盘角色、四张监控图、完整日志 202 后下载、孤儿对账、系统设置的存储告警
   - 在 work-01 上只读试跑过两个 GPFS 钩子（`backend_health`、`backend_metrics`），输出与真实集群一致
-- **没做 / 没测**：Grafana 面板；GPFS fileset 用量与按 GPFS 存储池分的容量；外部 Ceph 集群没有曲线（mgr 不归 CloudLand 管）；自动加入不能只限新上线的节点；自动加入与「客户端第一次得到守护进程角色时安装」在 work-x 上测不了（三台都在两个集群里，没有客户端节点），只有 PostgreSQL 与单元测试；GPFS `mmdelnsd` 失败后的兜底在真实节点上没触发到（停掉的盘 `mmdelnsd` 也返回 0）
+- **没做 / 没测**：Grafana 面板；GPFS fileset 用量与按 GPFS 存储池分的容量；外部 Ceph 集群没有曲线（mgr 不归 CloudLand 管）；自动加入不能只限新上线的节点（这四项在 S7 第二轮补上，只在代码层面）；自动加入与「客户端第一次得到守护进程角色时安装」在 work-x 上测不了（三台都在两个集群里，没有客户端节点），只有 PostgreSQL 与单元测试；GPFS `mmdelnsd` 失败后的兜底在真实节点上没触发到（停掉的盘 `mmdelnsd` 也返回 0）
 - **部署要点**：clapi 与 cpgateway 一起（新接口、三项系统设置）；AutoMigrate 建 `storage_run_logs`、`storage_pool_reconciles`，`storage_cluster_disks` 加 `state` / `checked_at`，`storage_clusters.pending_clients` 改为 text；Prometheus 配置加 `storage_clusters` 任务（`deploy/docker/config/prometheus/prometheus.yml`，要重建 / 重启 prometheus 容器）；三台节点同步脚本：新增 `storage/stc_health.sh`、`stc_metrics.sh`、`stc_upload_log.sh`、`stc_pool_objects.sh`（可执行位，提交时 `git update-index --chmod=+x`），改动的 `storage_lib.sh`、`report_rc.sh`、`pool_probe.sh`、`shared_pool_probe.sh`、`storage/backends/{gpfs,ceph}.sh`、`storage/{gpfs_cluster,gpfs_fs,ceph_cluster,stc_release_disks}.sh`、`storage/drivers/{file,ceph_rbd}.sh`；已有的 Ceph 集群由健康检查打开 mgr 的 prometheus 模块；完整日志要 `CAPTURE_UPLOAD_SECRET` 与 clapi 内部地址（与捕获镜像相同）；前端随 nginx
 
 **代码审查修复（2026-10-04，`/code-review` 报 15 条，全部修掉；TC-23 回归点 4–18）**：
@@ -2187,10 +2464,10 @@ GPFS 优先：S2 先于 S3 开工。S2 的任何真实验证都要 24.04 的节�
   - GPFS（`storage_backend_gpfs_upgrade.go`）：安装包要已验证、已接受许可、版本比集群新、与当前包同一版本类型。步骤：`fetch_package`（所有节点）→ 每台一对 `drain` + `upgrade_node`，不在仲裁里的先、仲裁节点后。`drain` 是新的**控制步骤**：任务引擎的步骤定义加了 `Control`（clapi 自己做、每次推进与每轮看护都调用，直到完成；超时与失败照常、重试从头开始），它为这台上正在运行 / 暂停、有盘在本集群池里的云服务器发起与维护模式相同的迁移（`migrationAdmin.Create` 批量），全部离开才完成，迁移被拒或失败时步骤失败并写出原因。`upgrade_node` 是 `gpfs_upgrade.sh`：再查一次本机没有这样的云服务器、所有盘 up → `mmshutdown` → `gpfs_install_packages`（从 `gpfs_install.sh` 挪到 `backends/gpfs.sh` 共用）→ `mmbuildgpl`（总是重编）→ `mmstartup` 等 active → 挂载 → 有盘不是 up 时 `mmchdisk <fs> start -a`（同步，顺带补齐停机期间的写）→ 全部 up；已是新版本的节点只做后半段。完成后集群记录换成新包与新版本（之后加入的节点装新版本）。`{finalize: true}` 另起一个任务，管理节点 `mmchconfig release=LATEST --accept-empty-cipherlist-security`、每个文件系统 `mmchfs -V full`
   - Ceph（`storage_backend_ceph_upgrade.go`）：`install`（所有节点，沿用部署的 `ceph_install.sh`，镜像为请求里的或留空按装上的版本取官方镜像；Done 要求各节点同一版本、不比集群旧，把版本与镜像写进任务参数）→ `upgrade`（管理节点 `ceph_cluster.sh upgrade`：所有守护进程已是目标版本就直接成功；有别的升级在跑且目标不同就拒绝；否则 `orch upgrade start --image`，每 15 秒看 `orch upgrade status`（空闲时它输出一行英文而不是 JSON）与 `health detail` 里的 `UPGRADE_*`，跟到 `ceph versions` 只剩目标版本）→ 集群记录更新版本与镜像。集群部署时用了自己的镜像（私有仓库）时必须给新镜像
 - **接口与界面**：`POST /hypers/:uuid/evacuate`、`POST /hypers/:uuid/unfence`、`POST /storage_clusters/:id/rotate_keys`、`POST /storage_clusters/:id/upgrade`（都只给系统管理员，网关白名单与审计 `hyper.evacuate`（确认断电时 `hyper.evacuate_confirmed`）、`hyper.unfence`、`storage_cluster.rotate_keys`、`storage_cluster.upgrade`）；`GET /hypers/:uuid` 加 `offline_at`、`reconciled_at`、`fences`；能力加 `rotate_keys`、`client_key`、`upgrade`、`finalize`。界面：节点状态「离线」，离线节点「操作 → 疏散」（`components/storage/HostEvacuateModal.vue`），概览的「宕机恢复」卡片（离线时间、上次对账、存储隔离与「解除隔离」「已手工解除」，`HostRecoveryCard.vue`），疏散结果；云服务器原因「等待对账」「疏散失败」；存储集群详情「轮换密钥」「升级」（`StorageRotateKeysModal.vue`、`StorageUpgradeModal.vue`），任务类型与步骤名的文案
-- **与设计不同的地方**：① §11.3 第 1 步「对单台云服务器 `POST /migrations {force: true}`」没做，疏散接口带 `instances` 选一部分；② 疏散不复用冷迁移的 `LaunchVM sync` 回调链，用自己的回调 `'evacuate'`（要同时结束迁移记录与改归属）；③ 对账不靠 cland 的注册，靠心跳断档（见上）；④ **Ceph 的待定密钥第一次被使用就自动转正**（帮助文本：rotated into place on first use，几秒内生效；2026-10-04 在 WSL 的 20.2 上实测：新密钥认证一次后 `pending_key` 消失、旧密钥新建会话被拒），没有「新旧都有效、最后提交」的窗口，所以「提交前要求旧 QEMU 都已重启或迁走」的检查步骤删掉了：实测用旧密钥建立的 librados 会话在转正后照常读写 240 秒，期间 mon 票据（调到 60 秒）续期多次、mon 重启一次也没断（续期与重连都凭已有票据，不需要密钥）；⑤ `cephadm set-priv-key` / `set-pub-key` 不能用来换钥匙：两条命令各自拿新的一半去配**当前**的另一半，`Public key mismatch` 后保留旧钥匙且退出码 0（20.2 实测），而 `check-host` 走编排器缓存的 SSH 连接，钥匙换没换成都说 OK
+- **与设计不同的地方**：① §11.3 第 1 步「对单台云服务器 `POST /migrations {force: true}`」没做，疏散接口带 `instances` 选一部分（S7 第二轮补上，按源节点委托给疏散，只在代码层面）；② 疏散不复用冷迁移的 `LaunchVM sync` 回调链，用自己的回调 `'evacuate'`（要同时结束迁移记录与改归属）；③ 对账不靠 cland 的注册，靠心跳断档（见上）；④ **Ceph 的待定密钥第一次被使用就自动转正**（帮助文本：rotated into place on first use，几秒内生效；2026-10-04 在 WSL 的 20.2 上实测：新密钥认证一次后 `pending_key` 消失、旧密钥新建会话被拒），没有「新旧都有效、最后提交」的窗口，所以「提交前要求旧 QEMU 都已重启或迁走」的检查步骤删掉了：实测用旧密钥建立的 librados 会话在转正后照常读写 240 秒，期间 mon 票据（调到 60 秒）续期多次、mon 重启一次也没断（续期与重连都凭已有票据，不需要密钥）；⑤ `cephadm set-priv-key` / `set-pub-key` 不能用来换钥匙：两条命令各自拿新的一半去配**当前**的另一半，`Public key mismatch` 后保留旧钥匙且退出码 0（20.2 实测），而 `check-host` 走编排器缓存的 SSH 连接，钥匙换没换成都说 OK
 - **测试**：PostgreSQL `TestEvacuatePG`、`TestReconcilePlanPG`、`TestStorageRotateKeysPG`、`TestStorageUpgradePG`（drain 等迁移、迁移失败带原因、重试继续、Ceph 发行版版本更旧时拒绝）、rpcs `TestEvacuationSourceIgnoredPG`、`TestHyperBackFromOfflinePG`；单元 `TestStorageFencePlan`、`TestStorageVersionLess`；WSL `stc-test7.sh` 34 项（对账询问的节奏、`node_reconcile.sh` / `clear_stale_vm.sh` 用替身 virsh、GPFS / Ceph 隔离用替身命令）、`stc-test8.sh` 17 项（WSL 真实 sshd 上三轮钥匙切换与登录核对、GPFS 升级的检查函数、Ceph 升级与客户端密钥提交）；WSL 真 Ceph 端到端 `TestStorageCephWSL` 新增三段：撤离（替身宕机节点、真实黑名单、`launch_vm.sh` 撤离模式带 RBD 系统盘与数据盘、回来后解除黑名单）、轮换（旧 TCG 域在轮换后仍能在线扩容自己的盘，新域用新密钥）、无事可升的升级，约 9 分钟；测试工具的假 cland 学会了 `select=` 控制串；本机界面 `pw/stc-ui-s6.js` 24 项（全部接口在浏览器里模拟）；全部 Go 测试（PostgreSQL）、cpgateway 与 CGO 测试、WSL `stc-test1`–`8` 通过（`stc-test5` 取 `launch_vm.sh` 的 `disk_fail` 改为取共享系统盘那个，撤离分支在前面加了一个）
 - **部署要点**：clapi 与 cpgateway 一起（白名单）；AutoMigrate 建 `storage_fences`、给 `hypers` 加 `offline_at` / `offline_prior` / `reconciled_at` / `reconciled_boot`、`migrations` 加 `source_cleaned` / `message`、`instances` 加 `nested_enable`；三台同步脚本：新增 `node_reconcile.sh`、`clear_stale_vm.sh`、`storage/gpfs_upgrade.sh`（提交时 `git update-index --chmod=+x`），改了 `report_rc.sh`、`launch_vm.sh`、`build_meta.sh`、`storage_lib.sh`、`async_job/start_pending.sh`、`storage/{stc_ssh_trust,gpfs_cluster,gpfs_install,ceph_cluster,ceph_client}.sh`、`storage/backends/gpfs.sh`。部署后第一次心跳各节点会做一次开机对账（`reconciled_boot` 不存在），属正常
-- **没做 / 没测**：`POST /migrations {force}` 单台疏散；疏散后 UEFI 的 Ceph 云服务器 NVRAM 从模板重建，Windows 等依赖启动项的系统能否启动（V16）；Ceph 只验证了无事可升的路径（发行版没有更新的点版本）。GPFS 升级与 finalize、REC-07 已在 2026-10-06 补测（见下面真实节点验收的第 6、7 条）
+- **没做 / 没测**：`POST /migrations {force}` 单台疏散（S7 第二轮补上，只在代码层面）；疏散后 UEFI 的 Ceph 云服务器 NVRAM 从模板重建，Windows 等依赖启动项的系统能否启动（V16）；Ceph 只验证了无事可升的路径（发行版没有更新的点版本）。GPFS 升级与 finalize、REC-07 已在 2026-10-06 补测（见下面真实节点验收的第 6、7 条）
 
 **S6 真实节点验收（2026-10-05，用户要求「部署测试」并同意断电 / 断网用例、不测 GPFS 升级）**：部署到 work-x 按 `test-items/TC-24-宕机恢复与升级.md` 跑完，执行记录 `test-items/runs/2026-10-05-ad9da6f2+S6宕机恢复.md`。§16 S6 的三条验收都通过：断电后云服务器在其他节点启动、数据完整，节点回来对账清掉残留定义、归属不变、之后才解除隔离；只断管理网时旧 QEMU 立即暂停在 I/O 错误上、新副本盘上的最后一条记录是隔离开始那一秒；70 分钟后（Ceph 自己加的 1 小时黑名单已过期）恢复旧 QEMU 仍然写不进去。V9 也有了结论：GPFS 驱逐期间旧 QEMU 还开着 fs1 上的文件，对账清掉它之后解除驱逐，节点正常重新加入并挂载。验收中发现并修掉 5 个问题（TC-24 回归点 9–13）：
 
@@ -2225,7 +2502,7 @@ GPFS 优先：S2 先于 S3 开工。S2 的任何真实验证都要 24.04 的节�
 
 ### S7：后续
 
-GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPFS 集群、对接已有的存储集群）、SAN 共享 LUN 做 NSD。
+GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPFS 集群、对接已有的存储集群）、SAN 共享 LUN 做 NSD。三项在第二轮都已在代码层面实现；远程挂载只做了两个平台托管的 GPFS 集群之间，对接已有的（导入 / 外部）集群**没实现**（见第二轮「与设计不同的地方」）。
 
 **纠删码的可行性验证**（2026-10-06，还没写代码）：
 - work-x 的物理机建不起来：每台只有 2 块 SATA 盘，程序硬性要求的盘数不够（§2.3）。
@@ -2244,19 +2521,19 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 - 2026-10-07 在 LIO 模拟盘上按作业协议把节点脚本完整跑了一遍（部署 → 重试 → 健康 → 拔盘 → 拆除，结果见 §7.9「LIO 模拟盘上的节点脚本验证」），查出并修了 6 个问题（§7.9 坑 ⑧ 的盘所在节点、⑩–⑬，以及 `nsdRAIDDiskCheckVWCE` 只收 yes / no）。
 - 物理机上用 LIO 模拟盘跑通了 CloudLand 端到端（2026-10-07，§7.9「物理机端到端」）：部署 2 小时 10 分、不支持的操作 400、建池建卷、系统盘与热迁移、拔盘告警、删除，又修了 2 个问题（坑 ⑭ 的 `lsscsi` 与 `mmdiscovercomp`、坑 ⑮）；`ess_config_mismatch` 在非 IBM 硬件上消不掉，健康一直 warning。
 - 2026-10-07 `/code-review` 报的纠删码 12 条全部修掉（§7.9 坑 ⑯–⑱，TC-25 回归点 10–16）：装包按安装包清单逐个核对、`nsddevices: false` 不再被忽略、建恢复组核对物理盘数与服务器数、进度监视不再占着集群锁、`-Y` 输出按表头取列、两种布局共用部署前 9 步与收尾记账（顺带修了副本模式收尾重跑时盘的 `fs_id` 写成 0）、接口改为返回通用的 `layout_info`（去掉 `ece` 字段）。单元、PostgreSQL、WSL `stc-test9.sh` 26 项、界面 24 项都通过。**修完的节点脚本没部署到 work-x，没有整套重跑。**
-- 加减节点、换盘、升级以后再做。
+- 加减节点、换盘、升级当时留到以后；第二轮已在代码层面实现（见下表），真实环境的实验 E1–E4 没做。
 
-**第二轮：把剩下没做的在代码层面都做了**（2026-10-07，用户「先从代码层面把没做的都做了 然后标记哪些实验没做 并更新测试用例」；**未部署、未提交，一项都没有在真实节点上跑过**）：
+**第二轮：把剩下没做的在代码层面都做了**（2026-10-07，用户「先从代码层面把没做的都做了 然后标记哪些实验没做 并更新测试用例」；2026-10-07 提交并推送：`88c36ce8` 后端、`db119d88` 节点脚本、`b62e310a` 前端、`4b77eb6d` Grafana 看板、`e8c96655` 文档与用例，另有文档补充 `7072b00f`；**没部署，一项都没有在真实节点上跑过**）：
 
 | 项 | 实现 | 设计 |
 |---|---|---|
 | 纠删码加减服务器、加盘、换盘、改角色、滚动升级与完成升级 | `storage_backend_gpfs_ece_ops.go`、`gpfs_ece.sh`（`add_servers` / `remove_server` / `resize` / `replace`）、`gpfs_upgrade.sh`（挂起 / 恢复）、`gpfs_cluster.sh` 的完成升级 | §7.9「运维」 |
 | 纠删码混合介质、8M / 16M 块的校验粒度、槽位映射自动生成、就绪检查 | `storage_backend_gpfs.go`（参数、布局规则）、`gpfs_ece.sh`（`create_vs` / `create_fs` / `slots`）、`backends/gpfs.sh` 的 `backend_readiness`、`stc_precheck.sh` | §7.9 |
 | SAN 共享 LUN | `storage_backend_gpfs_san.go`、扫描与分类（`storage_lib.sh`、`scan_host_disks.sh`）、`gpfs_nsd.sh` 的 `servers`、释放 / 离开时不擦共享 LUN、界面的 SAN 卡片与只能选共享 LUN | §7.10 |
-| 多集群远程挂载 | `storage_remote_mount.go`、`storage_backend_gpfs_remote.go`、`gpfs_remote.sh`、接口 `/storage_clusters/:id/remote_mounts`、界面文件系统页的「远程挂载」 | §7.11 |
-| 单台强制疏散 | `POST /migrations {force: true, confirm_fenced}` 按源节点委托给疏散（`AllOrNothing`：一次请求里有一台疏散不了就都不疏散；一次请求只能是一台源节点上的）；界面迁移弹窗在源节点离线时给出强制迁移的说明与「已确认隔离」 | §11.3 |
+| 多集群远程挂载 | `storage_remote_mount.go`、`storage_backend_gpfs_remote.go`、`gpfs_remote.sh`、接口 `/storage_clusters/:id/remote_mounts`、界面文件系统页的「远程挂载」；两边都必须是托管的同类集群（`remoteMountClusters`、`storageClusterForRemote` 拒绝导入的集群） | §7.11 |
+| 单台强制疏散 | `POST /migrations {force: true, confirm_fenced}` 按源节点委托给疏散（`AllOrNothing`：一次请求里有一台疏散不了就都不疏散；一次请求只能是一台源节点上的）；界面迁移弹窗在源节点离线时给出强制迁移的说明与勾选框「已确认源节点已断电」（离线不足 5 分钟时必须勾） | §11.3 |
 | 自动加入只加新节点 | `auto_join_new_only` → `storage_clusters.auto_join_since`，只有在它之后注册的节点自动加入；界面勾选框 | §6.3 |
-| 镜像副本预热、进度、导入并发 | `POST/DELETE /images/:id/storage_copies[/:pool]`；导入作业分阶段（等槽位 / 下载 / 写入）回报进度，心跳转发 `image_storage_progress`；每节点同时导入数 `image_import_concurrency`（默认 2，`flock` 槽位）；导入节点选当前导入最少的；镜像详情页「共享池副本」卡片 | §9.6 |
+| 镜像副本预热、进度、导入并发 | `POST/DELETE /images/:id/storage_copies[/:pool]`；导入作业分阶段（等槽位 / 下载 / 写入）回报进度，心跳转发 `image_storage_progress`；每节点同时导入数 `image_import_concurrency`（默认 2，`flock` 槽位）；导入节点选当前导入最少的；镜像详情页「存储池副本」卡片（`components/image/ImageStorageCopies.vue`） | §9.6 |
 | Ceph 私有镜像仓库、mon 刷新、混合 24.04 / 26.04 | 参数 `registry` / `registry_user` / `registry_password`（口令加密进 `secrets`；`docker login --password-stdin`，bootstrap 带 `--registry-json`）；加节点、改角色、移除节点后 `mon_addrs` + `client_refresh` 刷新所有客户端的 `mon_host`；只要求守护进程节点同一发行版，客户端的 `ceph-common` 不低于镜像版本 | §8 |
 | GPFS 第二个文件系统 | `POST/DELETE /storage_clusters/:id/filesystems[/:name]`：新盘做新文件系统、删除没有池的文件系统连同它的盘；加盘可指定文件系统 | §7.3 |
 | 存储池 / inode 曲线、导入的 Ceph 曲线、Grafana 看板 | GPFS 每个存储池（`mmdf -Y`）的容量、每个共享池 fileset 的 inode 用量（`mmrepquota -j` / `mmlsfileset -L`）；导入的 Ceph 由客户端节点用客户端身份读 `ceph -s` / `ceph df detail`；每个集群一行 `cloudland_storage_cluster_info`；看板 `deploy/docker/config/grafana/dashboards/storage.json` | §14.3 |
@@ -2303,9 +2580,11 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 - SAN 每台节点一条盘记录（而不是一条记录带服务器列表），这样认领、解析、`nsddevices` 都还是按节点；代价是删除、命名、告警要按 LUN 归并（`DiskSiblings`、`gpfsSANNames`、告警去重）。
 - 远程挂载用原名与原挂载点，而不是挂载方自己起名：池路径在所有节点上一样，迁移不用改路径。
 - 纠删码不支持单块盘移除（mmvdisk 没有这个操作，只能随服务器或换盘）、重新均衡（GNR 自己做）、第二个文件系统（要另一个纠删码卷，以后再说）。
+- SAN 不支持换盘（LUN 由存储阵列保护）和第二个文件系统（要有自己的故障组）；能力见 `storage_backend_gpfs.go` 的 `LayoutCapabilities`。
+- 远程挂载只在两个**托管**的 GPFS 集群之间做；S7 开头说的「对接已有的存储集群」（导入 / 外部集群）没实现，导入的集群作为任一方都被拒（「CloudLand does not change it」）。
 - 本地系统盘不改用 `boot_disk`（见上表）。
 
-**第二轮的代码审查修复**（2026-10-07，用户运行 `/code-review` 报 14 条，核实后全部是真问题，「修复一下」后全部修掉；未部署、未提交，修复同样没在真实节点上跑过）：
+**第二轮的代码审查修复**（2026-10-07，用户运行 `/code-review` 报 14 条，核实后全部是真问题，「修复一下」后全部修掉；随第二轮一起提交推送（同上），没部署，修复同样没在真实节点上跑过）：
 
 | # | 问题 | 修法 |
 |---|---|---|
@@ -2326,30 +2605,51 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 
 测试（都通过）：单元 `TestGPFSSANNamesAndWipes`（新 LUN 与在用 LUN 谁查空）、`TestGPFSECELayoutInfo`；PostgreSQL `TestStorageGPFSSANPG`（在用 LUN 请求擦除 400、新服务器的输入）、`TestStorageGPFSFilesystemsPG`（两个文件系统的节点移除输入）、`TestStorageRemoteMountPG`（`remote` 标记、退出时删记录发空清单）、`TestForcedMigrationPG`（两台节点 400、什么都没下发），以及 services / rpcs / apis 的全部 PG 用例；WSL `stc-test11`（每 10 分钟重报、变量不串）、`stc-test13`（分组移除）、`stc-test14`（`remote` 标记与跳过）、`stc-test15`（查询失败不挂起、标记恢复、查不到时不猜）、`stc-test16`（`in_use` 只核对身份）、`stc-test17`（cipherList）连同其余 11 组全部通过；界面 `pw/stc-ui-s7.js` 26 项（加了离开页面后不再轮询——换回旧组件时这一项失败，以及 SAN 在用 LUN 不给擦除）、`pw/stc-ui-ece.js` 24 项。
 
+**设计复查**（2026-10-07）：逐章对照代码改写了本文，凡是写成「未提交」「以后再做」而代码已经做了的、文件名或行为与实现不符的，都按实现改过（各阶段记录只改状态，不改当时的记录）。
+
+**设计复查发现的缺陷**（2026-10-07；(a)–(d) 同日已修，未提交、未部署）：
+- (a) ~~SAN 布局在预检就失败~~ **已修**：预检输入给共享 LUN 带 `shared` 标记，节点只核对身份和没被挂载（§6.5）。
+- (b) ~~成员节点离线时删除集群会卡在 `leave` 步骤~~ **已修**：`leave` 只在在线节点上跑，离线节点回来后由补清理任务做（§5.17、§7.6、§8.6、§14.1）。
+- (c) ~~Ceph mgr 的 prometheus 端口 9283 监听所有地址~~ **已修**：每个 mgr 绑到所在主机的地址（§8.2）。
+- (d) ~~创建向导的确认页明文显示 `registry_password`~~ **已修**：参数摘要遮住所有密码、密钥类参数（§13）。
+- (e) `stc_join.sh` 调用的 `backend_join` 钩子两个后端都没定义：这是可选钩子（`declare -F` 判断后跳过），不是缺陷，不改。
+
+**复查后补的与决定不做的**（2026-10-07，用户「follow 你的建议」）：
+- 补了：Ceph 移除盘 / 主机前的「按介质算主机数」与「剩余容量」检查（§8.5）；离线移除要离线满 30 分钟（§7.5、§8.5）；`auth_allow_insecure_global_id_reclaim=false` 显式设置（cephadm bootstrap 本来就设了，§8.2）；集群详情的测试布局横幅（`test_layout`，§13）。
+- 决定不做（理由写在各处）：`descOnly` 第三故障组（§6.3）；预检的「故障组容量相近」「OSD 不小于 5 GB」「mon 时差 0.05 秒」（§6.5）；GPFS 移除盘前的剩余容量检查（§7.5）；Ceph 的 `ok-to-stop`（§8.5）与 `public_network`（§8.2）；按 fileset 导出用量与配额（附录 E.1）；`allow_unsupported` 进审计（§13）。
+- 暂缓（仍是缺口）：§16 S7 与 §18 列的其余未做项不变。
+- 测试：PG `TestStoragePendingCleanupPG`（新）、`TestStorageCephDeployPG`（按介质拒绝、30 分钟门槛）、`TestStorageGPFSDeployPG` / `TestStorageGPFSSANPG`（预检盘标记）、单元 `TestStorageClusterTestLayout`；WSL 沙箱 `stc-test16.sh`（预检共享 LUN 5 项）、`stc-test18.sh`（新，14 项：teardown 有离线成员、`leave` 的两道节点侧保护、`removal_room`、`ceph_prometheus_bind`）；WSL 真 Ceph 端到端 `TestStorageCephWSL` 加了三条断言（9283 只在节点地址上、`global_id` 为 false、唯一的 OSD 不能移走）；界面 `stc-ui-rev1007.js`（12 项）。用例见 TC-20 / TC-21 / TC-23 / TC-26 的回归点。
+
 ---
 
 ## 17. 测试方案
 
 ### 17.1 环境
 
-见 §2.5 与决策 D1–D3。在决定之前能做的：S1 的全部单元与 PostgreSQL 测试、节点脚本在 WSL 里的测试（已做）；S3 的 Ceph 脚本在 WSL 沙箱里开发。S2 的 GPFS 脚本只能写、不能在 WSL 里执行（V22）。
+见 §2.5。决策 D1–D3 都已解决：work-x 已重装为 24.04，GPFS 用擦掉的 `sdb`、Ceph 用回环盘、纠删码用 LIO 模拟盘，S1–S6 与纠删码第一版都在 work-x 上做过真机验收。每个阶段的测试分四层：单元测试、PostgreSQL 测试（本机 WSL 的 PostgreSQL 18）、WSL 沙箱（真 Ceph 单节点端到端；GPFS 只能用替身命令测节点脚本的逻辑，V22）、本机界面测试（Playwright，接口在浏览器里模拟或只读访问 work-01）；再到 work-x 上真机验收。S7 第二轮只做了前四层，没在真机跑过（E1–E17，§16 S7）。
 
 ### 17.2 用例
 
-- 新建 `test-items/TC-20-存储集群.md`：集群生命周期（部署、导入、加减节点与盘、离线移除、删除）、任务重试与中止、预检、许可证、失败注入
-- 扩充 `TC-16`（存储池）：共享池的建删、可用性、准入、写满
-- 扩充 `TC-07`（迁移）：混合与全共享的迁移矩阵
+实际写成了七份用例，没有按原计划扩充 `TC-16`、`TC-07`（两份里只各加了一条指向 TC-20 的回归点）：
+
+- `test-items/TC-20-共享存储.md`（SHS）：GPFS 集群生命周期（部署、导入、加减节点与盘、离线移除、删除）、任务重试与中止、预检、许可证、共享池与数据卷、带共享盘的迁移、失败注入
+- `TC-21-Ceph存储.md`（CEPH）：Ceph 集群与 RBD 池、OOM 保护
+- `TC-22-共享系统盘.md`（SHB）：共享池里的系统盘、全共享迁移
+- `TC-23-存储运维.md`：健康与告警、监控曲线、完整日志、换盘、改角色、自动加入、孤儿对账
+- `TC-24-宕机恢复与升级.md`：隔离、疏散、对账、凭据轮换、滚动升级
+- `TC-25-GPFS纠删码.md`（ECE）、`TC-26-SAN与远程挂载.md`（S7；TC-26 与 TC-25 的第二轮部分都还没在真机执行）
+- 执行记录在 `test-items/runs/`（`2026-10-03-…+共享存储`、`+Ceph`、`+S4共享系统盘`、`2026-10-04-…+S5存储运维`、`2026-10-05-…+S6宕机恢复`、`2026-10-07-…+ECE模拟盘`、`+OOM保护` 等）
 - 失败注入的做法：安装中断网（`tc qdisc add dev bond0 root netem loss 100%`，不要用 iptables，它拦不住 ARP）；只断管理网（节点上 iptables 拦到 cland 5006 的出向连接）；管理节点在任务中途离线；节点在任务中途重启；删除回环设备模拟坏盘；写满配额
 
 ### 17.3 性能基准
 
-在同一台节点上对比本地 qcow2、GPFS qcow2、RBD raw：fio 的 4k 随机读写（队列深度 1 和 32）与 1M 顺序读写；云服务器从创建到能登录的时间（克隆与整盘复制，镜像 2 GB 与 20 GB）；热迁移耗时（本地复制与共享，磁盘 20 GB 与 200 GB）。在回环设备和 2 Gbit/s 网络上测出来的数只能比相对快慢，不能当产品指标。
+在同一台节点上对比本地 qcow2、GPFS qcow2、RBD raw：fio 的 4k 随机读写（队列深度 1 和 32）与 1M 顺序读写；云服务器从创建到能登录的时间（克隆与整盘复制，镜像 2 GB 与 20 GB）；热迁移耗时（本地复制与共享，磁盘 20 GB 与 200 GB）。在回环设备和 2 Gbit/s 网络上测出来的数只能比相对快慢，不能当产品指标。**还没做**（V15、E17）；验收记录里只有零散的耗时（如带 GPFS 盘的热迁移 9 秒、带 RBD 盘的 10 秒）。
 
 ### 17.4 约定
 
 - 在 work-x 上安装、部署任何东西前先征得用户同意（CLAUDE.md）
 - 对线上环境的界面测试按惯例兜底拦截所有写请求
-- 保留的测试资源（`rb-vpc`、`local-hdd` 等）不动；测试用的回环设备、集群在测完后按记录清理
+- 保留的测试资源不动：原来的 `rb-vpc`、`local-hdd` 随 2026-10-02 重装已不存在；现在保留的是 Ceph 集群 `ceph1` 与池 `rp1`（回环盘）、三台 `sdb` 上的 LIO 模拟盘、纠删码试验虚拟机 ece1–3。gpfs1 已于 2026-10-07 删除。测试用的回环设备、集群在测完后按记录清理
 
 ---
 
@@ -2359,28 +2659,28 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 
 | # | 事项 | 建议 |
 |---|---|---|
-| D1 | ~~**GPFS 测试用的 Ubuntu 24.04 节点从哪来**~~ **已解决**（2026-10-02）：用户选择把 work-01 / 02 / 03 全部重装为 24.04（原有环境不保留）；CloudLand 要在上面重新部署，部署由用户决定 | — |
-| D2 | **测试磁盘**：回环设备、腾出某台的 `local-hdd`，还是新机器的空盘 | 先用回环设备做功能，性能测试等新机器 |
-| D3 | **在 work-x 上装 Ceph 做 S3 的验证**（会装 `cephadm`、拉镜像、起容器、建回环盘），以及部署 S1 做真实节点验证 | 先在 WSL 沙箱里做完，再在一台上跑单节点 |
+| D1 | ~~**GPFS 测试用的 Ubuntu 24.04 节点从哪来**~~ **已解决**（2026-10-02）：用户选择把 work-01 / 02 / 03 全部重装为 24.04（原有环境不保留）；CloudLand 已于 2026-10-02 在上面重新部署（用户批准） | — |
+| D2 | ~~**测试磁盘**：回环设备、腾出某台的 `local-hdd`，还是新机器的空盘~~ **已解决**：重装后 `local-hdd` 不在了；GPFS 用擦掉的 `sdb`（2026-10-02 用户同意），Ceph 用 `sda` 上的回环盘，纠删码用 `sdb` 上的 LIO 模拟盘（2026-10-07，删掉了 gpfs1，§2.5）。性能测试仍要新机器，没做 | — |
+| D3 | ~~**在 work-x 上装 Ceph 做 S3 的验证**，以及部署 S1 做真实节点验证~~ **已解决**：S1 于 2026-10-02 叠加到 work-x 验收；2026-10-03 用户同意在 work-x 上装 Ceph，S3 在三台上用回环盘验收（§16 S3） | — |
 | D4 | GPFS 正式使用的授权：手上是 ECE 版本，计费方式（按容量还是按盘）与是否覆盖副本模式的用法 | 和 IBM 确认，不影响开发 |
-| D5 | GPFS 节点 `apt-mark hold` 内核（内核安全更新变成手工操作） | hold，节点详情页提示有待升级的内核 |
-| D6 | 托管 GPFS 要求启用 S3 | 接受（私有化部署本来就带 MinIO） |
+| D5 | GPFS 节点 `apt-mark hold` 内核（内核安全更新变成手工操作） | hold，节点详情页提示有待升级的内核。**现状**：hold 已按建议实现（加入时 hold、离开时解除，`storage/stc_join.sh`、`storage/stc_leave.sh`），用户没有明确拍板；节点详情页的内核提示**没做** |
+| D6 | 托管 GPFS 要求启用 S3 | 接受（私有化部署本来就带 MinIO）。**已按此实现**：没有 S3 时上传安装包报错（`ErrStorageNeedsS3`），S3 只放安装包（§15.1） |
 | D7 | `VPN_SECRET_KEY` 改成通用的名字（它已经不只给 VPN 用）。改名要同步改每个部署环境的 `.env` | 改，名字用 `CREDENTIAL_KEY` 这类不会和 `S3_SECRET_KEY`、`CPGATEWAY_SECRET_KEY` 混淆的；单独一个提交，与本方案无关。在定之前沿用原名 |
-| D8 | Ceph 镜像从 quay.io 直接拉，还是要求私有仓库 | 默认直连，允许填私有仓库 |
+| D8 | Ceph 镜像从 quay.io 直接拉，还是要求私有仓库 | 默认直连，允许填私有仓库。**已按此实现**（S7 第二轮）：默认拉 `quay.io/ceph/ceph` 与节点同版本的镜像；可填 `registry`、`registry_user`、`registry_password`，镜像必须来自该仓库，口令加密存进 `secrets`（`SplitParamSecrets`），节点 `docker login --password-stdin` 后拉镜像。没有私有仓库，没在真机跑过（E13）。创建向导确认页明文显示 `registry_password` 的问题 2026-10-07 已修 |
 
 ### 18.2 待验证
 
 | # | 事项 | 影响 | 在哪验证 |
 |---|---|---|---|
-| V1 | GPFS 在 24.04 节点上 `mmbuildgpl` 成功、`autoBuildGPL` 在内核变化后自动编译。**前一半已通过**（2026-10-02，work-01）：6.0.0.2 在 Ubuntu 24.04.5、内核 `6.8.0-146-generic`（比 IBM 测过的 139 新）上 `mmbuildgpl` 29 秒编过；三个模块按依赖顺序加载、卸载正常，内核无报错，只有「树外模块、未签名」的提示（安全启动是关的）。测完已卸载干净，包与日志留在 work-01 `/root/gpfs-v1/`。还没测：`autoBuildGPL` 换内核后自动编译、守护进程起来以后的运行 | 能否部署 | S0（24.04 节点） |
-| V2 | 回环设备经 `nsddevices` 用户出口做 NSD；`tspreparedisk -s` 列出本机 NSD 的格式；NSD v2 格式的 GPT 分区类型 GUID；没装 GPFS 时怎么认出 NSD | 测试环境、磁盘扫描（§6.4） | S2（24.04 节点；WSL 跑不了，V22） |
-| V3 | `mmcrcluster -r/-R` 用包装脚本、`adminMode=central` 下非管理节点能执行哪些读命令（`mmlscluster`、`mmlsquota`）；`mmhealth` 的输出格式 | SSH 密钥方案（§6.6）、外部集群（§7.8）、监控（附录 E） | S2（24.04 节点） |
+| V1 | GPFS 在 24.04 节点上 `mmbuildgpl` 成功、`autoBuildGPL` 在内核变化后自动编译。**前一半已通过**（2026-10-02，work-01）：6.0.0.2 在 Ubuntu 24.04.5、内核 `6.8.0-146-generic`（比 IBM 测过的 139 新）上 `mmbuildgpl` 29 秒编过；三个模块按依赖顺序加载、卸载正常，内核无报错，只有「树外模块、未签名」的提示（安全启动是关的）。测完已卸载干净，包与日志留在 work-01 `/root/gpfs-v1/`。守护进程起来以后的运行也已通过：S2–S6 验收期间三台上的 GPFS 集群都正常运行（§16 S2），S6 还把 gpfs1 从 5.2.3.8 滚动升级到 6.0.0.2。还没测：`autoBuildGPL` 换内核后自动编译（`gpfs_cluster.sh` 已设 `autoBuildGPL=yes`） | 能否部署 | S0（24.04 节点） |
+| V2 | 回环设备经 `nsddevices` 用户出口做 NSD；`tspreparedisk -s` 列出本机 NSD 的格式；NSD v2 格式的 GPT 分区类型 GUID；没装 GPFS 时怎么认出 NSD。**已验证**（2026-10-02，S2 真实节点验收，§6.4）：回环设备经 `nsddevices` 出口能建 NSD；`tspreparedisk -s` 不能用（只列 `nsddevices` 出口给出的盘）；扫描按 GPFS 分区类型 GUID `37affc90-ef7d-4e96-91c3-2d7ae055b174` 识别，装了 GPFS 的节点上盘头 4 MiB 不全为零的空白盘判 `unknown_member` | 测试环境、磁盘扫描（§6.4） | S2（已做） |
+| V3 | `mmcrcluster -r/-R` 用包装脚本、`adminMode=central` 下非管理节点能执行哪些读命令（`mmlscluster`、`mmlsquota`）；`mmhealth` 的输出格式。**大部分已有结论**：建集群时远程命令用的是集群自己的 `gpfs_rsh` / `gpfs_rcp`（§16 S2）；`mmhealth cluster show -Y` 在健康钩子里用着（`backends/gpfs.sh` 的 `backend_health`，S5）；非管理节点上 `mmgetstate -a` 经 ssh 问别的节点，全是 unknown，要问本机守护进程用 `mmlsmount all -L -Y`、`mmlscluster -Y`、`mmlsmgr -Y`（§16 S6）。还没确认：非管理节点上 `mmlsquota`；纠删码下 `mmvdisk` 的读命令（E9） | SSH 密钥方案（§6.6）、外部集群（§7.8）、监控（附录 E） | S2 / S6（部分已做） |
 | V4 | `mmclone`：父文件与克隆必须在同一个独立 fileset；qcow2 克隆后能否 `qemu-img resize`；有子克隆时能否删父文件。**已验证**（2026-10-03，work-01 的 `gpfs1`，`/root/cl-s4-verify.sh gpfs`）：`mmclone snap` 后父文件只读、可以改名；`mmclone copy` 到同一 fileset 的另一个目录瞬间完成，克隆读得到父文件的数据、能 `qemu-img resize`、写入互不影响、`qemu-img check` 干净；有克隆时删父文件被拒（只读文件系统），克隆删光后可删；跨 fileset 克隆被拒 | 系统盘（§9.6） | S2 / S4（24.04 节点） |
 | V5 | QEMU 的 OFD 镜像锁在 GPFS 上是否集群范围有效。**是**（2026-10-03，work-01 开着、work-02 读写同一个文件）：另一台节点上 `qemu-img info` 与写入都因拿不到锁被拒，单写入者的第二层在 GPFS 上成立 | 单写入者的第二层（§12.1） | S4 |
-| V6 | libvirt 12 对 GPFS 盘（`cache='none'`）、RBD 盘（`cache='writeback'`）热迁移是否报不安全。**RBD 已验证**（2026-10-03，work-x，24.04 的 libvirt 10.0）：带 RBD 盘（同时带 GPFS 盘）的热迁移 10 秒完成，没有报不安全 | 共享迁移（§10） | S2 / S3 |
-| V7 | 动态属主（含迁移时）与 AppArmor 在 GPFS 路径和 RBD 盘上是否正常。**RBD 已验证**（2026-10-03）：热挂、在线扩容、热迁移都正常；libvirt 的 AppArmor 抽象本来就放行 `/etc/ceph/*.conf`，不用另加规则 | 能否启动 | S2 / S3 |
+| V6 | libvirt 对 GPFS 盘（`cache='none'`）、RBD 盘（`cache='writeback'`）热迁移是否报不安全（原写 libvirt 12，节点 24.04 实际是 10.0）。**已验证**：GPFS（2026-10-02，S2）带 GPFS 数据盘的热迁移 9 秒完成；RBD（2026-10-03，work-x）带 RBD 盘（同时带 GPFS 盘）的热迁移 10 秒完成；都没有报不安全 | 共享迁移（§10） | S2 / S3（已做） |
+| V7 | 动态属主（含迁移时）与 AppArmor 在 GPFS 路径和 RBD 盘上是否正常。**已验证**：RBD（2026-10-03）热挂、在线扩容、热迁移都正常，libvirt 的 AppArmor 抽象本来就放行 `/etc/ceph/*.conf`，不用另加规则；GPFS（2026-10-02，S2）建卷、跨节点挂载、在线 / 离线扩容、热迁移都正常（§16 S2），没单独检查属主变化 | 能否启动 | S2 / S3（已做） |
 | V8 | fileset 配额写满时 `error_policy='stop'` 能否暂停云服务器；Ceph 池配额写满时 I/O 阻塞的具体表现。**Ceph 一半已验证**（2026-10-03）：池到配额约 108% 时 `POOL_FULL`，来宾写入阻塞、云服务器保持 running，各节点的探测 30–50 秒判池不可用；配额改大后写入立即完成 | 写满时的表现（§9.5） | S2 / S3 |
-| V9 | `mmexpelnode` 持久生效、`-r` 解除；GPFS 被驱逐后，QEMU 还开着文件时文件系统能否重新挂载 | 隔离（§11.2） | S6 |
+| V9 | `mmexpelnode` 持久生效、`-r` 解除；GPFS 被驱逐后，QEMU 还开着文件时文件系统能否重新挂载。**已验证**（2026-10-05，S6 真实节点验收，§16 S6）：驱逐期间旧 QEMU 还开着 fs1 上的文件，节点回来、对账清掉它之后解除驱逐，节点正常重新加入并挂载；`mmexpelnode -l` 每行是 `<地址> (<节点名>)`；驱逐活着的节点后要等它的租约过期，文件系统冻结约一分钟 | 隔离（§11.2） | S6（已做） |
 | V10 | Ubuntu 打包的 `cephadm` 20.2 与上游镜像搭配；用 docker 而不是 podman。**已验证**（2026-10-03，WSL）：能搭配、docker 可用，但镜像要钉到节点 `ceph-common` 的版本——打包的 cephadm 默认拉 `:v20`（20.2.4），它生成的新类型密钥 20.2.0 的客户端读不出（`Malformed input`）。实现里镜像默认取节点版本、更新的拒绝（§16 S3 实施记录第 1 条） | 能否部署 | S0（WSL 沙箱） |
 | V11 | ceph-volume 收回环设备上的 LVM 逻辑卷；`ceph orch daemon add osd` 接受的设备写法。**已验证**（2026-10-03，WSL）：收 `/dev/<vg>/<lv>`，但 20.2 的 `daemon add osd` 按设备清单校验，逻辑卷要带 `--skip-validation`；刚加入的主机要先刷新清单 | 测试环境、建 OSD（§8.2） | S0（WSL 沙箱） |
 | V12 | libvirt 的 RBD 磁盘支持 `<config file=...>`。**已验证**（2026-10-03，WSL，libvirt 12.0 / QEMU 10.2.1，真实 librbd）：带 `config file` 与 secret 的磁盘能热挂、在线扩容；2026-10-03 在 24.04 节点（libvirt 10.0 / QEMU 8.2）上也确认了，热迁移同样正常 | mon 变更后的域定义（§9.3） | S3 |
@@ -2391,13 +2691,14 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 | V17 | cephadm bootstrap 是否往 `authorized_keys` 写不带限制的一行、能否改写；关掉 `osd_memory_target_autotune` 后 OSD 的实际内存。**前一半已验证**：会写，内容与公钥文件完全相同（按整行比较），bootstrap 后删掉即可，带 `from=` 的那行照常工作。OSD 实际内存没测 | §6.6、§6.7 | S0（WSL 沙箱） |
 | V18 | 删除集群前 `ceph mgr module disable cephadm` 是否足以阻止守护进程被重新部署。**是**（2026-10-03，三台各删两次）：teardown 5 秒，各节点 `rm-cluster --zap-osds` 之后没有容器被重新拉起，节点干净 | §8.6 | S3 |
 | V19 | 能否用安装包里的 `Public_Keys` 校验 deb 的签名 | 完整性（§6.1） | S2 |
-| V20 | 24.04 节点上 `qemu-block-extra` 带不带 RBD 驱动。**带**（2026-10-01 核对三台节点：`block-rbd.so` 在） | §8.4 | S3 |
+| V20 | 24.04 节点上 `qemu-block-extra` 带不带 RBD 驱动。**带**：2026-10-01 核对时三台还是 26.04（`block-rbd.so` 在）；重装成 24.04 后 RBD 盘的热挂、扩容、热迁移都正常（V12）。这个包由 Ceph 的安装 / 客户端步骤按需装（§15.2） | §8.4 | S3（已做） |
 | V21 | 节点永久离线时 `mmdelnode`、`mmdeldisk -p` 的确切用法 | 离线移除（§7.5） | S2 |
 | V22 | ~~WSL 沙箱里能否为 WSL 内核编出并加载 GPFS 模块~~ **否**（2026-10-01）：编得出、版本校验过得了，加载 `mmfslinux` 时 `jump_label` 致命错误、内核崩溃；WSL 没有嵌套虚拟化 | 开发方式（§2.5）：GPFS 只能在 24.04 节点上验证 | S0（已做） |
-| V24 | 纠删码的运维命令（`recoverygroup add` / `delete -N` / `resize`、`pdisk replace` 与 `mmaddpdisk --replace`、`--suspend` / `--resume`、`--version LATEST`）在真机上的行为与 `-Y` 字段名；混合介质与 `ecedrivemapping`。第二轮按 `mmvdisk` 源码实现，**没在真机跑** | §7.9 运维 | S7（要纠删码环境，§16 S7 的 E1–E9） |
-| V25 | SAN：多路径设备的扫描、`dmm`、`mmcrnsd` 多服务器、`mmchnsd` 在线改服务器。**没有 SAN 环境** | §7.10 | S7（E10） |
+| V23 | GPFS 纠删码版能否在测试环境里建起来。**真实盘不能，虚拟盘和模拟盘能**：物理机每台只有 2 块 SATA 盘，程序硬性要求的盘数不够；2026-10-06 三台 KVM 虚拟机各挂 5 块带 WWN 的 virtio-scsi 盘，设 `nsdRAIDStrictPdiskSlotLocation=0` 后建出恢复组、4+2p 纠删码卷与文件系统，坏盘重建、停节点都正常；2026-10-07 在三台物理机 `sdb` 上的 LIO fileio 模拟盘（每台 5 块 256 GiB）上经界面完整部署、建池建卷、系统盘与热迁移、拔盘告警、删除都通过（§2.3、§7.9）。之后按代码审查改的节点脚本没整套重跑。还没测：实体机上的槽位映射（`ecedrivemapping`）、性能；换盘、加减服务器、带恢复组的升级第二轮已写成代码，见 V24 | S7 能否在现有环境开发 | S7（虚拟机、模拟盘已做；实体机要合规硬件） |
+| V24 | 纠删码的运维命令（`recoverygroup add` / `delete -N` / `resize`、`pdisk replace` 与 `mmaddpdisk --replace`、`--suspend` / `--resume`、`--version LATEST`）在真机上的行为与 `-Y` 字段名；混合介质与 `ecedrivemapping`；就绪检查在物理机上读到的链路速度与 `systemd-detect-virt`。第二轮按 `mmvdisk` 源码实现，**没在真机跑** | §7.9 运维 | S7（要纠删码环境，§16 S7 的 E1–E9） |
+| V25 | SAN：多路径设备的扫描、`dmm`、`mmcrnsd` 多服务器、`mmchnsd` 在线改服务器。**没有 SAN 环境**。预检把共享 LUN 判失败的缺陷 2026-10-07 已修（§6.5），预检之后的步骤没在真实 SAN 上跑过 | §7.10 | S7（E10） |
 | V26 | 远程挂载：两个平台部署的 GPFS 集群之间的 `mmauth` / `mmremotecluster` / `mmremotefs`，挂载方节点宕机时在自身集群隔离是否足够 | §7.11 | S7（E11） |
-| V23 | GPFS 纠删码版能否在测试环境里建起来。**物理机不能，虚拟机能**（2026-10-06）：物理机每台只有 2 块 SATA 盘，程序硬性要求的盘数不够；三台 KVM 虚拟机各挂 5 块带 WWN 的 virtio-scsi 盘，设 `nsdRAIDStrictPdiskSlotLocation=0` 后建出恢复组、4+2p 纠删码卷与文件系统，坏盘重建、停节点都正常（§2.3、§7.9）。还没测：实体机上的槽位映射（`ecedrivemapping`）、换盘、加减服务器、带恢复组的升级、性能 | S7 能否在现有环境开发 | S7（虚拟机已做；实体机要合规硬件） |
+| V27 | S7 第二轮的其余功能在真机上的行为：镜像副本预热与导入进度（E12）；Ceph 私有仓库、mon 刷新、混合发行版（E13）；单台强制疏散、自动加入只加新节点（E14）；GPFS 第二个文件系统的建 / 删（E15）；GPFS 存储池 / inode 曲线、导入 Ceph 的曲线、Grafana 看板（E16）。都只有单元、PostgreSQL、WSL 替身和本机界面测试，**没部署、没在真机跑** | §6.3、§7.3、§8.1、§9.6、§11、§14.3 | S7（§16 S7 的 E12–E16） |
 
 ### 18.3 风险
 
@@ -2409,14 +2710,16 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 | 管理节点 / mgr 主机被攻破即可登录整个集群（§6.6）；A1 的共用 cland 密钥还在 | 每集群独立密钥在 A1 修好之前不增加实际的隔离 | A1 定方案时一并考虑 |
 | 下发链路没有 TLS（A6） | 集群私钥、Ceph 密钥在管理网上明文 | 等 A6 |
 | Ceph 写满阻塞全集群写入（§9.5） | 所有 RBD 云服务器卡住 | 不超分、容量未知时拒绝、80/90% 告警、`nearfull` 告警 |
-| 任务中途失败留下半成品 | 节点上残留软件、进程、盘上数据 | 步骤可重入 + 重试；删除集群任务能清理任何阶段的半成品，离线节点回来后补做 |
+| 任务中途失败留下半成品 | 节点上残留软件、进程、盘上数据 | 步骤可重入 + 重试；删除集群任务能清理任何阶段的半成品；删除时离线的节点回来后由补清理任务做它错过的 `leave`（§7.6，2026-10-07 补） |
 | 存储软件自身的运维深度（GPFS 的 `mmfsck`、Ceph 的 PG 修复等） | 界面覆盖不了所有排障场景 | 不追求全覆盖：界面做日常操作，深度排障在管理节点上手工做，附录 D、F 给出常用命令 |
+| S7 第二轮的功能一项都没在真机上跑过（纠删码运维、SAN、远程挂载、私有仓库、单台疏散等，E1–E17） | 真机上的命令行为、`-Y` 字段名可能与按手册和源码写的不一样；SAN 已知过不了预检（V25） | 上线前在合规或模拟环境里按 TC-25、TC-26 和 §16 S7 的实验表逐项跑；在那之前界面上的这些操作只当未验证功能 |
+| 纠删码跑在非 IBM / Lenovo 硬件上（包括测试环境的 LIO 模拟盘） | `mmhealth` 一直报 `ess_config_mismatch`（组件库里登记不了这些型号），集群健康一直是 warning、`StorageClusterUnhealthy` 一直在，真问题会被淹没（§7.9 坑 14） | 只用于功能验证；正式使用要 IBM 支持的硬件 |
 
 ---
 
 ## 19. GPFS 端到端使用流程（管理员与用户视角）
 
-本章把前文 GPFS 相关的设计按「谁在什么时候做什么」串起来，给产品、测试和写使用指南时对照。每一步标出所在阶段（§16）：S1 已实施，S2 起未实施。细节以正文对应章节为准。
+本章把前文 GPFS 相关的设计按「谁在什么时候做什么」串起来，给产品、测试和写使用指南时对照。每一步标出所在阶段（§16）：S1–S6 已实施并在 work-x 上验收；S7 的纠删码第一版已验收，S7 第二轮（SAN、远程挂载、纠删码的运维、第二个文件系统等）只在代码层面实现，没有在真实节点上跑过。细节以正文对应章节为准。
 
 ### 19.1 两类人看到的东西
 
@@ -2448,25 +2751,28 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 - `/var/mmfs` 所在分区是否有 10 GB 空闲、内存余量
 - 节点上是否已有不归 CloudLand 管的 GPFS
 
-**3. 创建向导**（S2，§13.3，整页、7 步）：
+**3. 创建向导**（S2，§13.3，整页；托管集群 6 步，导入外部集群 4 步：类型 → 节点 → 参数 → 确认）：
 
-1. **类型**：选「GPFS 副本」（纠删码版灰显，标「后续版本」），或「导入外部 GPFS」
-2. **软件**：选一个已接受许可证的安装包
-3. **节点与角色**：列出在线节点，不在支持范围内的标红并说明原因。每台勾选角色（§5.2）：
+1. **类型**：选「部署 GPFS」（副本），「GPFS 纠删码（ECE）」（S7，要纠删码版的安装包），「GPFS 共享磁盘（SAN）」（S7 第二轮，只在代码层面），或「导入外部 GPFS」；同一页还有 Ceph 的两项
+2. **软件**：选一个已接受许可证的安装包；纠删码布局只能选纠删码版的包，别的包置灰
+3. **节点与磁盘**：列出计算节点，部署中、部署失败、离线的不能勾选；系统是否在支持范围内这一步不判断，由第 5 步预检判。每台勾选角色（§5.2），新勾选的节点默认是仲裁 + NSD，第一台另加管理：
    - **管理**：1–2 台，执行集群命令，必须同时是仲裁节点
    - **仲裁**：奇数台，至少 3 台
    - **NSD**：贡献磁盘
    - **客户端**：只挂载，不承担其他角色
 
-   向导实时校验：仲裁数为奇数；有盘的节点（故障组）至少 3 个（§6.3）
-4. **磁盘**：每台 NSD 节点的空闲盘，显示型号、大小、介质、扫描时间；有旧数据的盘要单独勾选「擦除」
-5. **参数**（都有默认值，§7.2）：集群名、文件系统名（`fs1`）、块大小（4 MiB）、数据副本数（2 或 3）、pagepool（1 GiB）
-6. **预检**：一键执行；有不通过的项不能继续，只有「系统不在支持范围」一项可以勾「仅用于测试」放行
-7. **确认**：汇总将占用的盘、每台节点将预留的内存（pagepool + 1 GiB，从云服务器可用内存里扣掉，§6.7）；提交后跳到任务页
+   有 NSD 角色的节点下面列出它的磁盘，显示型号、大小、介质、状态和扫描时间，可以当场重新扫描；有旧数据的盘要单独勾选「擦除」，不勾不能进下一步。SAN 布局只能选标为「疑似共享」的 LUN，同一个 LUN 在每台要服务它的节点下都勾上
 
-**4. 看部署过程**（§6.2、§7.2）：任务页按步骤和节点逐格显示进度与日志，运行中每 3 秒刷新。步骤为：
+   向导**不实时校验**角色规则（没实现），只给默认角色。仲裁数为奇数（至少 3，测试布局可以 1）、管理 1–2 台且是仲裁、NSD 节点要有盘、有盘的节点（故障组）至少 3 个、副本数不超过故障组数，这些由后端在预检和提交时检查（§6.3），不满足时报错
+4. **参数**（都有默认值，§7.2）：文件系统名（`fs1`）、块大小（4 MiB）、数据副本数（2 或 3）、pagepool（1 GiB）；可勾「测试布局」（允许单个仲裁节点、单副本，只用于测试）。纠删码布局的参数另见 §7.9（纠删码、纠删码卷占比、pagepool 至少 8 GiB、元数据纠删码、槽位映射等）；SAN 没有副本数（数据由存储阵列保护，只存一份）
+5. **预检**：一键执行，结果按节点逐项显示；预检没通过不能继续。勾「允许不受支持的系统」时，不在支持列表里的系统或内核只给警告、不判失败，只用于测试
+6. **确认**：填集群名（必填）和描述，汇总类型、安装包、节点与角色、磁盘数与要擦除的盘数、参数。每台节点将预留的内存（pagepool + 1 GiB，从云服务器可用内存里扣掉，§6.7）**确认页不显示**（没实现），部署后在集群详情「节点」表的「预留内存」列里看。提交后进入集群详情的「任务」标签
+
+**4. 看部署过程**（§6.2、§7.2）：在集群详情的「任务」标签点开部署任务，任务页按步骤和节点逐格显示进度与日志，运行中每 3 秒刷新。步骤为：
 
 预检 → 加入 → 下载安装包 → 安装 → 编译内核模块 → SSH 信任 → 建集群 → 启动 → 核对磁盘 → 建 NSD → 建文件系统并挂载到 `/gpfs/fs1` → 收尾
+
+纠删码布局在「核对磁盘」之后是配置服务器 → 槽位 → 建恢复组 → 建纠删码卷 → 建文件系统 → 收尾（§7.9）。
 
 - 三节点目标 30 分钟内完成（§16 S2 验收）
 - 失败时任务停在失败的那一步，并占着这个集群，防止在半成品上做别的操作。管理员可以：
@@ -2486,19 +2792,25 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 
 | 场景 | 怎么做 | 平台做的事 |
 |---|---|---|
-| 看健康 | 集群详情的概览、节点、磁盘标签；告警事件页 | 每分钟检查集群、节点、磁盘、容量；异常时告警（集群不健康、节点掉线、盘掉线、池用量 ≥ 80% / 90%、某节点没挂上文件系统），恢复后自动解除（S5，§14） |
-| 加节点 | 「节点 → 加节点」，可同时带盘 | 预检 → 安装 → 编译 → 加入集群 → 挂载（§7.5） |
-| 加盘 | 「磁盘 → 加盘」 | 核对身份 → 建 NSD → 加进文件系统 |
-| 重新均衡 | 「文件系统 → 重新均衡」，单独发起 | I/O 很重，可能跑几小时，建议在业务低峰 |
-| 移除盘 / 节点 | 「移除」 | 先把数据迁走再擦盘；剩余故障组不少于 3、仲裁节点仍为奇数；节点上用这个池的云服务器要先迁走 |
-| 节点永久坏了 | 「离线移除」，输入节点名确认 | 不在坏节点上执行任何命令，直接从集群里摘掉 |
-| 换坏盘 | 「换盘」 | 摘掉坏盘、加入新盘 |
+| 看健康 | 集群详情的概览、节点、磁盘标签，「监控」标签的曲线；告警事件页 | 每分钟检查集群、节点、磁盘、容量；异常时告警（集群不健康、节点掉线、盘掉线、池用量 ≥ 80% / 90%、某节点没挂上文件系统），恢复后自动解除（S5，§14） |
+| 加节点 | 集群详情顶部「添加节点」，可同时带盘 | 预检 → 安装 → 编译 → 加入集群 → 挂载（§7.5） |
+| 加盘 | 集群详情顶部「添加磁盘」，可指定加进哪个文件系统 | 核对身份 → 建 NSD → 加进文件系统 |
+| 重新均衡 | 「文件系统」标签里那个文件系统的「重新均衡」，单独发起（S2；纠删码布局没有） | I/O 很重，可能跑几小时，建议在业务低峰 |
+| 移除盘 / 节点 | 「磁盘」或「节点」标签里的「移除」 | 先把数据迁走再擦盘；剩余故障组不少于 3、仲裁节点仍为奇数；节点上用这个池的云服务器要先迁走 |
+| 节点永久坏了 | 「移除节点」里勾「节点已永久损坏（离线移除）」，输入节点名确认 | 不在坏节点上执行任何命令，直接从集群里摘掉 |
+| 换坏盘 | 「磁盘」标签里状态不是 `up` 的盘的「换盘」（S5；SAN 布局没有） | 摘掉坏盘、加入新盘，补回丢掉的副本 |
+| 改角色 | 「节点」标签里节点的「改角色」（S5） | 在线把成员改成或不再是仲裁节点（GPFS `mmchnode --quorum --manager`，需要时换成服务器许可证），以及增减管理节点 |
+| 新节点自动加入 | 概览的「自动加为客户端」（S5；「只加新注册的节点」是 S7 第二轮，只在代码层面） | 选定可用区里不在集群中的在线节点排队，集群空闲时逐台以客户端加入 |
 | 节点重启 | 无需操作 | GPFS 挂上之前，用 GPFS 盘的云服务器留在待启动列表，挂上后自动启动（§9.9）；NSD 节点回来后它的盘自动恢复上线（§7.1） |
 | 改配额 / 删池 | 存储池标签 | 池里还有卷时不能删 |
-| 建第二个文件系统 | 「文件系统 → 新建」 | 用空闲 NSD 或新认领的盘（§7.3） |
-| 升级 GPFS / 内核 | 「升级」（S6，§7.7） | 逐台升级：先迁走云服务器，再停 GPFS、装新版、编译、启动；最后的格式升级不可逆，单独确认。加入集群时内核已锁定（D5），查过 IBM 支持表后再手工升级 |
-| 节点宕机疏散 | 节点详情「疏散」（S6，§11） | 先确认旧节点已被隔离（GPFS 驱逐），再在别的节点用原来的盘启动它上面的云服务器（前提是盘全在共享池上）；旧节点回来先对账、清掉残留，才解除隔离 |
-| 删除集群 | 输入集群名，列出将被擦除的盘 | 卸载 → 删文件系统 → 删 NSD → 停 GPFS → 擦盘 → 清理密钥、标记、内存预留；集群上还有存储池时不能删（§7.6） |
+| 查孤儿对象 | 存储池详情的「孤儿对象 → 检查」（S5） | 由一台节点列出池里的文件，只列出 CloudLand 没有记录的，不删除任何东西 |
+| 建第二个文件系统 | 「文件系统」标签的「新建文件系统」（S7 第二轮，只在代码层面；纠删码与 SAN 布局没有） | 只用成员节点上新认领的盘建 NSD 再建文件系统（不用已有的空闲 NSD，§7.3）；没有池的文件系统可以「删除文件系统」，连同它的盘一起擦掉，最后一个文件系统只能随集群删除 |
+| 远程挂载 | 「文件系统」标签下的「远程挂载」（S7 第二轮，只在代码层面） | 另一个**托管**的 GPFS 集群以同名、同挂载点挂载这里的文件系统，上面的共享池在对方节点上也能用（§7.11）；导入的集群不支持 |
+| 轮换密钥 | 集群详情顶部「轮换密钥」（S6） | 换集群 SSH 密钥（三轮切换，节点总能用管理节点正在用的那把登录） |
+| 升级 GPFS / 内核 | 集群详情顶部「升级」（S6，§7.7） | 逐台升级：先迁走云服务器，再停 GPFS、装新版、编译、启动；最后的格式升级不可逆，单独确认。加入集群时内核已锁定（D5），查过 IBM 支持表后再手工升级 |
+| 节点宕机疏散 | 节点详情「疏散」（S6，§11）；也可以在迁移弹窗里对离线节点上的云服务器做强制迁移（S7 第二轮，只在代码层面） | 先确认旧节点已被隔离（GPFS 驱逐），再在别的节点用原来的盘启动它上面的云服务器（前提是盘全在共享池上）；旧节点回来先对账、清掉残留，才解除隔离 |
+| 镜像预热 | 镜像详情的「存储池副本」卡片 →「预热到存储池」（S7 第二轮，只在代码层面） | 提前把镜像导入池里做基础副本，显示导入阶段与进度 |
+| 删除集群 | 输入集群名，列出将被擦除的盘，可选同时卸载存储软件 | 卸载 → 删文件系统 → 删 NSD → 停 GPFS → 擦盘 → 清理密钥、标记、内存预留；集群上还有存储池时不能删（§7.6）。⚠️ 有成员节点离线时会失败在 `leave` 步骤，没有「节点回来后补做」（已知缺陷，§16 S7） |
 
 所有操作都进审计和操作动态（§13.4）。
 
@@ -2510,7 +2822,7 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 4. **删卷**：卷还挂着时不能删
 5. **系统盘放在 GPFS 上**（S4，§9.6、§9.7）：建云服务器时系统盘选 GPFS 池。每个镜像在每个池里只导入一次基础副本，之后的系统盘从它克隆，创建时间与镜像大小无关；重装、救援、捕获镜像、删除照常可用
 6. **写满时**（§9.5）：池到配额或写满时，用这块盘的云服务器被暂停，数据不损坏；空间腾出来后要手动恢复，不像本地盘那样自动恢复
-7. **迁移**（§10）：迁移由管理员发起，用户感受到的是停机时间更短。GPFS 盘不复制；磁盘全在共享池上的云服务器热迁移，耗时与磁盘大小无关。迁移弹窗逐块盘写明「复制」或「共享，不复制」
+7. **迁移**（§10）：迁移由管理员发起，用户感受到的是停机时间更短。GPFS 盘不复制；磁盘全在共享池上的云服务器热迁移，耗时与磁盘大小无关。迁移弹窗逐块盘列出：共享盘写「共享，不复制」，本地盘给出目标池下拉（留在原池或换池）。源节点离线时弹窗改为强制迁移的说明与「已确认源节点已断电」勾选（S7 第二轮，只在代码层面）
 
 用户不会接触集群、节点、NSD 这些概念；也没有 NFS / SMB / S3 等协议服务（§1.3）。
 
@@ -2518,31 +2830,31 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 
 | 阶段 | 管理员 | 用户 |
 |---|---|---|
-| S1（已实施，未部署） | 节点预检、链路自检 | — |
-| S2 | 软件包、部署、导入、扩缩容、删除、建池 | GPFS 云硬盘：建、挂、换挂、扩容、删；带 GPFS 数据盘的迁移 |
-| S4 | 镜像预热 | 系统盘放 GPFS、秒级克隆、全共享热迁移 |
-| S5 | 健康告警、监控曲线、完整日志、重新均衡、换盘、新节点自动加入 | — |
+| S1（已实施并验收） | 节点预检、链路自检 | — |
+| S2 | 软件包、部署、导入、扩缩容、重新均衡、删除、建池 | GPFS 云硬盘：建、挂、换挂、扩容、删；带 GPFS 数据盘的迁移 |
+| S4 | 首次使用时按需导入镜像的基础副本 | 系统盘放 GPFS、秒级克隆、全共享热迁移 |
+| S5 | 健康告警、监控曲线、完整日志、换盘、改角色、新节点自动加入、孤儿对象检查 | — |
 | S6 | 滚动升级、密钥轮换、宕机疏散 | 节点宕机后云服务器能在别处恢复 |
-| S7 | 纠删码版（ECE 第一版：部署、删除、建存储池、轮换密钥，§7.9）、多集群 | — |
+| S7 | 纠删码版（第一版：部署、删除、建存储池、轮换密钥，已验收，§7.9）；第二轮只在代码层面：纠删码加减服务器 / 加盘 / 换盘 / 改角色 / 升级、SAN 共享 LUN（§7.10）、多集群远程挂载（只在托管集群之间，§7.11）、第二个文件系统、单台强制疏散、只自动加入新节点、镜像预热与导入进度、存储池 / inode 曲线与 Grafana 看板 | — |
 
 ---
 
 ## 20. Ceph 端到端使用流程（管理员与用户视角）
 
-本章与 §19 对应，把前文 Ceph 相关的设计按「谁在什么时候做什么」串起来。每一步标出所在阶段（§16）：S1 已实施，S3 起未实施。S3 排在 S2 之后（GPFS 优先），但它不依赖 24.04 节点，可以和 S2 并行。细节以正文对应章节为准。
+本章与 §19 对应，把前文 Ceph 相关的设计按「谁在什么时候做什么」串起来。每一步标出所在阶段（§16）：S1–S6 已实施，在 work-x 上验收通过（S3 在三台上用回环盘验收，集群 `ceph1` 与 RBD 池 `rp1` 保留在 work-x 上）；S7 第二轮里 Ceph 的部分（私有镜像仓库、混合发行版、mon 刷新、导入集群的监控曲线）已提交推送，没部署，没在真实节点上跑过（§16 S7「第二轮」E13、E16）。细节以正文对应章节为准。
 
 ### 20.1 两类人看到的东西
 
 | | 系统管理员 | 普通成员（组织里的用户） |
 |---|---|---|
-| 能看到 | 存储集群（节点、磁盘、存储池、客户端、任务、健康）、所有存储池 | 只有存储池：名称、类型（本地 / Ceph）、是否共享（§4.1、§13.1） |
+| 能看到 | 存储集群（节点与客户端、磁盘、存储池、监控、任务、健康）、所有存储池 | 只有存储池：名称、类型（本地 / Ceph）、是否共享（§4.1、§13.1） |
 | 能做 | 部署、扩缩容、配置客户端、建池、维护、删除集群 | 建云硬盘、挂载、扩容、删卷、选系统盘放在哪个池 |
 
 前提（管理员负责）：
 
-- 计算节点是 Ubuntu 24.04 或 26.04，两者都行；**一个集群只用一个 Ceph 版本**：24.04 的发行版源是 19.2 系列、26.04 是 20.2，两种系统混用时改用 Ceph 官方源固定版本（§8.1）
+- 计算节点是 Ubuntu 24.04 或 26.04，两者都行；**跑守护进程（mon / mgr / OSD / 管理）的节点必须是同一个发行版**，因此是同一个 Ceph 版本（24.04 的发行版源是 19.2.3、26.04 是 20.2.0）；只当客户端的节点可以是另一个发行版，但它的 `ceph-common` 不能比守护进程旧（§8.1）。没有改用 Ceph 官方源固定版本
 - 节点上有 docker（CloudLand 部署计算节点时已装），cephadm 用它跑守护进程
-- 节点能拉到容器镜像（默认 `quay.io/ceph/ceph`），私有化环境要准备私有镜像仓库（§8.1、D8）
+- 节点能拉到容器镜像（默认 `quay.io/ceph/ceph:v<版本>`），私有化环境要准备私有镜像仓库（§8.1、D8）
 - 不需要对象存储（S3）：软件来自发行版源，守护进程来自容器镜像，没有要上传的安装包（§6.1）
 - 控制面配了凭据加密密钥（现在沿用 `VPN_SECRET_KEY`），否则新建和导入 Ceph 集群返回 503（§5.10）
 - 节点已注册进 CloudLand，做过一次磁盘扫描（§6.4）
@@ -2551,76 +2863,81 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 
 ### 20.2 管理员：搭建
 
-**1. 准备镜像**（S3，§8.1）：不用上传任何东西。镜像默认 `quay.io/ceph/ceph:v<集群版本>`；用私有仓库时在向导里填地址和口令，口令加密保存。
+**1. 准备镜像**（S3，§8.1）：不用上传任何东西。镜像默认 `quay.io/ceph/ceph:v<守护进程节点 ceph-common 的版本>`，指定的镜像不能比它新；用私有仓库时在向导「参数」页填仓库地址、用户和口令，镜像写成仓库里的地址（以 `<仓库>/` 开头），口令加密保存（S7 第二轮，没在真实节点上跑过）。
 
-**2. 节点预检**（S1 已实施，§6.5）：「存储 → 存储集群 → 节点预检」，选「Ceph」、节点、角色、磁盘，平台逐项检查并给出通过 / 警告 / 不通过，只检查、不安装：
+**2. 节点预检**（S1，§6.5）：「存储 → 存储集群 → 节点预检」，选「Ceph」、节点、角色、磁盘，平台逐项检查并给出通过 / 警告 / 不通过，只检查、不安装：
 
 - 系统是不是 Ubuntu 24.04 / 26.04
-- 时间是否同步（mon 之间时差超过 0.05 秒 Ceph 就告警）
+- 时间是否同步：只看本机 `timedatectl` 的同步状态（原设计按 mon 之间时差 0.05 秒判断，决定不做，见 §6.5）
 - 节点之间 3300、6789、6800（代表 OSD 的端口段）与 SSH 是否连通
-- 磁盘是否空闲、身份能否核对、不小于 5 GB
-- mon 节点上 `/var/lib/ceph` 所在分区是否有 30% 空闲、内存余量
+- 磁盘是否空闲、身份能否核对（原设计还要求不小于 5 GB，决定不做，见 §6.5）
+- mon 节点上 `/var/lib/ceph` 所在分区是否有 30% 空闲、内存余量（给出每台将预留多少）
 - docker 或 podman 是否在运行、软件包管理器的锁能否拿到
 - 节点上是否已有不归 CloudLand 管的 Ceph
 
-**3. 创建向导**（S3，§13.3，整页、7 步）：
+跑守护进程的节点是不是同一个发行版，在部署任务的预检步骤里核对（§8.1）。
 
-1. **类型**：选「Ceph」，或「导入外部 Ceph」
-2. **软件**：镜像地址（带默认值），私有仓库时填口令
-3. **节点与角色**：列出在线节点，显示系统、内存余量、已在哪个集群。每台勾选角色（§5.2）：
+**3. 创建向导**（S3，§13.3，整页；部署 5 步，导入 4 步）：
+
+1. **类型**：选「部署 Ceph」，或「导入外部 Ceph」
+2. **节点、角色与磁盘**：列出计算节点（主机名、内网地址、状态；离线、部署中的不能选）。原设计还要显示系统、内存余量、已在哪个集群，**没实现**（内存余量在预检结果里给出）。每台勾选角色（§5.2）：
    - **管理**（带 `_admin` 标签）：有集群的管理密钥，执行集群命令；必须同时是 mon，第一台执行初始化（bootstrap）
    - **mon**：奇数台，3 台（或 5 台）
    - **mgr**：1–2 台
    - **OSD**：贡献磁盘
    - **客户端**：不跑任何守护进程，只配置访问 Ceph 的客户端
 
-   向导实时校验：mon 为奇数；管理节点是 mon；有 OSD 的节点数不少于副本数（3）；节点没有在为别的托管 Ceph 集群跑守护进程（§6.3）
-4. **磁盘**：每台 OSD 节点的空闲盘，显示型号、大小、介质、扫描时间；有旧数据的盘要单独勾选「擦除」。Ceph 自动识别的介质与认领时不同时，以认领时选的为准
-5. **参数**（都有默认值，§8.2）：集群名、镜像、公共网段（默认取节点内网地址所在网段）、复制网段（可选，推荐独立的存储网络）、副本数（只能是 3，不允许 2）、每个 OSD 的内存上限 `osd_memory_target`（2 GiB）。单节点测试形态（1 个 mon、副本 1）要显式勾选，集群详情会一直显示警告
-6. **预检**：一键执行；有不通过的项不能继续
-7. **确认**：汇总将占用的盘、每台节点将预留的内存（mon 2 GiB、mgr 1 GiB、每个 OSD 为内存上限加 0.5 GiB，默认 2.5 GiB，从云服务器可用内存里扣掉，§6.7）；提交后跳到任务页
+   选了 OSD 的节点下面列出它的磁盘：型号、大小、介质、扫描时间；有旧数据的盘要单独勾选「擦除」。Ceph 自动识别的介质与认领时不同时，以认领时选的为准
+
+   布局规则（mon 为奇数且不少于 3；管理节点是 mon；mgr 1–2 台；有 OSD 的节点数不少于副本数；节点没有在为别的托管 Ceph 集群跑守护进程，§6.3）**不是实时校验**：点「预检」或提交时由服务端检查（`checkStoragePlan`），不满足就报错（原设计是向导实时校验，没实现）
+3. **参数**（§8.2）：副本数（只显示：3，测试形态 1，不允许 2）、每个 OSD 的内存上限 `osd_memory_target`（2048 MiB）、镜像（留空用默认）、复制网段（可选，推荐独立的存储网络）、私有仓库地址 / 用户 / 口令。没有公共网段（原设计「默认取节点内网地址所在网段」，没做，§8.2）。单节点测试形态（1 个 mon、副本 1）要显式勾选；原设计「集群详情会一直显示警告」**没实现**，详情页看不出是测试形态
+4. **预检**：一键执行；有不通过的项不能继续。每台节点将预留的内存（mon 2 GiB、mgr 1 GiB、每个 OSD 为内存上限加 0.5 GiB，默认 2.5 GiB，从云服务器可用内存里扣掉，§6.7）在预检结果的内存一项里给出
+5. **确认**：填集群名与描述；汇总节点与角色、将占用的盘数与要擦除的盘数、参数（私有仓库口令等密码、密钥类参数显示为 `******`，2026-10-07 修复）；提交后跳到集群详情的「任务」标签
+
+导入的向导是：类型 → 节点 → 参数（fsid、mon 地址、客户端用户名与密钥）→ 确认。
 
 **4. 看部署过程**（§6.2、§8.2）：任务页与 GPFS 相同，按步骤和节点逐格显示进度与日志。步骤为：
 
-预检 → 加入 → 安装（`cephadm`、`ceph-common`、`lvm2`）→ 拉镜像 → SSH 信任 → 初始化集群（第一台管理节点）→ 加入其他节点 → 放置 mon / mgr → 集群配置 → 核对磁盘 → 建 OSD → 配置客户端 → 收尾
+预检 → 加入 → 安装（`ceph-common`、`qemu-block-extra`；守护进程节点另装 `cephadm`、`lvm2` 并拉镜像）→ SSH 信任 → 初始化集群（第一台管理节点）→ 加入其他节点并按标签放置 mon / mgr → 集群配置 → 核对磁盘 → 建 OSD → 配置客户端 → 收尾（没有盘时没有核对磁盘、建 OSD 两步）
 
 平台替管理员处理掉的几个默认行为：
 
-- 不装 cephadm 自带的监控和管理面板：它的端口和 CloudLand 的监控冲突（§3.1），Ceph 的指标由 CloudLand 的 Prometheus 采集（§14.3）
+- 不装 cephadm 自带的监控和管理面板：它的端口和 CloudLand 的监控冲突（§3.1），Ceph 的指标由 CloudLand 的 Prometheus 从 mgr 的 prometheus 模块采集（§14.3），这个模块只监听节点的内网地址（§8.2，2026-10-07 修复）
 - 关掉 cephadm「自动占用所有空闲盘」：只有认领过的盘会变成 OSD，节点上别的空闲盘不受影响
 - 关掉 OSD 内存自动调整：否则 OSD 会按主机内存的七成分内存，与云服务器争抢，预留也算不准
-- 建一个只访问 RBD 的客户端身份（`client.cloudland`），计算节点只拿到它，拿不到集群管理密钥
+- 建一个只访问 RBD 的客户端身份（`client.cloudland`，能用集群里所有 RBD 池），计算节点只拿到它，拿不到集群管理密钥
+- 关机时 OSD 排在本机 mon 之后停（unit drop-in `cloudland-order.conf`，否则其他节点上云服务器的 I/O 会卡十几秒）；内存耗尽时守护进程排在云服务器之后被杀（`cloudland-oom.conf`，§6.7.2）
 
 失败时的处理与 GPFS 相同：任务停在失败的那一步并占着集群，可以**重试**（只在失败的节点上重跑）或**中止**；没有自动回滚，半成品用「删除集群」清理（§8.6）。
 
-**5. 建 CloudLand 存储池**（S3，§8.3）：集群详情「存储池」标签 → 新建，选介质、配额。
+**5. 建 CloudLand 存储池**（S3，§8.3）：集群详情「存储池」标签 → 新建，选介质（可以不选）、配额。
 
-- 平台按介质建分布规则（该介质的 OSD 所在节点数不少于副本数才能建，否则直接拒绝）、建 RBD 池（3 副本，坏一台节点仍可读写）、设配额、写一个标记对象，再把新池加进客户端身份的权限，让每台客户端检查一遍能否访问
-- 池从「创建中」变为「可用」，列表显示「可用节点 x/y」
+- 平台按介质建分布规则（不选介质用默认规则；有 OSD 的节点数不少于副本数才能建，否则直接拒绝）、建 RBD 池（3 副本，坏一台节点仍可读写）、设配额、写一个标记对象，再让每台成员检查一遍能否访问（客户端身份本来就能用所有 RBD 池，不用改权限）
+- 池从「创建中」变为「可用」，存储池列表显示「可用节点 x/y」
 - **建议设配额**：同一介质下几个不设配额的池共用这一份容量，准入时合并计算（§9.5）；Ceph 池默认不超分
 
-**6. 让其他计算节点也能用**（S3，§8.4）：集群成员自动配置客户端；不在集群里的计算节点要用这个池，在集群详情「客户端」标签里添加。平台在节点上装 `ceph-common` 和 QEMU 的 RBD 驱动，写集群配置和密钥，在 libvirt 里登记密钥（所有节点同一个编号，热迁移时目标节点才认得）。客户端不跑守护进程、不预留内存，24.04、26.04 都可以。也可以设「自动加入的可用区」，这些可用区里新上线的节点自动配置（§6.3）。
+**6. 让其他计算节点也能用**（S3，§8.4）：集群成员自动配置客户端；不在集群里的计算节点要用这个池，在集群详情标题栏点「添加节点」，角色只选「客户端」（原设计的「客户端」标签没有做，客户端和其他成员一起列在「节点」标签里）。平台在节点上装 `ceph-common` 和 QEMU 的 RBD 驱动，写集群配置和密钥，在 libvirt 里登记密钥（所有节点同一个编号，就是集群 UUID，热迁移时目标节点才认得）。客户端不跑守护进程、不预留内存，24.04、26.04 都可以（`ceph-common` 不能比守护进程旧）。也可以在集群概览的「自动加为客户端」里设可用区，这些可用区里的节点自动以客户端加入，可以只加之后注册的新节点（§6.3）。
 
-**导入外部集群**（S3，§8.8）：填 fsid、mon 地址、客户端用户名与密钥（权限至少 `mon 'profile rbd'`、`osd 'profile rbd pool=<要用的池>'`）、要使用它的节点，平台在这些节点上配置客户端；再登记已有的池名，平台只往池里写标记对象（客户端要有写权限）。不在外部集群上执行任何管理命令。
+**导入外部集群**（S3，§8.8）：填 fsid、mon 地址、客户端用户名与密钥（权限至少 `mon 'profile rbd'`、`osd 'profile rbd pool=<要用的池>'`）、要使用它的节点（只能在导入时选，之后不能加减），平台在这些节点上配置客户端；再登记已有的池名，平台只往池里写标记对象（客户端要有写权限）。外部集群上只执行一条会改动它的命令：节点宕机隔离时用客户端身份把宕机节点加入黑名单；解除黑名单要对方管理员手工做（§8.8）。
 
 ### 20.3 管理员：日常维护
 
 | 场景 | 怎么做 | 平台做的事 |
 |---|---|---|
-| 看健康 | 集群详情的概览、节点、磁盘标签；告警事件页 | 每分钟在一台管理节点上检查集群健康、主机、OSD、容量；异常时告警（集群不健康、主机掉线、OSD 掉线、池用量 ≥ 80% / 90%、Ceph 报 `nearfull`），恢复后自动解除（S5，§14） |
-| 加节点 | 「节点 → 加节点」，可同时带盘 | 预检 → 安装 → 拉镜像 → SSH 信任 → 加入编排 → 按角色放守护进程 → 配置客户端（§8.5） |
-| 加盘 | 「磁盘 → 加盘」 | 核对身份 → 建 OSD；Ceph 自动把一部分数据迁到新盘，没有单独的「重新均衡」，迁移流量和业务共用网络与磁盘（§8.5） |
-| 加 / 移除客户端 | 「客户端」标签 | 移除前提：节点上没有使用这个集群的云服务器（§8.4） |
-| 移除盘 | 「移除」 | 先把数据迁走（显示进度）再擦盘；要求剩余 OSD 所在节点数不少于副本数、剩余容量够 |
-| 换坏盘 | 「换盘」（S5） | 保留原来的 OSD 编号，新盘用同一编号加入 |
-| 移除节点 | 「移除」 | 先迁走这台节点上的全部守护进程（含 OSD 的数据），再从集群摘掉、删客户端配置；mon 仍为奇数且不少于 3（先缩 mon）；节点上用这个集群的池的云服务器要先迁走 |
-| 节点永久坏了 | 「离线移除」，输入节点名确认 | 节点离线超过 30 分钟才能做；不在坏节点上执行任何命令，从集群摘掉它和它的 OSD，Ceph 在其余 OSD 上恢复副本 |
-| 改角色 | 节点标签里改 mon / mgr / 管理（S5） | 改放置后由 cephadm 增减守护进程；校验同建集群 |
-| 节点重启 | 10 分钟以内无需操作；停更久先进 Ceph 的维护模式（§8.5） | 守护进程由 systemd 拉起；用 RBD 盘的云服务器在这个池可用之前留在待启动列表，可用后自动启动（§9.9）。3 副本下一台节点离线不影响读写，同时离线两台时部分数据的读写会卡住，直到有节点回来；只有 3 台 OSD 节点时，坏掉的那台回来之前集群一直降级（§8.5） |
-| 改配额 / 删池 | 存储池标签 | 池里还有卷时不能删；没有被引用的镜像基础副本随池删除 |
-| 升级 Ceph | 「升级」（S6，§8.7） | cephadm 逐个守护进程滚动升级，不用先迁走云服务器。云服务器用的是节点上的客户端库，节点软件包升级后要重启或迁移云服务器才用上新版本，Ceph 兼容旧客户端，不急 |
-| 节点宕机疏散 | 节点详情「疏散」（S6，§11） | 先把宕机节点的地址加进 Ceph 黑名单（有效期设得很长，默认的 1 小时一到会自动解除），确认它再也写不了盘，再在别的节点用原来的盘启动它上面的云服务器（前提是盘全在共享池上）；旧节点回来先对账、清掉残留，才解除黑名单。RBD 的排他锁挡不住两个写入者，这一步不能省（§12.1） |
-| 删除集群 | 输入集群名，列出将被擦除的盘 | 先停掉 cephadm 的编排（否则它会把守护进程重新部署回来）→ 每台节点删除集群和 OSD 数据 → 清理客户端配置、libvirt 里的密钥、SSH 密钥、标记、内存预留 → 重新扫描磁盘；集群上还有存储池时不能删（§8.6） |
+| 看健康 | 集群详情的概览、节点、磁盘标签；告警事件页 | 每分钟检查集群健康、主机、OSD、容量（托管集群在一台管理节点上用管理身份查，导入的在一台客户端节点上用客户端身份查，看不到主机）；异常时告警（集群不健康、主机掉线、OSD 掉线、池用量达到告警线（系统设置，默认 80% / 90%）、Ceph 报 `nearfull`），恢复后自动解除（S5，§14） |
+| 加节点 | 集群详情标题栏「添加节点」，可同时带盘（只有托管集群） | 预检 → 加入 → 安装（含拉镜像）→ SSH 信任 → 加入编排并按标签放守护进程 →（带盘时）核对磁盘、建 OSD →（新节点有 mon 时）刷新其余成员的 mon 地址 → 配置客户端 → 收尾（§8.5） |
+| 加盘 | 集群详情标题栏「添加磁盘」 | 核对身份 → 建 OSD；Ceph 自动把一部分数据迁到新盘，没有单独的「重新均衡」，迁移流量和业务共用网络与磁盘（§8.5） |
+| 加 / 移除客户端 | 「添加节点」只选客户端角色；在「节点」标签里「移除节点」（原设计的「客户端」标签没做） | 移除前提：节点上没有挂着这个集群存储池里的卷的云服务器（§8.4）；导入的集群只能在导入时选节点 |
+| 移除盘 | 「磁盘」标签里「移除磁盘」 | 先把数据迁走（显示进度）再擦盘；移除前检查剩下有 OSD 的节点数不少于副本数、每个池按介质的主机数不少于它的副本数、剩下的 OSD 装得下迁走的数据（不到 nearfull）；`ok-to-stop` 决定不做（§8.5） |
+| 换坏盘 | 「磁盘」标签里「换盘」（S5；盘的状态不是 `up` 时才有） | 保留原来的 OSD 编号，新盘用同一编号加入；坏盘不擦 |
+| 移除节点 | 「节点」标签里「移除节点」 | 先迁走这台节点上的全部守护进程（含 OSD 的数据），再从集群摘掉、删客户端配置；走的是 mon 时刷新其余成员的 mon 地址；mon 仍为奇数且不少于 3（先缩 mon）；节点上用这个集群的池的云服务器要先迁走 |
+| 节点永久坏了 | 「移除节点」时勾选「节点已永久损坏（离线移除）」，输入节点名确认 | 节点要离线满 30 分钟（2026-10-07 补）；不在坏节点上执行任何命令，从集群摘掉它和它的 OSD，Ceph 在其余 OSD 上恢复副本 |
+| 改角色 | 节点标签里改 mon / mgr / 管理（S5） | 第一次拿到守护进程角色的节点先装软件、拉镜像；改标签后由 cephadm 增减守护进程；mon 变了时刷新所有成员的 mon 地址（S7 第二轮）；校验同建集群 |
+| 节点重启 | 10 分钟以内无需操作；停更久先进 Ceph 的维护模式（§8.5，界面上没有这个操作，要在管理节点上执行 `ceph orch host maintenance enter`） | 守护进程由 systemd 拉起；用 RBD 盘的云服务器在这个池可用之前留在待启动列表，可用后自动启动（§9.9）。3 副本下一台节点离线不影响读写，同时离线两台时部分数据的读写会卡住，直到有节点回来；只有 3 台 OSD 节点时，坏掉的那台回来之前集群一直降级（§8.5） |
+| 改配额 / 删池 | 存储池标签（改配额只有托管集群） | 池里还有卷时不能删；没有被引用的镜像基础副本随池删除 |
+| 升级 Ceph | 「升级」（S6，§8.7），可指定镜像（用私有仓库部署的集群必须指定） | 先在所有节点装发行版现在的 Ceph 版本并拉新镜像，再由 cephadm 逐个守护进程滚动升级，不用先迁走云服务器。云服务器用的是节点上的客户端库，要重启或迁移云服务器才用上新版本，Ceph 兼容旧客户端，不急。发行版没有新版本时无事可升 |
+| 节点宕机疏散 | 节点详情「疏散」（S6，§11） | 先把宕机节点的地址加进 Ceph 黑名单（有效期设得很长，默认的 1 小时一到会自动解除），确认它再也写不了盘，再在别的节点用原来的盘启动它上面的云服务器（前提是盘全在共享池上）；旧节点回来先对账、清掉残留，才解除黑名单（导入的集群要对方管理员手工解除，§8.8）。RBD 的排他锁挡不住两个写入者，这一步不能省（§12.1） |
+| 删除集群 | 输入集群名，列出将被擦除的盘 | 先停掉 cephadm 的编排（否则它会把守护进程重新部署回来）→ 每台节点删除集群和 OSD 数据 → 清理客户端配置、libvirt 里的密钥、SSH 密钥、标记、内存预留 → 重新扫描磁盘；集群上还有存储池时不能删（§8.6）。有成员离线时照常删，离线的节点回来后自动补做清理，节点详情里能看到「待补清理」（2026-10-07 修复） |
 
 所有操作都进审计和操作动态（§13.4）。
 
@@ -2631,8 +2948,8 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 3. **扩容**（S3）：云服务器开着也能扩，不用重启；虚拟机内的分区和文件系统仍要自己扩
 4. **删卷**：卷还挂着时不能删；还有云服务器打开着这块盘时 Ceph 也会拒绝，失败原因里写明是谁在用
 5. **空间回收**：虚拟机里删掉文件后执行 `fstrim`（或挂载时带 `discard`），空间会还给池（磁盘开了 `discard='unmap'`，§12.2）
-6. **系统盘放在 Ceph 上**（S4，§9.6、§9.7）：建云服务器时系统盘选 Ceph 池。每个镜像在每个池里只导入一次基础副本，之后的系统盘从它克隆，创建时间与镜像大小无关；重装、救援、捕获镜像、删除照常可用
-7. **写满时**（§9.5）：**与本地盘、GPFS 都不同**，云服务器不会被暂停，而是磁盘 I/O 卡住，看起来像虚拟机没有响应；空间腾出来（扩配额、加盘、删数据）后 I/O 接着进行。池到配额只卡这个池；整个集群用到 95% 时**所有池的写入都卡住**，所以 85%（`nearfull`）就告警（具体表现待验证，V8）
+6. **系统盘放在 Ceph 上**（S4，§9.6、§9.7）：建云服务器时系统盘选 Ceph 池。每个镜像在每个池里只导入一次基础副本，托管集群的池之后的系统盘从它克隆，创建时间与镜像大小无关；导入集群的池是整盘复制（`rbd cp`），创建时间随镜像大小增长（§8.3）。重装、救援、捕获镜像、删除照常可用
+7. **写满时**（§9.5）：**与本地盘、GPFS 都不同**，云服务器不会被暂停，而是磁盘 I/O 卡住，看起来像虚拟机没有响应；空间腾出来（扩配额、加盘、删数据）后 I/O 接着进行。池到配额只卡这个池：实测配额超出约 8% 才生效，写入阻塞、云服务器保持运行，30–50 秒内各节点把池判为不可用，挡住新建卷和挂载，配额改大后阻塞的写入立即完成（V8 的 Ceph 部分已验证）。整个集群用到 95% 时**所有池的写入都卡住**，所以 85%（`nearfull`）就告警（集群写满没实测）
 8. **迁移**（§10）：迁移由管理员发起。Ceph 盘不复制；磁盘全在共享池上的云服务器热迁移，耗时与磁盘大小无关。UEFI 云服务器的 NVRAM 在节点本地，迁移时照旧复制（很小）。迁移弹窗逐块盘写明「复制」或「共享，不复制」
 
 用户不会接触集群、mon、OSD 这些概念；也没有 CephFS、对象存储（RGW）、iSCSI 等服务（§1.3）。
@@ -2641,18 +2958,19 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 
 | 阶段 | 管理员 | 用户 |
 |---|---|---|
-| S1（已实施，未部署） | 节点预检、链路自检 | — |
-| S3 | 部署、导入、加减节点、加减盘、离线移除、配置客户端、删除、建池 | Ceph 云硬盘：建、挂、换挂、扩容、删；带 Ceph 数据盘的迁移 |
-| S4 | 镜像预热 | 系统盘放 Ceph、秒级克隆、全共享热迁移 |
-| S5 | 健康告警、监控曲线、完整日志、换盘、改角色、新节点自动加为客户端 | — |
-| S6 | 滚动升级、密钥轮换、宕机疏散 | 节点宕机后云服务器能在别处恢复 |
+| S1（已实施并验收） | 节点预检、链路自检 | — |
+| S3（已实施并验收；加节点、移除节点、离线移除没在真实节点上测，没有第 4 台） | 部署、导入、加减节点、加减盘、离线移除、配置客户端、删除、建池 | Ceph 云硬盘：建、挂、换挂、扩容、删；带 Ceph 数据盘的迁移 |
+| S4（已实施并验收） | — | 系统盘放 Ceph、秒级克隆（托管集群）、全共享热迁移 |
+| S5（已实施并验收） | 健康告警、监控曲线、完整日志、换盘、改角色、新节点自动加为客户端 | — |
+| S6（已实施并验收） | 滚动升级、密钥轮换、宕机疏散 | 节点宕机后云服务器能在别处恢复 |
+| S7 第二轮（已提交推送，没部署，没在真实节点上跑过） | 私有镜像仓库、守护进程节点与客户端混用 24.04 / 26.04、mon 变化后刷新客户端配置、导入集群的监控曲线、镜像预热、自动加入只加新节点 | — |
 
 ### 20.6 与 GPFS 流程的差别
 
 | | GPFS（§19） | Ceph |
 |---|---|---|
 | 软件从哪来 | 上传 IBM 安装包，要 S3、要接受许可证 | 发行版源装 `cephadm` / `ceph-common`，守护进程用容器镜像；不要 S3 |
-| 节点系统 | 只能 22.04 / 24.04 | 24.04、26.04 都行，一个集群一个版本 |
+| 节点系统 | 只能 22.04 / 24.04 | 24.04、26.04 都行；跑守护进程的节点同一个发行版，客户端可以是另一个（`ceph-common` 不比守护进程旧） |
 | 角色 | 管理、仲裁、NSD、客户端 | 管理、mon、mgr、OSD、客户端 |
 | 客户端 | 也是集群成员：装 GPFS、编内核模块、预留 pagepool | 只装客户端和配置，不跑守护进程、不预留内存 |
 | 池的下面 | 文件系统 → 独立 fileset | 直接是一个 RBD 池，没有文件系统这一层 |
@@ -2673,133 +2991,160 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 
 | 文件 | 改动 | 阶段 |
 |---|---|---|
-| `model/storage_cluster.go`、`model/storage_task.go`（新增） | §5.1–§5.4、§5.9；类型专用的数据在 `params` / `attrs` / `secrets` 三个 JSON 列 | S1 |
+| `model/storage_cluster.go`、`model/storage_task.go`（新增） | §5.1–§5.4、§5.9；类型专用的数据在 `params` / `attrs` / `secrets` 三个 JSON 列。`storage_cluster.go` 另有节点、磁盘、文件系统的表与远程挂载 `StorageRemoteMount`（S7），`storage_task.go` 另有任务运行的完整日志 `StorageRunLog`（S5） | S1 起 |
 | `model/storage_package.go`（新增） | §5.8 | S2 |
 | `model/storage_pool.go` | `StoragePool` 加 §5.5 的列（驱动专用的放 `DriverParams`）与状态；`HyperDisk` 加 `gpfs_nsd` / `ceph_osd` 状态 | S1 / S2 |
-| `model/volume.go`、`model/image_storage.go`（新增） | `BaseImageStorageID`；`ImageStorage` | S4 |
-| `services/storage_task.go`（新增） | 任务引擎（§6.2） | S1 |
-| `services/storage_cluster.go`（新增） | 集群的列表、详情、预检、各任务的步骤定义与参数生成 | S1–S6 |
+| `model/storage_pool_reconcile.go`（新增） | 共享池孤儿对账的结果 | S5 |
+| `model/storage_fence.go`（新增） | 隔离记录（§11.2） | S6 |
+| `model/volume.go`、`model/image_storage.go`（新增）、`model/image.go` | `BaseImageStorageID`；`ImageStorage` 与等待队列 `ImageStorageWaiter`；镜像文件名一律用 `Image.FileBase()` / `FilePrefix()` | S4 |
+| `model/hyper.go`、`model/migration.go` | 节点 `offline_at` / `offline_prior` / `reconciled_at` / `reconciled_boot`；迁移类型 `evacuate`、`source_cleaned`、`message` | S6 |
+| `services/storage_task.go`（新增） | 任务引擎（§6.2），`StartStorageTaskWorker` | S1 |
+| `services/storage_cluster.go`（新增） | 计划的公共检查、预检与自检任务、集群与任务的查询 | S1 |
+| `services/storage_cluster_manage.go`、`storage_cluster_ops.go`、`storage_cluster_change.go`、`storage_cluster_fs.go`、`storage_cluster_import.go`、`storage_cluster_keys.go`、`storage_cluster_upgrade.go`（新增） | 各类任务的通用部分（请求检查、加入 / 离开的记录、角色规则）：建 / 删集群；加节点、加盘、移除盘 / 节点、重新均衡；换盘、改角色（S5）；新建 / 删除文件系统（S7）；导入；轮换密钥、升级（S6）。步骤由各后端的 `TaskPlan` 给出 | S2–S7 |
 | `services/storage_backend.go`（新增） | 存储后端接口与注册（§4.5.1） | S1 |
-| `services/storage_backend_gpfs.go`、`services/storage_backend_ceph.go`（新增） | 两种存储的后端：角色规则、支持矩阵、参数、内存预留（S1）；任务步骤、池驱动与池参数、客户端（S2 / S3）；健康看护（S5）；隔离、升级（S6） | S1–S6 |
-| `services/pool_driver.go`、`services/pool_driver_gpfs.go`、`services/pool_driver_rbd.go`（新增） | 存储池驱动接口与两个实现（§4.5.2） | S2 / S3 |
+| `services/storage_backend_gpfs.go`、`services/storage_backend_ceph.go`（新增） | 两种存储的后端：角色规则、支持矩阵、参数、内存预留、布局能力（`LayoutCapabilities`）、健康输入、曲线查询 | S1 起 |
+| `services/storage_backend_gpfs_{tasks,ops,pools,fs,import,upgrade}.go`、`storage_backend_ceph_{tasks,pools,keys,upgrade}.go`（新增） | 各后端的任务步骤（`TaskPlan`）与收尾、池参数与 RBD 池驱动（`rbdDriver`）、导入、轮换、升级 | S2–S6 |
+| `services/storage_backend_gpfs_{ece,ece_ops,san,remote}.go`（新增） | GPFS 纠删码布局的部署与运维（§7.9）、SAN 共享 LUN（§7.10）、远程挂载的步骤（§7.11） | S7 |
+| `services/storage_pool_driver.go`（新增） | 存储池驱动接口（§4.5.2）与文件型 / GPFS 驱动；RBD 驱动在 `storage_backend_ceph_pools.go`。设计里的 `pool_driver.go`、`pool_driver_gpfs.go`、`pool_driver_rbd.go` 三个文件名没有采用 | S2 / S3 |
+| `services/storage_pool_shared.go`（新增） | 共享池的建 / 改 / 删任务、各节点的池清单、`shared_pool_status` 上报（`HandleSharedPoolStatus`） | S2 / S3 |
+| `services/volume_shared.go`（新增） | 共享卷的建、挂、扩、删下发到 `pickPoolHost` 选出的节点；删云服务器时共享系统盘的删除（`SharedBootRemoval`） | S2–S4 |
 | `services/storage_package.go`（新增） | 分片上传、校验、许可证 | S2 |
 | `services/storage_support.go`（新增） | 支持矩阵与数据目录的类型定义、集群 SSH 密钥生成 | S1 |
-| `services/storage_pool.go` | 按驱动建池（共享池发任务）；`PoolScriptID` / `PoolRelPath` 等按驱动 | S2 / S3 |
-| `services/storage_admission.go` | 共享池的池级准入（§9.5），容量未知拒绝 | S2 / S3 |
+| `services/storage_pool.go` | 按驱动建池（共享池发任务）；系统盘默认池用不了时退回内置池（`ResolveBoot`） | S2–S4 |
+| `services/storage_admission.go` | 共享池的池级准入（§9.5，`admitShared`），容量未知拒绝 | S2 / S3 |
 | `services/storage_callbacks.go` | 共享池行的过期规则（不依赖 `capacity_at`，§9.2） | S2 |
 | `services/hyper_storage.go` | `pickDisks` 检查集群认领；`SaveScannedDisks` 按登记显示 | S1 |
-| `services/hyper.go:628-641`（`releaseStorage`） | 删除节点时只把**本地**非内置池算作「节点上有本地池」；节点是存储集群成员时拒绝 | S1 / S2 |
-| `services/volume.go`（`:319`、`:432-435`、`:606-616`、`:652` 等） | `hyper = 0` 的含义按驱动区分（§5.6）；共享卷的建、挂、扩、删按驱动下发到 `pickPoolHost` | S2 / S3 |
-| `services/instance.go:304-317`、`services/instance_placement.go:98-180`（`startCreationPlacement`）、`:210`（`bootHost`） | 系统盘在共享池时的候选节点、池级准入与 `boot_disk`；放置组路径同样处理 | S4 |
-| `services/migration_plan.go`（`planDisks`、`ApplyMigrationPlan` 及其兼容分支）、`services/migration.go` | 共享盘「保留」、不改共享卷的 `hyper`；目标节点过滤；`force` 的条件 | S2 / S3 / S6 |
-| `services/image.go`、`services/s3.go` | 基础副本的导入、引用计数与预热；预签名地址按对象键生成 | S2 / S4 |
+| `services/hyper.go`（`releaseStorage`） | 删除节点时只把**本地**非内置池算作「节点上有本地池」；节点是存储集群成员、或还有隔离记录时拒绝 | S1 / S2 / S6 |
+| `services/volume.go`（`VolumeAdmin.Create` / `Update` / `Resize` / `Delete`） | `hyper = 0` 的含义按驱动区分（§5.6）；共享卷交给 `volume_shared.go` | S2 / S3 |
+| `services/instance.go`（`InstanceAdmin.Create` / `Reinstall` / `Rescue` / `Resize` / `Delete`）、`services/instance_placement.go`（`startCreationPlacement`、`bootHost`） | 系统盘在共享池时的候选节点、池级准入与 `boot_disk`；放置组路径同样处理；等副本时不许别的操作 | S4 |
+| `services/migration_plan.go`（`planDisks`、`ApplyMigrationPlan`）、`services/migration.go` | 共享盘「保留」、不改共享卷的 `hyper`；目标节点过滤；`force` 委托给疏散（`createForced`，在 `evacuate.go`） | S2 / S3 / S7 |
+| `services/image_storage.go`、`services/image_storage_admin.go`（新增）、`services/image.go`、`services/s3.go` | 基础副本的导入、引用计数、等待队列；预热、导入进度、导入节点选当前导入最少的（`pickImportHost`，S7）；对象键按 `Image.FileBase()` | S4 / S7 |
+| `services/evacuate.go`、`services/node_reconcile.go`、`services/storage_fence.go`、`services/storage_fence_backends.go`（新增） | 疏散、节点回来后的对账（`ReconcileNode`、`EvacuatedFrom`）、隔离与解除 | S6 |
+| `services/storage_health.go`、`storage_metrics.go`、`storage_run_log.go`、`storage_auto_join.go`、`storage_pool_reconcile.go`（新增）、`services/prometheus_sd.go` | 健康看护与告警、监控曲线与 http_sd 目标（`storage` 类型）、完整日志、自动加入、孤儿对账 | S5 |
+| `services/storage_remote_mount.go`（新增） | 远程挂载的记录与任务（只在两个托管集群之间） | S7 |
 | `common/secret.go`、`common/error_codes.go` | 错误码改名 `ErrSecretUnavailable`；新的存储错误码 | S1 |
-| `rpcs/storage_task.go`（新增） | `storage_task_run`（S1）、`storage_health`（S5） | S1 / S5 |
-| `rpcs/` 其他新增 | `shared_pool_status`、`create_volume_shared` 等（按操作命名，不按驱动）、`image_storage_status`、`node_recovered` | S2–S6 |
-| `rpcs/attach_volume.go:83-85` | 挂载成功的回调现在一律把 `hyper` 改成执行节点：共享卷不改 | S2 / S3 |
-| `rpcs/create_volume.go`（`create_volume_local`） | 系统盘建好后写 `hyper=hostid`：共享卷不写 | S4 |
-| `rpcs/migrate_vm.go`、`rpcs/clear_vm.go`、`rpcs/launch_vm.go`、`rpcs/inst_status.go` | 确认销毁后删共享盘与池里的 NVRAM；宕机恢复后的归属保护 | S4 / S6 |
-| `apis/storage_cluster.go`、`apis/storage_task.go`（新增）、`apis/routes.go`、`apis/audit_actions.go` | §13.1、§13.4 | S1 起 |
-| `apis/storage_package.go`（新增）、`apis/storage_pool.go` | 软件包接口；共享池参数 | S2 / S3 |
+| `rpcs/storage_task.go`（新增） | `storage_task_run`（S1）、`storage_health`、`storage_run_log`（S5） | S1 / S5 |
+| `rpcs/storage_shared.go`、`rpcs/image_storage.go`、`rpcs/node_recovered.go`（新增） | 按操作命名的回调：`shared_pool_status`、`create_volume_shared`、`attach_volume_shared`（共享卷挂载不改 `hyper`）、`shared_pool_objects`；`image_storage_status`、`image_storage_progress`、`create_boot_shared`（共享系统盘建好不写 `hyper`）；`node_recovered`、`node_reconciled`、`clear_stale_vm` | S2–S7 |
+| `rpcs/attach_volume.go`、`rpcs/create_volume.go`、`rpcs/migrate_vm.go` | 设计里要改的这三处**没改**：共享卷与共享系统盘走上一行的新回调，迁移的共享盘处理在 `services/migration_plan.go` | — |
+| `rpcs/clear_vm.go`、`rpcs/launch_vm.go`、`rpcs/inst_status.go`、`rpcs/rescue_vm.go`、`rpcs/hyper_status.go`、`rpcs/frontback.go` | 删云服务器后发共享系统盘的删除（`SharedBootRemoval`）；疏散回调；宕机恢复后不信旧节点对已恢复实例的上报（`EvacuatedFrom`）、等副本的重装保持 `reinstalling`、`pending_reconcile`；节点离线 / 回来记 `offline_at` | S4 / S6 |
+| `apis/storage_cluster.go`（含任务接口 `ListTasks` / `GetTask` / `Retry` / `Abort`）、`apis/storage_cluster_change.go`、`apis/storage_cluster_fs.go`、`apis/storage_cluster_remote.go`、`apis/storage_metrics.go`、`apis/storage_run_log.go`（新增）、`apis/routes.go`、`apis/audit_actions.go` | §13.1、§13.4。设计里的 `apis/storage_task.go` 没有单独的文件 | S1 起 |
+| `apis/storage_package.go`（新增）、`apis/storage_pool.go`、`apis/storage_pool_reconcile.go`（新增） | 软件包接口；共享池参数；孤儿对账 | S2 / S3 / S5 |
+| `apis/hyper_evacuate.go`（新增）、`apis/hyper.go`、`apis/migration.go`、`apis/image_storage.go`（新增）、`apis/instance.go`、`apis/prometheus_sd.go` | 疏散与解除隔离、节点的离线时长与隔离；强制迁移的 `confirm_fenced`；镜像副本与预热；建云服务器时系统盘池 | S4–S7 |
 | `services/services.go` | 启动任务引擎的后台循环 | S1 |
 
 ### 节点脚本（`scripts/`）
 
 | 文件 | 改动 | 阶段 |
 |---|---|---|
-| `kvm/storage/`（新目录） | 附录 B 的全部脚本 | S1–S6 |
-| `kvm/storage_lib.sh` | 身份核对（`disk_identity`）；`classify_disk` 识别 `ceph_osd`、GPFS 分区类型的盘与装了 GPFS 时盘头有数据的空白盘判 `unknown_member`（S1，S2 验收时改为盘头全零判 `free`）；`wipe_disk` 清零两端各 10 MiB；`pool_root` / `pool_enter` 支持共享池的根（§9.1，S2）。共享池的写前检查是驱动的 `drv_guard`，不改 `pool_guard` | S1 / S2 |
-| `kvm/async_job/scan_host_disks.sh` | 同上 | S1 |
-| `kvm/report_rc.sh` | 内存预留（含 `MemFree` 那一行，S1）；`instance_pools`（`:302-311`）认得 GPFS 路径与 RBD 网络盘，读共享池探测状态（S2 / S3） | S1 / S2 / S3 |
-| `kvm/*_volume_shared.sh`、`kvm/import_image_shared.sh`（新增） | 共享池的建、挂、卸、扩、删与镜像导入，按 stdin 里的驱动引入 `storage/drivers/<驱动>.sh`（§4.5.2） | S2 / S3 |
-| `kvm/launch_vm.sh`、`kvm/reinstall_vm.sh`、`kvm/rescue_vm.sh`、`kvm/clear_vm.sh`、`kvm/async_job/capture_image.sh` | 按 `boot_disk` 的驱动处理系统盘 | S4 |
+| `kvm/storage/`（新目录） | 附录 B 的全部脚本 | S1–S7 |
+| `kvm/storage_lib.sh` | 身份核对（`disk_identity`）；`classify_disk` 识别 `ceph_osd`、GPFS 分区类型的盘与装了 GPFS 时盘头有数据的空白盘判 `unknown_member`（S1，S2 验收时改为盘头全零判 `free`），多路径设备与疑似共享 LUN 判 `shared`（S7）；`wipe_disk` 清零两端各 10 MiB；`pool_root` / `pool_enter` 支持共享池的根（§9.1，S2），池清单 `shared_pools_apply`、`drv_load`；共享系统盘 `shared_boot_*`、`xml_replace_disk`、`nvram_undefine_flag`（S4）；对账扣住实例 `reconcile_hold_*`（S6）；镜像导入槽位与进度 `image_import_*`（S7）。共享池的写前检查是驱动的 `drv_guard`，不改 `pool_guard` | S1–S7 |
+| `kvm/async_job/scan_host_disks.sh` | 同上；另把 SAN 的多路径设备列进扫描（S7） | S1 / S7 |
+| `kvm/report_rc.sh` | 内存预留（含 `MemFree` 那一行，S1）；`instance_pools` 认得 GPFS 路径与 RBD 网络盘、读共享池探测状态，每 30 秒拉起 `shared_pool_probe.sh`、上报 `shared_pool_status`（S2 / S3）；每分钟后台拉起 `storage/stc_metrics.sh`（S5）；开机与心跳断档后的对账 `reconcile_check`（S6）；每 5 分钟 `storage/ceph_oom_protect.sh --sweep`（OOM 保护）；导入进度 `image_import_report`（S7） | S1–S7 |
+| `kvm/create_volume_shared.sh`、`attach_volume_shared.sh`、`resize_volume_shared.sh`、`delete_volume_shared.sh`、`import_image_shared.sh`、`async_job/import_image_shared.sh`、`delete_image_shared.sh`、`sync_shared_pools.sh`、`shared_pool_probe.sh`（新增） | 共享池的建、挂、扩、删与镜像副本的导入 / 删除，按 stdin 里的驱动引入 `storage/drivers/<驱动>.sh`（§4.5.2）；卸载沿用 `detach_volume_local.sh`；池清单与后台探测（见附录 B） | S2–S4 |
+| `kvm/launch_vm.sh`、`kvm/reinstall_vm.sh`、`kvm/rescue_vm.sh`、`kvm/async_job/capture_image.sh`、`kvm/build_meta.sh` | 按 `boot_disk` 的驱动处理系统盘（S4）；`launch_vm.sh` 的撤离模式（S6）；`build_meta.sh` 从配置盘里删掉 `boot_disk`、`data_disks`、`evacuate`；`capture_image.sh` 认得 RBD 系统盘（`rbd:` 源）。`scripts/cloudrc` 的镜像下载可把进度写到文件，供导入进度用（S7） | S4 / S6 / S7 |
+| `kvm/clear_vm.sh` | 设计里要按 `boot_disk` 处理，**没改**：共享系统盘不交给它（参数 `-`），由 clapi 在 `clear_vm` 回调后发 `delete_volume_shared.sh` | — |
 | `kvm/source_migration.sh`、`kvm/finish_source_migration.sh`、`kvm/async_job/clear_target_migration.sh`、`kvm/async_job/complete_migration.sh` | 共享盘不复制、不清理 | S2 / S3 |
-| `kvm/node_recovered.sh`、`kvm/clear_stale_vm.sh`（新增） | 节点重新注册时的对账（§11.4） | S6 |
-| `xml/` | 新增 RBD 磁盘模板 | S3 |
+| `kvm/node_reconcile.sh`、`kvm/clear_stale_vm.sh`（新增）；`kvm/async_job/start_pending.sh` | 节点回来后的对账（§11.4）：`report_rc.sh` 的 `reconcile_check` 发 `node_recovered`，`node_reconcile.sh` 执行 clapi 的决定，`clear_stale_vm.sh` 去掉已在别处恢复的实例的定义；被扣住的实例不自动启动。设计里的 `node_recovered.sh` 没有这个文件 | S6 |
+| `xml/` | 设计里要新增 RBD 磁盘模板，**没有模板**：RBD 磁盘的 XML 由 `storage/drivers/ceph_rbd.sh` 的 `drv_disk_xml` 生成 | — |
 
 ### 其他
 
 | 位置 | 改动 | 阶段 |
 |---|---|---|
 | `cpgateway/src/apis/proxy_routes.go` | §13.2 | S1 起 |
-| `web/src/`：`api/storageClusters.ts`（新增）；`views/dashboard/StorageClusters.vue`（新增）；`components/storage/`（预检弹窗、任务抽屉）；`router/index.ts`、`views/dashboard/Layout.vue`（「存储」分组）；三种语言包。类型、角色、建议角色取自 `GET /storage_backends`，不在前端写死（§4.5.1） | §13.3 | S1 |
-| `web/src/`：`api/storagePackages.ts`、`views/dashboard/StoragePackages.vue`、`StorageClusterCreate.vue`、`StorageClusterDetail.vue`、`components/storage/params/<类型>.vue`（新增，每种存储一个参数表单）；`StoragePools.vue`、`StoragePoolDetail.vue`、`HostStorageTab.vue`、`VolumeActionModals.vue`、`CreateInstanceModal.vue`、迁移弹窗 | §13.3 | S2–S4 |
-| `deploy/docker/config/prometheus/prometheus.yml` | `ceph-mgr` 采集任务 | S3 / S5 |
-| `deploy/docker/scripts/deploy-compute-node.sh`、`deploy/roles/hyper/tasks/main.yml` | 显式安装 `qemu-block-extra` | S3 |
-| `docs/` | §15.3 | 各阶段 |
+| `cpgateway/src/services/system_settings.go` | `STORAGE_ALERT_DELAY_MINUTES`、`STORAGE_POOL_USAGE_WARN_PERCENT`、`STORAGE_POOL_USAGE_CRITICAL_PERCENT` | S5 |
+| `web/src/`：`api/storageClusters.ts`（新增）；`views/dashboard/StorageClusters.vue`（新增）；`components/storage/`（`StoragePrecheckModal.vue`、`StoragePrecheckResults.vue`、`StorageSelftestModal.vue`、`StorageHostPicker.vue`）；任务详情页 `views/dashboard/StorageTaskDetail.vue`（设计里的「任务抽屉」做成了独立页面）；`utils/storageCluster.ts`；`router/index.ts`、`views/dashboard/Layout.vue`（「存储」分组）；三种语言包。类型、角色、建议角色取自 `GET /storage_backends`，不在前端写死（§4.5.1） | §13.3 | S1 |
+| `web/src/`：`api/storagePackages.ts`、`views/dashboard/StoragePackages.vue`（`StoragePackageUploadModal.vue`、`StorageLicenseModal.vue`）、`StorageClusterCreate.vue`、`StorageClusterDetail.vue`（`StorageExpandModal.vue`、`SharedPoolModal.vue`）；`StoragePools.vue`、`StoragePoolDetail.vue`、`HostStorageTab.vue`、`VolumeActionModals.vue`、`CreateInstanceModal.vue`、迁移弹窗（`MigrationList.vue`）与 `MigrationDetail.vue`。各类型的参数表单直接写在 `StorageClusterCreate.vue` 里，没有表单的类型填 JSON；设计里每种存储一个 `components/storage/params/<类型>.vue` **没有采用** | §13.3 | S2–S4 |
+| `web/src/components/storage/`：`StorageClusterMetrics.vue`、`StorageReplaceDiskModal.vue`、`StorageChangeRolesModal.vue`、`StorageAutoJoinModal.vue`、`StoragePoolReconcile.vue` | 监控、换盘、改角色、自动加入、孤儿对账 | S5 |
+| `web/src/components/storage/`：`HostEvacuateModal.vue`、`HostRecoveryCard.vue`（`views/dashboard/HypervisorDetail.vue`）、`StorageRotateKeysModal.vue`、`StorageUpgradeModal.vue` | 疏散与宕机恢复卡片、轮换、升级 | S6 |
+| `web/src/`：`components/storage/StorageRemoteMounts.vue`、`components/image/ImageStorageCopies.vue`（`ImageDetail.vue`）；创建向导的纠删码、SAN 卡片 | 远程挂载、镜像的存储池副本与预热 | S7 |
+| `deploy/docker/config/prometheus/prometheus.yml` | 采集任务 `storage_clusters`：http_sd 取 clapi 的 `/api/v1/prometheus/sd/storage`（Ceph mgr）；设计里写的 `ceph-mgr` 任务名没有采用 | S5 |
+| `deploy/docker/config/grafana/dashboards/storage.json`（新增） | 共享存储 Grafana 看板 | S7 |
+| `deploy/docker/docker-compose.yml` | MinIO 改用 `cgr.dev/chainguard/minio`、`minio-client` 镜像（官方镜像已拉不到；软件包仓库依赖 S3） | S2 |
+| `deploy/docker/scripts/deploy-compute-node.sh`、`deploy/roles/hyper/tasks/main.yml` | 设计里要显式安装 `qemu-block-extra`，**没改**：由 `storage/ceph_install.sh`（所有节点）与 `storage/ceph_client.sh`（导入时）安装 | — |
+| `docs/` | §15.3：`docs/deployment/09-shared-storage.md`、`10-ceph-storage.md`（新增），`docs/guide/volumes.md`（重写）、`docs/guide/instances.md`；§15.3 计划的 `docs/guide/storage-clusters.md` **没写** | 各阶段 |
 
 ---
 
 ## 附录 B：节点脚本清单
 
-都在 `scripts/kvm/storage/`，共用 `stc_lib.sh`（作业目录、幂等启动、集群锁、回调，§6.2.3）。「后台」表示同步部分只登记作业、长活经 `async_exec` 执行；每个脚本先判断目标是否已经达成，达成就直接报成功（可重入）。
+`scripts/kvm/storage/` 下的脚本共用 `stc_lib.sh`（作业目录、幂等启动、集群锁、回调，§6.2.3）。「后台」表示同步部分只登记作业、长活经 `async_exec` 执行（`stc_run`）；每个脚本先判断目标是否已经达成，达成就直接报成功（可重入）。表里最后两行（`sync_shared_pools.sh`、`shared_pool_probe.sh`）在 `scripts/kvm/` 下。
 
 | 脚本 | 后台 | 做什么 | 已达成的判断 | 阶段 |
 |---|---|---|---|---|
-| `stc_lib.sh` | — | 作业目录、`boot_id`、集群锁、日志与回调描述符、身份核对的封装；`backend_load` 引入某种存储的钩子文件 | — | S1 |
-| `backends/<类型>.sh` | — | 每种存储的节点钩子（§4.5.1）：`backend_existing`（S1，预检用）；以后按需加 `backend_health`、`backend_fence` 等 | — | S1 起 |
-| `drivers/file.sh`、`drivers/gpfs.sh`、`drivers/ceph_rbd.sh` | — | 存储池驱动的函数（§4.5.2）：文件型的公共实现，GPFS 只覆盖检查与克隆 | — | S2 / S3 |
-| `gpfs_ece.sh` | 是 | 纠删码：`configure` / `slots` / `create_rg` / `create_vs` / `create_fs`（S7 第一版），`add_servers` / `remove_server` / `replace` / `resize`（S7 第二轮，§7.9） | 节点类、恢复组、纠删码卷、文件系统已在；服务器已在恢复组；物理盘已在新盘上 | S7 |
-| `gpfs_remote.sh` | 是 | 多集群远程挂载：`key` / `grant` / `mount` / `unmount` / `revoke`（§7.11） | 密钥已在；对方已授权 / 已认识；远程文件系统已在 | S7 |
-| `gpfs_nsd.sh` 的 `servers` | 是 | SAN：共享 LUN 的服务器列表（`mmchnsd`，§7.10） | GPFS 里的服务器已是这些 | S7 |
+| `stc_lib.sh` | — | 作业目录、`boot_id`、集群锁（`stc_lock`）、进度 / 结果 / 失败与回调描述符、改 `authorized_keys` 的 `stc_keys_update`（全机锁 + 原子替换）；`backend_load` 引入某种存储的钩子文件。身份核对 `disk_identity` 在 `storage_lib.sh` | — | S1 |
+| `backends/<类型>.sh` | — | 每种存储的节点钩子（§4.5.1）。GPFS：`backend_existing`、`backend_trust_written`（写 `gpfs_rsh` / `gpfs_rcp`）、`backend_disks_resolved`（写 `nsddevices` 用户出口）、`backend_leave`、`backend_readiness`（纠删码就绪检查，S7）、`backend_health`、`backend_metrics`（S5）。Ceph：`backend_existing`、`backend_disk_path`（回环盘建卷组）、`backend_disks_resolved`、`backend_leave`（`cephadm rm-cluster --zap-osds` 与清理）、`backend_forget`、`backend_health`、`backend_metrics`。没有 `backend_fence`（隔离在 `gpfs_cluster.sh` / `ceph_cluster.sh`）；`stc_join.sh` 调的 `backend_join` 两个后端都没定义（已知缺陷 (e)，无害） | — | S1 起 |
+| `drivers/file.sh`、`drivers/gpfs.sh`、`drivers/ceph_rbd.sh` | — | 存储池驱动的函数（§4.5.2）：`file.sh` 是文件型的公共实现（含写前检查 `drv_guard`、探测、建删扩、副本导入与克隆、`drv_list`）；GPFS 只覆盖错误策略（`stop`）与克隆父 / 克隆（`drv_base_seal`、`drv_clone_fast`，`mmclone`）；`ceph_rbd.sh` 是 RBD 的全套，含磁盘 XML（`drv_disk_xml`） | — | S2 / S3 |
 | `stc_poll.sh` | 否 | 回答一个运行的状态：已结束（重发结果）/ 在跑 / 中断 / 没有 | — | S1 |
 | `stc_kill.sh` | 否 | 杀掉一个运行的进程组，记 `exit` | 进程已不在 | S1 |
 | `stc_selftest.sh` | 是 | 按参数睡眠、失败、输出进度、拿集群锁 | — | S1 |
-| `stc_precheck.sh` | 是 | §6.5 的各项；输出主机公钥、内网地址、内核版本 | — | S1 |
-| `stc_ssh_trust.sh` | 是 | 写或删 `authorized_keys` 那一行；管理节点写私钥、`known_hosts` | 内容一致 | S1 |
-| `stc_mem_reserve.sh` | 否 | 写 `/opt/cloudland/run/storage_reserved_memory` | 内容一致 | S1 |
-| `stc_join.sh` | 是 | 写成员标记；GPFS 节点 hold 内核元包 | 标记已存在 | S2 / S3 |
-| `stc_resolve_disks.sh` | 是 | 按稳定 ID 解析、核对身份、复核盘是空的（之前核对过的盘只核身份） | — | S2 / S3 |
-| `stc_release_disks.sh` | 是 | 盘离开集群：先让存储软件只认留下的盘（GPFS 的 `nsddevices`），再核对身份后擦掉离开的盘 | 身份对不上的不擦 | S2 |
-| `stc_finish.sh`、`stc_leave.sh` | 是 | 部署 / 加节点的收尾（内存预留、扫描）；离开集群的清理（存储软件、擦盘、密钥、内存预留、hold 的内核包、成员标记） | 每次都跑 / 没有的跳过 | S2 |
+| `stc_precheck.sh` | 是 | §6.5 的各项；输出主机公钥、内网地址、内核版本；纠删码服务器另跑 `backend_readiness`（S7） | — | S1 |
+| `stc_ssh_trust.sh` | 是 | 写或删 `authorized_keys` 那一行；管理节点写私钥、`known_hosts`；轮换时分三轮 `add` / `switch` / `drop`，`check` 核对管理节点用新钥匙能登录（S6） | 内容一致 | S1 / S6 |
+| `stc_mem_reserve.sh` | 否 | 写 `/opt/cloudland/run/storage_reserved_memory`（各集群之和，KiB） | 内容一致 | S1 |
+| `stc_join.sh` | 是 | 写成员标记；GPFS 节点 hold 内核元包和运行中内核的 image / headers / modules；有 `backend_join` 钩子时调用 | 不判断，每次重写（幂等） | S2 / S3 |
+| `stc_resolve_disks.sh` | 是 | 按稳定 ID 解析、核对身份、复核盘是空的；`in_use`（集群已在用的盘、或别的节点在查空的共享 LUN）只核身份、不查空、永不擦除（S7） | — | S2 / S3 |
+| `stc_release_disks.sh` | 是 | 盘离开集群：先让存储软件只认留下的盘（GPFS 的 `nsddevices`），再核对身份后擦掉离开的盘；`no_wipe`（换下的坏盘）只撤认领不碰盘（S5） | 身份对不上的不擦 | S2 |
+| `stc_finish.sh` | 是 | 部署 / 加节点的收尾：写内存预留、集群状态标记 `active`。重新扫描盘不在这里做，由 clapi 另发 `scan_host_disks.sh`（`scanStorageHosts`） | 每次都跑 | S2 |
+| `stc_leave.sh` | 是 | 离开集群的清理：`backend_leave`（存储软件）、核对身份后擦盘（别的节点还在服务或负责擦的共享 LUN 不擦，S7）、密钥、内存预留、解除 hold 的内核包、成员标记 | 没有的跳过 | S2 |
 | `stc_pools.sh` | 是 | 写这个集群的共享池清单（同 `sync_shared_pools.sh`），新建池时当场探测一次并回报（§7.4） | — | S2 |
-| `stc_forget.sh` | 是 | 取消登记导入的集群：只删清单和探测进程（§7.8） | 目录已不存在 | S2 |
-| `stc_fetch.sh` | 是 | 按预签名地址下载、校验 SHA-256 | 缓存已有且校验通过 | S2 |
-| `stc_upload_log.sh` | 是 | 把完整日志传给 clapi | — | S5 |
-| `sync_shared_pools.sh` | 否 | 写共享池清单，停掉清单里已没有的池的探测进程（§9.2） | — | S2 / S3 |
-| `shared_pool_probe.sh` | 后台 | 一个池探测一次就退出（驱动的 `drv_probe`），心跳每 30 秒拉起；参数先池后集群，`probe_alive` 与本地池共用 | — | S2 / S3 |
-| `gpfs_install.sh` | 是 | 从安装包 tar 流解出 deb、校验 md5、`apt-get install` | `gpfs.base` 版本相同 | S2 |
-| `gpfs_build_gpl.sh` | 是 | `mmbuildgpl` | 运行中内核的模块已存在 | S2 |
-| `gpfs_rsh` / `gpfs_rcp` | — | 给 `ssh` / `scp` 加上集群私钥与 `known_hosts` 的包装 | — | S2 |
-| `gpfs_cluster.sh <子命令>` | 是 | `create`、`start`、`teardown`、`add`（`mmaddnode`、许可证、启动、挂载）、`remove`（摘仲裁、停、`mmdelnode`；`offline` 时不碰那台节点）（管理节点执行）；`change_roles` 未做 | 按 `mmlscluster` / `mmgetstate` | S2 |
-| `gpfs_nsd.sh` | 是 | `create`（`nsddevices` 用户出口由 `backends/gpfs.sh` 的 `backend_disks_resolved` 写） | 按 `mmlsnsd -X` | S2 |
-| `gpfs_fs.sh <子命令>` | 是 | `create`、`add`（`mmadddisk`，不带 `-r`）、`remove`（`mmdeldisk`、`mmdelnsd`，节点已坏时 `-p`）、`rebalance`（`mmrestripefs -b`）；`delete` 未做（只能随集群删除） | 按 `mmlsfs`、`mmlsdisk` | S2 |
+| `stc_forget.sh` | 是 | 取消登记导入的集群：只删清单、探测进程和后端为访问集群写的东西（Ceph 客户端配置，`backend_forget`）（§7.8） | 目录已不存在 | S2 |
+| `stc_fetch.sh` | 是 | 按预签名地址下载、校验 SHA-256；下载停滞 1 分钟（低于 1 KiB/s）放弃 | 缓存已有且校验通过 | S2 |
+| `stc_upload_log.sh` | 是 | 把完整日志（最后 16 MiB）传给 clapi，只回报失败 | — | S5 |
+| `stc_health.sh` | 是 | 每分钟由 clapi 发给集群的一台节点：后台跑 `backend_health`，回调 `storage_health`（§14.1）；同一集群在一台节点上同时最多一个 | — | S5 |
+| `stc_metrics.sh` | 后台 | 心跳每分钟后台拉起：各集群的 `backend_metrics` 写 node_exporter textfile，每个集群一行 `cloudland_storage_cluster_info`；已离开的集群删文件；远程挂载用的池清单（`remote` 标记）跳过（§14.3） | — | S5 / S7 |
+| `stc_pool_objects.sh` | 是 | 孤儿对账：用驱动的 `drv_list` 列出池里的文件或 RBD 镜像，回调 `shared_pool_objects`（gzip + base64，超过 1 MiB 截断） | — | S5 |
+| `gpfs_install.sh` | 是 | 从安装包 tar 流解出 deb、校验 md5、`apt-get install`；有纠删码包时另装 `lsscsi sg3-utils` | 安装包清单里每个包都已是该版本（`gpfs_debs_missing`） | S2 |
+| `gpfs_build_gpl.sh` | 是 | `mmbuildgpl`，再核对三个模块的 vermagic | 运行中内核的模块已存在 | S2 |
+| `gpfs_rsh` / `gpfs_rcp` | — | 不是仓库里的脚本：`backend_trust_written` 在 `run/storage/<集群>/` 下生成，给 `ssh` / `scp` 加上集群私钥与 `known_hosts` | — | S2 |
+| `gpfs_cluster.sh <子命令>` | 是 | 管理节点执行：`create`、`start`、`teardown`、`add`（`mmaddnode`、许可证、启动、挂载）、`remove`（摘仲裁、停、`mmdelnode`；`offline` 时不碰那台节点）（S2）；`roles`（`mmchnode --quorum --manager`，先挪走管理角色，S5）；`fence` / `unfence`（`mmexpelnode`）、`finalize`（`release=LATEST`、`mmchfs -V full`，纠删码另升恢复组版本）（S6） | 按 `mmlscluster` / `mmgetstate` 等查询 | S2 / S5 / S6 |
+| `gpfs_nsd.sh` | 是 | `create`（`nsddevices` 用户出口由 `backends/gpfs.sh` 的 `backend_disks_resolved` 写；共享 LUN 的服务器是逗号分隔的列表）；`servers`（SAN：`mmchnsd` 在线改共享 LUN 的服务器列表，S7，§7.10） | 按 `mmlsnsd -X`；服务器已是这些 | S2 / S7 |
+| `gpfs_fs.sh <子命令>` | 是 | `create`、`add`（`mmadddisk`，不带 `-r`）、`remove`（按文件系统分组 `groups`，`mmdeldisk`、`mmdelnsd`，盘已坏时 `mmdeldisk -p`）、`rebalance`（`mmrestripefs -b`）（S2）；`restore`（换盘后 `mmrestripefs -r` 补副本，S5）；`delete`（各节点卸载、`mmdelfs`、删它的 NSD，S7） | 按 `mmlsfs`、`mmlsdisk` | S2 / S5 / S7 |
 | `gpfs_pool.sh <子命令>` | 是 | `create`（`--filesetdf`、建 fileset、链接、两种介质时整体生成放置规则、配额、池内目录、标记文件）、`quota`、`delete`；导入的集群上 `register`、`unregister`（不执行任何 `mm` 命令） | 按 `mmlsfileset -Y` 比对名字 | S2 |
 | `gpfs_import.sh` | 是 | 外部集群的节点检查（§7.8）：`mmfsd` 在跑、挂载点是 GPFS | — | S2 |
-| `gpfs_disks_up.sh` | 后台 | 每分钟由 clapi 发给一台管理节点：所有节点都 active 后把 `down` 的 NSD 拉起来（`mmchdisk start -a`，10 分钟一次，§7.1） | 没有 `down` 的盘 | S2 |
-| `gpfs_health.sh` | 是 | §14.1 | — | S5 |
-| `gpfs_node_exporter.sh` | — | 附录 E 的采集脚本，由 systemd 定时器执行 | — | S5 |
-| `ceph_install.sh` | 是 | `apt-get install cephadm ceph-common lvm2`；拉镜像 | 版本与镜像都已在 | S3 |
-| `ceph_bootstrap.sh` | 是 | `cephadm bootstrap`、改写它加的 `authorized_keys` 行（§8.2） | `/var/lib/ceph/<fsid>` 已存在且能连上 | S3 |
-| `ceph_orch.sh <子命令>` | 是 | `add_host`、`place`、`configure`、`add_osd`、`rm_osd`、`drain_host`、`rm_host`、`rm_host_offline`、`upgrade` | 按 `ceph orch` 的查询 | S3 |
-| `ceph_pool.sh <子命令>` | 是 | `create`、`quota`、`delete`、`caps` | 按 `ceph osd pool ls` | S3 |
-| `ceph_client.sh <子命令>` | 是 | `setup`、`remove`：配置文件（含 `keyring` 一行）、密钥环、libvirt secret | 内容一致 | S3 |
-| `ceph_health.sh` | 是 | §14.1 | — | S5 |
-| `ceph_rm_cluster.sh` | 是 | 停编排模块后 `cephadm rm-cluster --zap-osds` 与清理（§8.6） | `/var/lib/ceph/<fsid>` 已不存在 | S3 |
+| `gpfs_disks_up.sh` | 后台 | 每分钟由 clapi 发给一台管理节点（集群没有任务时）：所有节点都 active 后把 `down` 的 NSD 拉起来（`mmchdisk start -a`，10 分钟一次，§7.1）；只写日志，不回调 | 没有 `down` 的盘 | S2 |
+| `gpfs_upgrade.sh` | 是 | 逐台升级（§7.7）：确认本机没有用集群文件系统的运行中域且盘都 up → 把管理角色挪到别的节点、`mmshutdown`、装新版、`mmbuildgpl` → `mmstartup`、挂载、拉起盘；纠删码服务器改为在恢复组里挂起 / 恢复（`run/storage/<集群>/rg-suspended` 标记，S7） | 已是新版本的节点只做最后一步 | S6 / S7 |
+| `gpfs_ece.sh` | 是 | 纠删码：`configure` / `slots` / `create_rg` / `create_vs` / `create_fs`（S7 第一版），`add_servers` / `remove_server` / `replace` / `resize`（S7 第二轮，§7.9） | 节点类、恢复组、纠删码卷、文件系统已在；服务器已在恢复组；物理盘已在新盘上 | S7 |
+| `gpfs_remote.sh` | 是 | 多集群远程挂载：`key`（没设 cipherList 时设为 `AUTHONLY`）/ `grant` / `mount` / `unmount` / `revoke`（§7.11） | 密钥已在；对方已授权 / 已认识；远程文件系统已在 | S7 |
+| `ceph_install.sh` | 是 | 所有节点装 `ceph-common qemu-block-extra`；守护进程节点另装 `cephadm lvm2 python3-jinja2`、建 `ceph-ctr`（uid 167）、写单元的停止顺序与 OOM drop-in（`cloudland-order.conf`、`cloudland-oom.conf`）、有私有仓库时 `docker login --password-stdin`（S7）、拉镜像并拒绝比节点 `ceph-common` 新的镜像 | 不跳过，各步本身可重入 | S3 |
+| `ceph_cluster.sh <子命令>` | 是 | 管理节点执行：`bootstrap`（`cephadm bootstrap`，私有仓库带 `--registry-json`）、`add_hosts`、`configure`、`create_osds`、`remove_osds`、`remove_host`、`teardown`（停编排模块）（S3）；`replace_osd`、`set_labels`（S5）；`fence` / `unfence`（`osd blocklist`）、`cephadm_key` / `cephadm_check`、`client_pending` / `client_commit`、`upgrade`（S6）；`mon_addrs`（S7）。设计里的 `ceph_bootstrap.sh`、`ceph_orch.sh`、`ceph_rm_cluster.sh` 都合在这里，`rm-cluster` 在 `backends/ceph.sh` 的 `backend_leave` | 按 `/var/lib/ceph/<fsid>`、`ceph orch` / `ceph osd` 的查询 | S3–S7 |
+| `ceph_pool.sh <子命令>` | 是 | `create`（放置规则、副本、配额、rbd 应用、标记对象 `cloudland-pool`）、`quota`、`delete`（池里没有镜像且标记对得上）；导入的集群上 `register` / `unregister` 只写 / 删标记。没有 `caps` | 按 `ceph osd pool ls` 与标记 | S3 |
+| `ceph_client.sh <子命令>` | 是 | `setup`、`import`（缺包时装客户端包，核对 fsid）、`remove`：配置文件、密钥环、libvirt secret；`rekey`（轮换时用待定密钥，失败写回原来的，S6） | 每次重写并核对集群应答 | S3 / S6 |
+| `ceph_oom_protect.sh` | 否 | 守护进程容器 `oom_score_adj` 与 `memory.low`（经 `docker update`），`system.slice` 的 `MemoryLow`；单元启动后经 `systemd-run` 执行，心跳每 5 分钟 `--sweep`（§6.7.2） | 只改不一样的 | OOM 保护（S7 期间） |
+| `sync_shared_pools.sh`（`scripts/kvm/`） | 否 | clapi 每几分钟发一次作兜底：写共享池清单（`<集群> [remote]`，`remote` 是远程挂载用到的池，S7），停掉清单里已没有的池的探测进程（§9.2） | — | S2 / S3 |
+| `shared_pool_probe.sh`（`scripts/kvm/`） | 后台 | 一个池探测一次就退出（驱动的 `drv_probe`），写状态文件与池用量指标（S5），心跳每 30 秒拉起；参数先池后集群，`probe_alive` 与本地池共用 | — | S2 / S3 |
 
-不在 `storage/` 目录里的：`scripts/kvm/*_volume_shared.sh`（S2 已有 `create`、`attach`、`resize`、`delete`；卸载沿用 `detach_volume_local.sh`）、`import_image_shared.sh`（与 `*_volume_local.sh` 并列；导入镜像基础副本是后台作业，正式路径已存在就算达成，§9.6）、`node_recovered.sh`、`clear_stale_vm.sh`（附录 A）。
+不在 `storage/` 目录里的：`scripts/kvm/*_volume_shared.sh`（`create`、`attach`、`resize`、`delete`；卸载沿用 `detach_volume_local.sh`）、`import_image_shared.sh` 与后台作业 `async_job/import_image_shared.sh`（与 `*_volume_local.sh` 并列；导入镜像基础副本是后台作业，正式路径已存在就算达成，§9.6；S7 起分阶段回报进度、按 `image_import_concurrency` 限并发）、`delete_image_shared.sh`（只删那一个副本）、`node_reconcile.sh`、`clear_stale_vm.sh`（附录 A）。
 
 ---
 
 ## 附录 C：GPFS 命令对照
 
-CloudLand 在各步骤里执行的命令（§7.2–§7.6），也是手工排障时的参考。`mm*` 命令都在 `/usr/lpp/mmfs/bin/`。
+CloudLand 在各步骤里执行的命令（§7.2–§7.7），也是手工排障时的参考。`mm*` 命令都在 `/usr/lpp/mmfs/bin/`。集群目录 `<dir>` 是 `/opt/cloudland/run/storage/<集群 UUID>/`。
 
 ```bash
-# install (every member), after the license was accepted in the UI: take the debs out of the
-# installer's tar.gz payload instead of running the self-extracting script (§6.1)
-tail -n +680 Storage_Scale_Erasure_Code-6.0.0.2-x86_64-Linux-install | tar -xz -C /tmp/gpfs gpfs_debs
+# join (every member): hold the kernel packages that are installed (the list goes to <dir>/held_packages)
+apt-mark hold linux-generic linux-image-generic linux-headers-generic \
+    linux-image-$(uname -r) linux-headers-$(uname -r) linux-modules-$(uname -r)
+
+# install (every member), after the license was accepted in the UI: take the debs of the manifest out of the
+# installer's tar.gz payload instead of running the self-extracting script (§6.1); the payload starts at the
+# line recorded with the package (680 for this installer), every deb is checked against the md5 of the manifest
+tail -n +680 Storage_Scale_Erasure_Code-6.0.0.2-x86_64-Linux-install | tar -xzf - -C /tmp/gpfs gpfs_debs/<deb>...
 apt-get install -y -o DPkg::Lock::Timeout=600 ./gpfs.base_*.deb ./gpfs.gpl_*.deb ./gpfs.gskit_*.deb \
     ./gpfs.msg.en-us_*.deb ./gpfs.license.ec_*.deb ./gpfs.docs_*.deb \
-    libaio1t64 ksh build-essential linux-headers-$(uname -r)
+    libaio1t64 ksh m4 python3 iputils-arping build-essential linux-headers-$(uname -r)
 mmbuildgpl
 
-# create the cluster (primary admin node); node names are internal addresses
-mmcrcluster -N nodes.list -C <name> -r /opt/cloudland/scripts/kvm/storage/gpfs_rsh \
-    -R /opt/cloudland/scripts/kvm/storage/gpfs_rcp -A
-mmchlicense server --accept -N <quorum and nsd nodes>
+# create the cluster (primary admin node); node names are internal addresses, quorum nodes are managers too
+cat > nodes.list <<'EOF'
+10.191.202.40:quorum-manager
+10.191.202.29:quorum-manager
+10.191.202.13:quorum-manager
+EOF
+mmcrcluster -N nodes.list -C <name> -r <dir>/gpfs_rsh -R <dir>/gpfs_rcp -A
+mmchlicense server --accept -N <quorum, nsd and admin nodes>
 mmchlicense client --accept -N <other nodes>
-mmchconfig adminMode=central,autoBuildGPL=yes,restripeOnDiskFailure=yes,pagepool=1G
+mmchconfig adminMode=central,autoBuildGPL=yes,restripeOnDiskFailure=yes,pagepool=1024M
 mmstartup -a
 mmgetstate -a
 
@@ -2809,27 +3154,86 @@ cat > nsd.stanza <<'EOF'
 %nsd: device=/dev/sdb nsd=cl1h2d1 servers=10.191.202.29 usage=dataAndMetadata failureGroup=2 pool=system
 %nsd: device=/dev/sdb nsd=cl1h3d1 servers=10.191.202.13 usage=dataAndMetadata failureGroup=3 pool=system
 EOF
-mmcrnsd -F nsd.stanza
+mmcrnsd -F nsd.stanza -v yes
 
-# file system: max replicas 3 so replicas can be raised later without recreating it
-mmcrfs fs1 -F nsd.stanza -B 4M -m 3 -M 3 -r 2 -R 3 -T /gpfs/fs1 -A yes -Q yes --inode-limit 10000000
+# file system: max replicas 3 so replicas can be raised later without recreating it; no inode limit here (each
+# CloudLand pool sets one on its fileset). Two kinds of media: the stanzas get "%pool: pool=data blockSize=4M
+# layoutMap=cluster" and the file system the rule RULE 'default' SET POOL 'data' (mmchpolicy) once it is made
+mmcrfs fs1 -F fs.stanza -B 4M -m 3 -M 3 -r 2 -R 3 -T /gpfs/fs1 -A yes -Q yes -v yes
 mmmount fs1 -a
 mmlsmount fs1 -L
 
 # one CloudLand storage pool = one independent fileset
-mmcrfileset fs1 cl_1a2b3c4d --inode-space new --inode-limit 2000000
+mmchfs fs1 --filesetdf            # once per file system: df on a junction reports the quota of its fileset
+mmcrfileset fs1 cl_1a2b3c4d --inode-space new --inode-limit 100000
 mmlinkfileset fs1 cl_1a2b3c4d -J /gpfs/fs1/cl_1a2b3c4d
-mmchpolicy fs1 policy.txt -I test && mmchpolicy fs1 policy.txt
-mmsetquota fs1:cl_1a2b3c4d --block 10T:10T
+mmchpolicy fs1 policy.txt -I test && mmchpolicy fs1 policy.txt -I yes   # only a file system with a data pool
+mmsetquota fs1:cl_1a2b3c4d --block 10737418240K:10737418240K            # no quota: --block 0:0
 
-# /var/mmfs/etc/nsddevices lists only the disks claimed by the cluster, so GPFS never sees any
-# other disk (loop devices of test environments are listed the same way):
-#   echo "sdb generic"; return 0
+# a disk leaves (§7.5): its data moves first; -p only for a disk that can not be read (a failed disk, a host gone)
+mmdeldisk fs1 "cl1h3d2"
+mmdelnsd "cl1h3d2"
+mmrestripefs fs1 -r               # after a failed disk was replaced: the files get their lost copies back
+# a host leaves
+mmumount all -N 10.191.202.13; mmshutdown -N 10.191.202.13
+mmchnode --nonquorum -N 10.191.202.13       # a quorum node
+mmdelnode -N 10.191.202.13
+# the cluster goes (§7.6)
+mmumount all -a; mmdelfs fs1; mmdelnsd "cl1h1d1;cl1h2d1;cl1h3d1"; mmshutdown -a; mmdelnode -a
+
+# finalize an upgrade (§7.7), irreversible
+mmchconfig release=LATEST --accept-empty-cipherlist-security
+printf 'yes\n' | mmchfs fs1 -V full
+
+# /var/mmfs/etc/nsddevices lists only the disks claimed by the cluster, resolved by their stable id each time GPFS
+# looks, so GPFS never sees any other disk and a device renamed at boot is still found:
+#   d=$(readlink -f '/dev/disk/by-id/wwn-0x5000c500...'); t=generic; case "$d" in /dev/dm-*) t=dmm ;; esac
+#   [ -b "$d" ] && echo "${d#/dev/} $t"          # dmm: a multipath device of the san layout (§7.10)
+#   d=$(losetup -j '/var/lib/x/osd1.img' -nO NAME | head -1); [ -n "$d" ] && echo "${d#/dev/} generic"   # loop
+#   return 0
 ```
 
-测试环境用回环设备时，节点开机后要先把回环设备建好再启动 GPFS（一个排在 `gpfs.service` 之前的 systemd 单元），否则 NSD 找不到盘。
+测试环境用回环设备时，节点开机后要先把回环设备建好再启动 GPFS（一个排在 GPFS 开机自启 `mmautoload.service` 之前的 systemd 单元；`gpfs.service` 默认是 disabled），否则 NSD 找不到盘。
 
-纠删码模式（§7.9），2026-10-06 在虚拟机里按这个顺序执行过的命令（`ecedrivemapping` 那行除外，它只用于实体机，没跑过）：
+纠删码模式（§7.9）下 CloudLand 各步骤执行的命令（集群 ID 为 7、三台服务器各两块盘为例；混合介质、加减服务器、加盘、换盘见 §7.9「运维」）：
+
+```bash
+# ece_configure: the node class of the servers; the disk list names the claimed disks only, by server address
+mmvdisk nodeclass create --node-class cl7_nc -N 10.0.0.1,10.0.0.2,10.0.0.3
+mmvdisk server list --node-class cl7_nc --disk-list "10.0.0.1:sdb,sdc;10.0.0.2:sdb,sdc;10.0.0.3:sdb,sdc" --disk-topology -Y
+mmvdisk server configure --node-class cl7_nc --pagepool 8589934592 --recycle one </dev/null
+mmdiscovercomp -N cl7_nc </dev/null          # best effort (§7.9 pit 14)
+
+# ece_slots, real servers with slot_mode / slot_range: on each server without a slot map
+ecedrivemapping --mode lmr --slotrange 0 23 --force </dev/null
+# ece_slots, no_slot_map (VMs, emulated disks): 999 writes an attribute mmchconfig does not know; then one server
+# at a time is restarted until mmdiag --config shows both 0
+printf '999\n' | mmchconfig nsdRAIDStrictPdiskSlotLocation=0 -N cl7_nc
+printf '999\n' | mmchconfig nsdRAIDDiskCheckVWCE=no -N cl7_nc
+mmshutdown -N <server>; mmstartup -N <server>
+
+# ece_create_rg: then the log groups are counted (2 per server + root) and the root log group put on the first server
+mmvdisk recoverygroup create --recovery-group cl7_rg --node-class cl7_nc \
+    --disk-list "10.0.0.1:sdb,sdc;10.0.0.2:sdb,sdc;10.0.0.3:sdb,sdc" </dev/null
+mmvdisk recoverygroup create --complete-log-format </dev/null      # only when log groups are missing
+mmvdisk recoverygroup change --recovery-group cl7_rg --log-group root --active <first server> </dev/null
+mmlspdisk cl7_rg                             # pdisk names, device (//<node>/dev/sdX) and WWN
+
+# ece_create_vs (8M / 16M blocks add --checksum-granularity 32k)
+mmvdisk vdiskset define --vdisk-set cl7_vs --recovery-group cl7_rg --code 4+2p --block-size 4m --set-size 80% </dev/null
+mmvdisk vdiskset create --vdisk-set cl7_vs </dev/null
+
+# ece_create_fs
+mmvdisk filesystem create --file-system fs1 --vdisk-set cl7_vs --mmcrfs -T /gpfs/fs1 -A yes -Q yes </dev/null
+mmmount fs1 -a
+
+# health and placement
+mmvdisk pdisk list --recovery-group cl7_rg -Y                       # what the health hook reads
+mmvdisk recoverygroup list --recovery-group cl7_rg --declustered-array   # background task, free space
+mmvdisk recoverygroup list --recovery-group cl7_rg --log-group           # which server serves each log group
+```
+
+2026-10-06 在试验虚拟机里手工执行过的命令（实验记录，不是平台的步骤：当时没有 `--disk-list`、没关 `nsdRAIDDiskCheckVWCE`、没有补跑日志盘和挪根日志组，文件系统也没开配额；`ecedrivemapping` 那行没跑过）：
 
 ```bash
 # install: the replica-mode packages plus the GNR ones and the ECE license
@@ -2884,7 +3288,7 @@ mmvdisk recoverygroup list --recovery-group rg1 --log-group           # which se
 ```bash
 mmgetstate -a                    # GPFS state of every node
 mmhealth cluster show            # cluster health
-mmlsdisk fs1 -e                  # disks that are not up and ready
+mmlsdisk fs1 -e                  # disks that are not up and ready (-e does not combine with -Y)
 mmdf fs1                         # file system capacity
 mmlsquota -j cl_1a2b3c4d fs1     # quota and usage of one CloudLand pool
 mmlsmount fs1 -L                 # which nodes have it mounted
@@ -2894,47 +3298,41 @@ mmshutdown -N <node>; mmstartup -N <node>
 
 - **计算节点宕机**：按 §11 处理（阶段 S6 之后用 `POST /hypers/:uuid/evacuate`）。**不要**在确认原节点已被驱逐之前在别的节点 `virsh define` 再 `virsh start` 同一块盘的云服务器，那会两边同时写
 - **节点恢复**：`mmstartup -N <节点>`、`mmmount all -N <节点>`；之后的开机对账见 §11.4
-- **内核升级**：先迁走这台节点上用 GPFS 池的云服务器 → 解除内核元包的 hold → 确认新内核在支持矩阵里 → 升级并重启（`autoBuildGPL=yes` 会在启动时编译模块，失败时手工 `mmbuildgpl` 看报错）→ 重新 hold
-- **NSD 服务节点故障**：副本数 ≥ 2 且其余故障组完好时文件系统照常可用；`mmlsdisk fs1 -e` 看哪些盘不可用。节点恢复后健康看护会自动 `mmchdisk fs1 start`（§7.1），手工排障时也是这一句，再按需 `mmrestripefs fs1 -r` 补齐副本
+- **内核升级**：先迁走这台节点上用 GPFS 池的云服务器 → 解除 join 时的 hold（包名记在 `/opt/cloudland/run/storage/<集群 UUID>/held_packages`：`linux-generic`、`linux-image-generic`、`linux-headers-generic` 和当时运行中内核的 image / headers / modules）→ 确认新内核在支持矩阵里 → 升级并重启（`autoBuildGPL=yes` 会在启动时编译模块，失败时手工 `mmbuildgpl` 看报错）→ 重新 hold（新内核的包也 hold 上，并更新 `held_packages`，节点离开集群时按它放开）
+- **NSD 服务节点故障**：副本数 ≥ 2 且其余故障组完好时文件系统照常可用；`mmlsdisk fs1 -e` 看哪些盘不可用。节点恢复后，等**所有**节点都 `active`，clapi 每分钟一次的看护会对有 `down` / `unrecovered` 盘的文件系统执行 `mmchdisk fs1 start -a`（整个集群 10 分钟最多一次；集群有结构任务时不做；纠删码集群不做，§7.1），手工排障时也是这一句，再按需 `mmrestripefs fs1 -r` 补齐副本
 - 只有一台 NSD 节点或副本数为 1 时，它宕机整个文件系统就不可用、上面的云服务器全部卡住，**生产环境至少三台、双副本**
 
 ---
 
 ## 附录 E：集群监控的采集
 
+原设计在这里给了一个由 `finish` 步骤装到每个成员上、systemd 定时器每分钟执行的 GPFS 采集脚本，并让 Prometheus 按 `ceph_targets.json` 采集 Ceph mgr；实施时都改了（§14.3），下面是现在的采集。这些指标只用于看曲线，告警由健康看护产生（§14.2）。
+
 ### E.1 GPFS 成员节点（node_exporter textfile）
 
-由 `finish` 步骤装到每个成员上，systemd 定时器每分钟执行（定时器单元带 `TimeoutSec`）。要检查的挂载点来自集群目录里的 `gpfs_mounts`（建文件系统时由编排器写入，§6.8）：只看 `/proc/mounts` 的话，没挂上的文件系统根本不会出现。本节点的挂载状态按 `stat -f` 判断（`mmlsmount | grep -c` 只要文件系统在任一节点挂着就算挂载，不对）；容量用 `df`。**没有在真实 GPFS 上运行过**，`mmhealth` 的输出格式以实际版本为准。这些指标只用于看曲线，告警由健康看护产生（§14.2）。
+- **谁来跑**：心跳（`report_rc.sh` 的 `storage_metrics`）每 60 秒在后台起一次 `storage/stc_metrics.sh`。它拿 `/var/lock/cloudland-storage-metrics.lock`（拿不到就退出，上一轮还卡着时不叠加），对节点上的每个集群目录调用类型的钩子 `backend_metrics <集群UUID> <managed|external>`，结果写 `<textfile 目录>/cloudland_storage_<集群UUID>.prom`（先写临时文件再改名），文件第一行是 `cloudland_storage_cluster_info`。textfile 目录取 node_exporter 进程的 `--collector.textfile.directory`（部署脚本设为 `/var/lib/node_exporter`）。节点已不在其中的集群，它的文件删掉；只有池清单、带 `remote` 标记的集群（远程挂载）跳过。错误输出写 `log/storage/metrics.log`
+- **文件系统从哪来**：`mmlsfs all -T -Y`（挂载点是百分号编码的，解码后用），每次成功就写进集群目录的 `gpfs_mounts`；GPFS 不应答时读这份缓存。只看 `/proc/mounts` 不行：没挂上的文件系统根本不会出现
+- **本节点的挂载状态**按 `stat -f` 是不是 `gpfs` 判断（`mmlsmount | grep -c` 只要文件系统在任一节点挂着就算挂载，不对），容量用 `df`；所有命令都带 `timeout`
+- **指标**（每条都带 `cluster="<集群UUID>"`）：
 
-```bash
-#!/bin/bash
-# GPFS health of this node for the node_exporter textfile collector
-OUTPUT=/var/lib/node_exporter/cloudland_gpfs.prom
-TMP=$OUTPUT.tmp
-: >$TMP
-for mnt in $(cat /opt/cloudland/run/storage/*/gpfs_mounts 2>/dev/null | sort -u); do
-    fs=$(basename "$mnt")
-    mounted=0
-    # a hung GPFS mount blocks stat; the timeout cannot kill a process stuck in D state, so the whole
-    # collector runs from a timer with its own timeout and the exporter sees a stale file at worst
-    [ "$(timeout 10 stat -f -c %T "$mnt" 2>/dev/null)" = "gpfs" ] && mounted=1
-    echo "cloudland_gpfs_filesystem_mounted{fs=\"$fs\"} $mounted" >>$TMP
-    if [ $mounted -eq 1 ]; then
-        timeout 10 df -B1 --output=size,avail "$mnt" | awk -v fs="$fs" 'NR == 2 {
-            print "cloudland_gpfs_filesystem_total_bytes{fs=\"" fs "\"} " $1
-            print "cloudland_gpfs_filesystem_free_bytes{fs=\"" fs "\"} " $2 }' >>$TMP
-    fi
-done
-timeout 20 /usr/lpp/mmfs/bin/mmhealth node show 2>/dev/null | awk 'NR > 1 && NF >= 2 {
-    print "cloudland_gpfs_component_healthy{component=\"" $1 "\"} " ($2 == "HEALTHY" ? 1 : 0) }' >>$TMP
-mv $TMP $OUTPUT
-```
+| 指标 | 其他标签 | 来源 |
+|---|---|---|
+| `cloudland_gpfs_node_active` | — | `mmgetstate -Y`：本机 active 为 1 |
+| `cloudland_gpfs_filesystem_mounted` | `fs` | `stat -f` |
+| `cloudland_gpfs_filesystem_total_bytes`、`cloudland_gpfs_filesystem_free_bytes` | `fs` | `df`，只在本机挂上时导出 |
+| `cloudland_gpfs_read_bytes_total`、`cloudland_gpfs_write_bytes_total`、`cloudland_gpfs_reads_total`、`cloudland_gpfs_writes_total` | `fs` | `mmpmon` 的 `fs_io_s`（本机的计数，GPFS 重启后从 0 开始，只按速率看），只在本机 GPFS active 时导出 |
+| `cloudland_gpfs_component_healthy` | `component`（小写） | `mmhealth node show -Y` 里本节点的组件，HEALTHY 和 TIPS 记 1 |
+| `cloudland_gpfs_pool_total_bytes`、`cloudland_gpfs_pool_free_bytes` | `fs`、`gpfs_pool` | `mmdf <fs> -Y` 的 poolTotal（KiB 换成字节）；第二轮 |
+| `cloudland_gpfs_fileset_inodes_used`、`cloudland_gpfs_fileset_inodes_max` | `pool`（CloudLand 池的 UUID） | `mmrepquota -j <fs> -Y` 的 filesUsage、`mmlsfileset <fs> -L -Y` 的 maxInodes，只算根目录在这个文件系统下的本集群共享池；第二轮 |
 
-管理节点另外导出每个 fileset 的用量与配额（`mmlsquota -j ... -Y`），指标 `cloudland_gpfs_fileset_used_bytes`、`cloudland_gpfs_fileset_quota_bytes`，带 `pool_uuid` 标签。
+- 每个成员都导出一份；界面与看板对容量、存储池、inode 取各成员的最大值，对读写计数与节点数求和
+- 原设计「管理节点另外导出每个 fileset 的用量与配额（`cloudland_gpfs_fileset_used_bytes`、`cloudland_gpfs_fileset_quota_bytes`，带 `pool_uuid` 标签）」**决定不做**（2026-10-07：池的用量与容量已按池导出，fileset 的配额就是池的容量，再按 fileset 导出一份是重复的）：池的用量与容量由每台能访问池的节点按池导出 `cloudland_shared_pool_{up,size_bytes,used_bytes}{cluster, pool}`（`shared_pool_probe.sh`，两种驱动同一口径），fileset 只导出 inode
+- S5 的部分 2026-10-04 起在 work-x 的真实 GPFS 上运行过；第二轮（S7，2026-10-07，已提交推送）加的存储池容量与 inode 指标没有部署，没在真实节点上运行过
 
 ### E.2 Ceph
 
-mgr 的 `prometheus` 模块直接导出（`ceph_health_status`、`ceph_osd_up`、`ceph_osd_in`、`ceph_pool_stored`、`ceph_pool_max_avail`、`ceph_pool_quota_bytes`、读写的吞吐与 IOPS 等），由 Prometheus 按 `ceph_targets.json` 采集（§14.2）。
+- **平台部署的集群**：mgr 的 `prometheus` 模块直接导出，Prometheus 任务 `storage_clusters` 按 clapi 的 http_sd（`/api/v1/prometheus/sd/storage`）采集 mgr 主机的 9283，每个目标带 `storage_cluster` 标签（§14.3）。界面与看板用到：`ceph_cluster_total_bytes`、`ceph_cluster_total_used_bytes`、`ceph_pool_rd_bytes`、`ceph_pool_wr_bytes`、`ceph_pool_rd`、`ceph_pool_wr`、`ceph_osd_up`、`ceph_osd_in`，看板另用 `ceph_pool_percent_used` 与 `ceph_pool_metadata`。只有活动的 mgr 输出数据，所以按集群求和或取最大值时实际只算到一台。⚠️ 已知缺陷：9283 在所有网卡上监听（同 §14.3）
+- **导入的集群**（第二轮）：CloudLand 不采集它的 mgr，由节点上的 `backend_metrics`（`backends/ceph.sh`）以集群的客户端用户执行 `ceph -s -f json`、`ceph df detail -f json`，导出 `cloudland_ceph_total_bytes`、`cloudland_ceph_used_bytes`、`cloudland_ceph_osds_up`、`cloudland_ceph_osds_in`，以及所有池加总的 `cloudland_ceph_read_bytes_total`、`cloudland_ceph_write_bytes_total`、`cloudland_ceph_reads_total`、`cloudland_ceph_writes_total`（标签 `cluster`）；每台客户端导出同样的数，查询取最大值
 
 ### E.3 告警
 
@@ -2944,25 +3342,36 @@ mgr 的 `prometheus` 模块直接导出（`ceph_health_status`、`ceph_osd_up`�
 
 ## 附录 F：Ceph 命令与配置参考
 
-### F.1 磁盘 XML 与 libvirt secret
+以下按实现里实际执行的命令整理（节点脚本 `scripts/kvm/storage/ceph_*.sh`、`backends/ceph.sh`、`drivers/ceph_rbd.sh`）。托管集群的管理命令都在管理节点上带 `--conf /var/lib/ceph/<fsid>/config/ceph.conf --keyring /var/lib/ceph/<fsid>/config/ceph.client.admin.keyring` 执行（`ceph_admin`），下面省略这两个参数。
+
+### F.1 磁盘 XML、客户端配置与 libvirt secret
 
 ```xml
+<!-- drv_disk_xml: the mons come from the configuration file of the cluster, so the disk does not change when they do -->
 <disk type='network' device='disk'>
-  <driver name='qemu' type='raw' cache='writeback' discard='unmap'/>
-  <source protocol='rbd' name='CEPH_POOL/volume-ID'>
-    <host name='MON_ADDR_1' port='6789'/>
-    <host name='MON_ADDR_2' port='6789'/>
-    <host name='MON_ADDR_3' port='6789'/>
-  </source>
-  <auth username='CLIENT_USER'>
-    <secret type='ceph' uuid='SECRET_UUID'/>
-  </auth>
-  <target dev='vdb' bus='virtio'/>
+   <driver name='qemu' type='raw' cache='writeback' discard='unmap' error_policy='stop'/>
+   <source protocol='rbd' name='CEPH_POOL/volume-ID'>
+      <config file='/etc/ceph/CLUSTER_UUID.conf'/>
+      <auth username='CLIENT_USER'>
+         <secret type='ceph' uuid='SECRET_UUID'/>
+      </auth>
+   </source>
+   <target dev='vdb' bus='virtio'/>
 </disk>
 ```
 
+```ini
+# /etc/ceph/CLUSTER_UUID.conf, written by CloudLand (not generate-minimal-conf: a client host has no admin key)
+[global]
+    fsid = FSID
+    mon_host = MON_ADDR_1,MON_ADDR_2,MON_ADDR_3
+[client.CLIENT_USER]
+    keyring = /etc/ceph/CLUSTER_UUID.client.CLIENT_USER.keyring
+```
+
 ```bash
-# the same secret uuid on every node, so live migration finds it on the target
+# the same secret uuid on every node (the cluster uuid), so live migration finds it on the target;
+# the secret is written first, the keyring (mode 600) last
 cat > secret.xml <<'EOF'
 <secret ephemeral='no' private='yes'>
   <uuid>SECRET_UUID</uuid>
@@ -2970,48 +3379,91 @@ cat > secret.xml <<'EOF'
 </secret>
 EOF
 virsh secret-define secret.xml
-virsh secret-set-value --secret SECRET_UUID --file key.b64    # keep the key off the command line
+virsh secret-set-value SECRET_UUID --file key    # keep the key off the command line
+ceph --conf /etc/ceph/CLUSTER_UUID.conf --id CLIENT_USER fsid   # the check after writing them
 ```
 
 ### F.2 部署与池
 
 ```bash
-cephadm --image quay.io/ceph/ceph:v20.2.0 bootstrap --fsid <uuid> --mon-ip <internal ip> \
-    --ssh-private-key key --ssh-public-key key.pub --ssh-user root \
-    --skip-monitoring-stack --skip-dashboard --skip-firewalld
-ceph orch apply osd --all-available-devices --unmanaged=true   # never grab free disks on its own
-ceph orch host add <hostname> <internal ip> --labels mon,mgr,osd
+# install: every host
+apt-get install -y ceph-common qemu-block-extra
+# install: the hosts that run daemons
+apt-get install -y cephadm lvm2 python3-jinja2
+docker login REGISTRY -u USER --password-stdin         # a private registry only
+docker pull quay.io/ceph/ceph:v19.2.3                  # the release of the host's ceph-common; a newer image is refused
+
+cephadm --image quay.io/ceph/ceph:v19.2.3 bootstrap --fsid <cluster uuid> --mon-ip <internal ip> \
+    --ssh-user root --ssh-private-key key --ssh-public-key key.pub \
+    --skip-monitoring-stack --skip-dashboard --skip-firewalld --skip-pull --allow-fqdn-hostname \
+    --orphan-initial-daemons --output-dir /var/lib/ceph/<fsid>/bootstrap --no-cleanup-on-failure
+    # plus --cluster-network <cidr>, --registry-json <file> (private registry), --single-host-defaults (one host)
 ceph orch apply mon --placement=label:mon
 ceph orch apply mgr --placement=label:mgr
-ceph orch daemon add osd <hostname>:/dev/sdb
-ceph mgr module enable prometheus
-ceph config set osd osd_memory_target_autotune false            # keep the memory reservation right (§6.7)
-ceph config set osd osd_memory_target 2147483648
+ceph orch apply crash --placement='*'
+ceph mgr module enable prometheus                      # port 9283; no server_addr is set, it listens on every address (§8.2)
+ceph orch host add <hostname> <internal ip> --labels mon,mgr,osd,_admin
+ceph quorum_status -f json; ceph mgr stat -f json      # wait for the mons and an active mgr
 
-ceph osd crush rule create-replicated cl-hdd default host hdd
-ceph osd pool create cl_1a2b3c4d
-ceph osd pool set cl_1a2b3c4d size 3
+ceph config set global osd_pool_default_size 3
+ceph config set global osd_pool_default_min_size 2
+ceph config set osd osd_memory_target_autotune false   # keep the memory reservation right (§6.7)
+ceph config set osd osd_memory_target 2147483648
+ceph config set mon mon_allow_pool_delete false
+ceph orch apply osd --all-available-devices --unmanaged=true   # never grab free disks on its own
+ceph auth get-or-create client.cloudland mon 'profile rbd' osd 'profile rbd' mgr 'profile rbd'   # every RBD pool
+ceph auth get-key client.cloudland
+ceph mon dump -f json                                  # the IP of every v2 address: mon_host of the hosts
+
+ceph orch device ls --refresh
+ceph orch daemon add osd <hostname>:/dev/sdb           # 20.2: again with --skip-validation on "No devices found" / "is not found on host"
+ceph osd crush rm-device-class osd.<id>; ceph osd crush set-device-class hdd osd.<id>
+ceph orch set-unmanaged osd.default                    # 20.2 keeps every "daemon add osd" as a managed spec
+
+ceph osd crush rule create-replicated cl-hdd default host hdd   # no media: replicated_rule
+ceph osd pool create cl_1a2b3c4d 32 32 replicated cl-hdd
+ceph osd pool set cl_1a2b3c4d size 3 --yes-i-really-mean-it
 ceph osd pool set cl_1a2b3c4d min_size 2
-ceph osd pool set cl_1a2b3c4d crush_rule cl-hdd
-ceph osd pool application enable cl_1a2b3c4d rbd
+ceph osd pool application enable cl_1a2b3c4d rbd --yes-i-really-mean-it
+ceph osd pool set-quota cl_1a2b3c4d max_bytes $((10 * 1024**4))   # 0 lifts it
 rbd pool init cl_1a2b3c4d
-ceph osd pool set-quota cl_1a2b3c4d max_bytes $((10 * 1024**4))
-ceph auth get-or-create client.cloudland mon 'profile rbd' osd 'profile rbd pool=cl_1a2b3c4d' \
-    mgr 'profile rbd pool=cl_1a2b3c4d'
-ceph config generate-minimal-conf    # plus "keyring = /etc/ceph/<cluster uuid>.client.<user>.keyring" (§6.8)
+printf 'driver=ceph_rbd\npool_uuid=%s\n' <pool uuid> > marker
+rados -p cl_1a2b3c4d put cloudland-pool marker
+
+# delete: no image (rbd ls) and nothing in the trash (rbd trash ls) left
+ceph config set mon mon_allow_pool_delete true
+ceph osd pool rm cl_1a2b3c4d cl_1a2b3c4d --yes-i-really-really-mean-it
+ceph config set mon mon_allow_pool_delete false
 ```
 
 ### F.3 驱动用到的 RBD 命令
 
 ```bash
 opts="--conf /etc/ceph/<cluster uuid>.conf --id <client user>"
-rbd $opts create cl_1a2b3c4d/volume-12 --size 40960 \
+rbd $opts create cl_1a2b3c4d/volume-12 --size 40G \
     --image-feature layering,exclusive-lock,object-map,fast-diff,deep-flatten
-rbd $opts resize cl_1a2b3c4d/volume-12 --size 81920
-rbd $opts status cl_1a2b3c4d/volume-12      # watchers, i.e. who has it open
-rbd $opts rm cl_1a2b3c4d/volume-12
-rbd $opts clone cl_1a2b3c4d/image-3-ab12cd34@base cl_1a2b3c4d/volume-13
-ceph $opts osd blocklist range add 10.191.202.29/32 315360000   # fencing a dead node; give a long expiry, the default is one hour (§11.2)
+rbd $opts resize cl_1a2b3c4d/volume-12 --size 80G
+rbd $opts status --format json cl_1a2b3c4d/volume-12   # watchers, i.e. who has it open
+rbd $opts rm --no-progress cl_1a2b3c4d/volume-12
+
+# the copy of an image: written as a temporary image of the job, snapshotted, renamed into place
+qemu-img convert -W -m 16 -f qcow2 -O raw image.qcow2 \
+    "rbd:cl_1a2b3c4d/tmp-image-3-ab12cd34-<node id>-<pid>:id=<client user>:conf=/etc/ceph/<cluster uuid>.conf"
+rbd $opts snap create cl_1a2b3c4d/tmp-image-3-ab12cd34-<node id>-<pid>@base
+rbd $opts rename cl_1a2b3c4d/tmp-image-3-ab12cd34-<node id>-<pid> cl_1a2b3c4d/image-3-ab12cd34
+# a boot disk: a clone of format 2 (the snapshot is not protected), or a full copy (imported clusters, a failed clone)
+rbd $opts clone --rbd-default-clone-format 2 --image-feature layering,exclusive-lock,object-map,fast-diff,deep-flatten \
+    cl_1a2b3c4d/image-3-ab12cd34@base cl_1a2b3c4d/volume-13
+rbd $opts cp --no-progress cl_1a2b3c4d/image-3-ab12cd34@base cl_1a2b3c4d/volume-13
+rbd $opts rename cl_1a2b3c4d/volume-13-reinstall cl_1a2b3c4d/volume-13   # a reinstall takes the place of the old disk
+# removing a copy: refused while it has clones
+rbd $opts children cl_1a2b3c4d/image-3-ab12cd34@base
+rbd $opts snap purge cl_1a2b3c4d/image-3-ab12cd34; rbd $opts rm cl_1a2b3c4d/image-3-ab12cd34
+
+# fencing a dead node: with the admin key on an admin host (managed), as the client user (imported: it may add, not remove)
+ceph osd blocklist range add 10.191.202.29/32 315360000   # give a long expiry, the default is one hour (§11.2)
+ceph osd blocklist ls                                     # cidr:10.191.202.29:0/32
+ceph osd blocklist range rm 10.191.202.29/32              # unfence; on an imported cluster its admin runs it
 ```
 
 ### F.4 运维
@@ -3021,10 +3473,27 @@ ceph -s; ceph health detail
 ceph osd tree; ceph osd df
 ceph df detail
 ceph orch ps; ceph orch host ls
-ceph orch osd rm <id> --zap; ceph orch osd rm status
-ceph orch host maintenance enter <host>; ceph orch host maintenance exit <host>   # planned downtime longer than ~10 minutes (§8.5)
+ceph -s -f json; ceph df detail -f json                 # an imported cluster as the client user: health and curves (§8.8)
+ceph orch osd rm <id> --zap; ceph orch osd rm status    # remove a disk, its data moved first
+ceph orch host drain <host> --zap-osd-devices; ceph orch host rm <host>
+ceph orch host rm <host> --offline --force; ceph osd out <id>; ceph osd purge <id> --yes-i-really-mean-it   # host gone for good
+# replace a failed disk keeping its OSD id (not orch osd rm --replace, §8.5)
+ceph orch osd rm stop <id>; ceph osd out <id>; ceph orch daemon rm osd.<id> --force
+ceph osd destroy <id> --force --yes-i-really-mean-it
+ceph orch daemon add osd <host>:<new device>; ceph osd in <id>
+ceph orch host label add <host> mon; ceph orch host label rm <host> mon   # change roles (mon, mgr, _admin)
+ceph orch host maintenance enter <host>; ceph orch host maintenance exit <host>   # planned downtime longer than ~10 minutes (§8.5); by hand, not in the UI
 ceph mgr module disable cephadm                         # before removing the cluster from its hosts (§8.6)
-ceph orch upgrade start --image <image>; ceph orch upgrade status
+cephadm rm-cluster --force --zap-osds --fsid <fsid>     # on every host
+ceph orch upgrade start --image <image>; ceph orch upgrade status; ceph versions
+
+# key rotation (§11, S6): both halves of the orchestrator key at once, then a fresh mgr
+# (not ceph cephadm set-priv-key / set-pub-key: each checks its new half against the old other half and keeps the old pair)
+ceph config-key set mgr/cephadm/ssh_identity_key -i key
+ceph config-key set mgr/cephadm/ssh_identity_pub -i key.pub
+ceph mgr fail; ceph cephadm get-pub-key; ceph cephadm check-host <host> <ip>
+# the client key: a pending key, which becomes the key the first time it is used
+ceph auth get-or-create-pending client.cloudland -f json; ceph auth commit-pending client.cloudland
 ```
 
 参考：[Ceph 与 libvirt](https://docs.ceph.com/en/latest/rbd/libvirt/)、[cephadm](https://docs.ceph.com/en/latest/cephadm/)、[QEMU 块设备](https://qemu.readthedocs.io/en/latest/system/devices/block.html)。

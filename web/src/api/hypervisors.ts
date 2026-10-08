@@ -41,6 +41,8 @@ export interface Hypervisor {
     reconciled_at?: string
     // Detail only: the storage clusters that keep the host out while its instances run elsewhere (§11.2)
     fences?: HostFence[]
+    // Detail only: storage clusters deleted while the host was offline, whose leave it runs once it is back (§7.6, §8.6)
+    storage_cleanups?: HostStorageCleanup[]
     // 仅 POST /hypers 返回（omitempty）
     deploy_command?: string
 }
@@ -59,6 +61,20 @@ export interface HostFence {
     message?: string
     fenced_at?: string
     confirmed_by?: string
+}
+
+// The leave of a storage cluster deleted while the host was offline (services.HostStorageCleanup): it runs once the host
+// is online, again a while later when it fails; until then the host joins no storage cluster
+export interface HostStorageCleanup {
+    id: number
+    cluster: string
+    cluster_uuid: string
+    kind: string
+    attempts: number
+    tried_at?: string
+    message?: string
+    // The UUID of the cleanup task running or last run
+    task_id?: string
 }
 
 // POST /hypers/{uuid}/evacuate (apis.HyperEvacuatePayload)

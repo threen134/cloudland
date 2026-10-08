@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Recovery of a host that went down (shared-storage-design.md §11): since when it is offline, when it last confirmed
 // which instances are its own (reconcile, §11.4), and the storage clusters that keep it out while its instances run
-// elsewhere (fences, §11.2), which are lifted by themselves once it is back and cleaned up, or now / by hand here
+// elsewhere (fences, §11.2), which are lifted by themselves once it is back and cleaned up, or now / by hand here; and
+// the storage clusters deleted while it was offline, whose leave it runs once it is back (§7.6, §8.6)
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ShieldOff, Eraser } from 'lucide-vue-next'
@@ -11,6 +12,7 @@ import InfoRow from '../base/InfoRow.vue'
 import DeleteModal from '../modals/DeleteModal.vue'
 import type { StatusVariant } from '../../utils/status'
 import { formatDateTime } from '../../utils/format'
+import { storageKindShort } from '../../utils/storageCluster'
 import { errorMessage } from '../../utils/error'
 import { useToast } from '../../composables/useToast'
 
@@ -20,6 +22,8 @@ const { t, te } = useI18n()
 const toast = useToast()
 
 const fences = computed(() => props.hypervisor.fences || [])
+const cleanups = computed(() => props.hypervisor.storage_cleanups || [])
+const kindName = (k: string) => storageKindShort(t, te, k)
 const liftable = computed(() => fences.value.some((f) => f.status !== 'fencing' && f.status !== 'unfencing'))
 
 const fenceVariant = (s: string): StatusVariant => {
@@ -113,6 +117,47 @@ const confirm = async () => {
             </div>
         </template>
 
+        <template v-if="cleanups.length">
+            <div class="fence-head">
+                <span class="form-label" :title="t('storage.recovery.cleanupsHint')">{{
+                    t('storage.recovery.cleanups')
+                }}</span>
+            </div>
+            <p class="cleanup-hint text-secondary">{{ t('storage.recovery.cleanupsHint') }}</p>
+            <div class="fence-table">
+                <div class="fence-row fence-row-head">
+                    <span>{{ t('storage.recovery.fenceCluster') }}</span>
+                    <span>{{ t('dashboard.table.type') }}</span>
+                    <span>{{ t('dashboard.table.status') }}</span>
+                    <span>{{ t('storage.cluster.task') }}</span>
+                </div>
+                <div v-for="c in cleanups" :key="c.id" class="fence-row cleanup-row">
+                    <span>{{ c.cluster }}</span>
+                    <span>{{ kindName(c.kind) }}</span>
+                    <span>
+                        <StatusBadge
+                            :variant="c.message ? 'error' : 'pending'"
+                            :label="
+                                c.attempts
+                                    ? t('storage.recovery.cleanupAttempts', { n: c.attempts })
+                                    : t('storage.recovery.cleanupWaiting')
+                            "
+                        />
+                    </span>
+                    <span>
+                        <router-link
+                            v-if="c.task_id"
+                            :to="{ name: 'storage-task-detail', params: { id: c.task_id } }"
+                            class="resource-link"
+                            >{{ c.tried_at ? formatDateTime(c.tried_at) : t('storage.cluster.task') }}</router-link
+                        >
+                        <template v-else>-</template>
+                    </span>
+                    <span v-if="c.message" class="fence-message text-secondary">{{ c.message }}</span>
+                </div>
+            </div>
+        </template>
+
         <DeleteModal
             :show="!!confirming"
             :title="confirming === 'forget' ? t('storage.recovery.forget') : t('storage.recovery.unfence')"
@@ -184,6 +229,12 @@ const confirm = async () => {
 .fence-message {
     grid-column: 1 / -1;
     font-size: var(--font-size-xs);
+}
+
+.cleanup-hint {
+    margin: 0 0 var(--spacing-2);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
 }
 
 .mono {

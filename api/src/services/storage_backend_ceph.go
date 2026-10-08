@@ -211,6 +211,12 @@ func (cephBackend) CheckLayout(nodes []*StorageNodePlan, disks []*StorageDiskPla
 	return nil
 }
 
+// TestLayout: pools of one replica (§6.3)
+func (cephBackend) TestLayout(params interface{}) bool {
+	p, _ := params.(*cephParams)
+	return p != nil && p.Test
+}
+
 // cephReplicas is the size of the pools of a cluster: 3, or 1 in the test layout
 func cephReplicas(p *cephParams) int {
 	if p.Test {
@@ -496,6 +502,43 @@ func (b cephBackend) PoolSetup(tx *gorm.DB, cluster *model.StorageCluster, pool 
 	b2, _ := json.Marshal(params)
 	pool.DriverParams = string(b2)
 	pool.MountPath = ""
+	return nil
+}
+
+// CheckRemoval: every pool keeps its replicas on as many hosts with OSDs of its media (§8.3). CheckLayout counts the
+// hosts of all media together, so removing the last SSD of a host could leave an SSD pool with its replicas nowhere to
+// go, and Ceph would move the data off the OSD forever. Not for a host gone for good: its copies are lost already
+func (cephBackend) CheckRemoval(db *gorm.DB, cluster *model.StorageCluster, params interface{}, disks []*StorageDiskPlan, offline bool) error {
+	if offline || cluster.Mode != model.StorageModeManaged {
+		return nil
+	}
+	p, _ := params.(*cephParams)
+	if p == nil {
+		p = &cephParams{}
+	}
+	pools := []*model.StoragePool{}
+	if err := db.Where("cluster_id = ?", cluster.ID).Find(&pools).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to list the pools of the cluster", err)
+	}
+	for _, pool := range pools {
+		replicas := int(pool.Replicas)
+		if replicas == 0 {
+			replicas = cephReplicas(p)
+		}
+		hosts := map[int32]bool{}
+		for _, d := range disks {
+			if pool.Media == "" || d.Media == pool.Media {
+				hosts[d.Hostid] = true
+			}
+		}
+		if len(hosts) < replicas {
+			what := "OSDs"
+			if pool.Media != "" {
+				what = pool.Media + " OSDs"
+			}
+			return planError("Pool %s keeps %d replicas on different hosts; %s would be left on %d hosts", pool.Name, replicas, what, len(hosts))
+		}
+	}
 	return nil
 }
 

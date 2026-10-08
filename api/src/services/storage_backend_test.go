@@ -166,3 +166,23 @@ func TestStorageBackendHostsAndMemory(t *testing.T) {
 		}
 	}
 }
+
+// The test layout is shown on the cluster: one copy of the data (§6.3); an imported cluster has no layout of CloudLand
+func TestStorageClusterTestLayout(t *testing.T) {
+	for _, c := range []struct {
+		kind, mode, params string
+		want               bool
+	}{
+		{model.StorageKindCeph, model.StorageModeManaged, `{"test":true}`, true},
+		{model.StorageKindCeph, model.StorageModeManaged, `{}`, false},
+		{model.StorageKindGPFS, model.StorageModeManaged, `{"test":true}`, true},
+		{model.StorageKindGPFS, model.StorageModeManaged, ``, false},
+		{model.StorageKindCeph, model.StorageModeExternal, `{"test":true}`, false},
+		{"nfs", model.StorageModeManaged, `{"test":true}`, false},
+	} {
+		got := StorageClusterTestLayout(&model.StorageCluster{Kind: c.kind, Mode: c.mode, Params: c.params})
+		if got != c.want {
+			t.Errorf("%s %s %s: test layout %v, want %v", c.kind, c.mode, c.params, got, c.want)
+		}
+	}
+}

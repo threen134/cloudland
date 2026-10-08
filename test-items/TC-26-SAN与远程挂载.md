@@ -70,6 +70,7 @@
 1. 向导选「GPFS 共享磁盘（SAN）」，LUN a 勾在三台下、LUN b 勾在两台下，部署
 
 **预期**：
+- 预检：每块 LUN 一项「shared LUN」通过（回归点 6）；勾了擦除的为警告。
 - `resolve_disks`：每个 LUN 只有最小节点查空。
 - `create_nsd`：两个 NSD（`cl<ID>s1` 服务器三台、第一台轮转到第二台；`cl<ID>s2` 两台），设备是第一台服务器上的 `/dev/mapper/…`。
 - `create_fs`：故障组 1、数据和元数据各一份。
@@ -177,6 +178,7 @@
 3. **远程挂载不设 cipherList**：平台部署的集群 cipherList 为空，按 IBM 流程两边都要设。`key` 步骤在没有设置时改为 AUTHONLY（RMT-01 核对两边 `mmauth show .` 的 Cipher list；在守护进程运行时能不能改是 E11 的一部分）
 4. **挂载方集群的节点退出后，它在所属方池上的记录永远停在「可用」**：退出收尾一起删、并发空清单（RMT-07）
 5. **挂载方节点用所属方的 uuid 报本机集群的指标**：远程挂载的池清单带 `remote` 标记，指标脚本跳过（RMT-02 核对所属方的「节点」曲线只算自己的成员）
+6. **SAN 布局在预检就失败**（2026-10-07 设计复查）：预检输入里共享 LUN 的身份不带标记，节点的 `check_disks` 把 `shared` 判为不能用，SAN 的部署和带 LUN 的加节点一定停在预检。现在带 `shared: true`，节点只核对身份和没被挂载（多路径设备的某条路径判 `in_use`，不通过）；SAN-03 的预检全部通过即为修好。PostgreSQL `TestStorageGPFSSANPG`、WSL `stc-test16.sh` 已核对
 
 ## 清理
 

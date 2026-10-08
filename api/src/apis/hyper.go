@@ -62,6 +62,8 @@ type HyperResponse struct {
 	ReconciledAt string `json:"reconciled_at,omitempty"`
 	// Storage clusters keeping the host off their disks while its instances run elsewhere (detail only)
 	Fences []*services.HostFence `json:"fences,omitempty"`
+	// What the host still has to clean up of storage clusters deleted while it was offline
+	StorageCleanups []*services.HostStorageCleanup `json:"storage_cleanups,omitempty"`
 }
 
 type HyperListResponse struct {
@@ -123,6 +125,9 @@ func (v *HyperAPI) Get(c *gin.Context) {
 	hyperResp := withStorage(c.Request.Context(), convertHyperToResponse(hyper))
 	if fences, ferr := services.HostFences(c.Request.Context(), hyper.Hostid); ferr == nil && len(fences) > 0 {
 		hyperResp.Fences = fences
+	}
+	if cleanups, cerr := services.HostStorageCleanups(c.Request.Context(), hyper.Hostid); cerr == nil && len(cleanups) > 0 {
+		hyperResp.StorageCleanups = cleanups
 	}
 	c.JSON(http.StatusOK, hyperResp)
 }

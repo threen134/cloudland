@@ -305,7 +305,11 @@ const evacuateVariant = (s: string): StatusVariant => (s === 'not_doing' ? 'erro
 const evacuateStatus = (s: string) =>
     te(`storage.recovery.evacuateStatus.${s}`) ? t(`storage.recovery.evacuateStatus.${s}`) : s
 const showRecovery = computed(
-    () => !!hypervisor.value && (!!hypervisor.value.offline_at || !!hypervisor.value.fences?.length)
+    () =>
+        !!hypervisor.value &&
+        (!!hypervisor.value.offline_at ||
+            !!hypervisor.value.fences?.length ||
+            !!hypervisor.value.storage_cleanups?.length)
 )
 
 onMounted(fetchHypervisorDetail)

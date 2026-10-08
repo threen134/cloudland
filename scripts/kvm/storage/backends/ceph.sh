@@ -245,12 +245,57 @@ function backend_forget()
     ceph_client_remove "$1"
 }
 
+# ceph_prometheus_bind <fsid>: the prometheus module of each mgr of a managed cluster listens on the address of its
+# host (the one cephadm knows it by, the address the metrics are scraped from), not on every address of the host
+# (shared-storage-design.md §14.3): its default :: answers on the public network too. The address is a localized
+# option of the mgr (mgr/prometheus/<mgr name>/server_addr); the module reads it when it starts, so a standby whose
+# address changed is restarted and the active mgr fails over, and the orchestrator is waited for (the next steps of a
+# task use it). A mgr placed later (a host added, a role changed) is bound at the next health check
+function ceph_prometheus_bind()
+{
+    local fsid=$1 hosts mgrs dump row id host addr cur active activechanged=0 i
+    local -a restart=()
+    hosts=$(ceph_admin $fsid orch host ls -f json 2>/dev/null) || return 1
+    mgrs=$(ceph_admin $fsid orch ps --daemon-type mgr -f json 2>/dev/null) || return 1
+    active=$(ceph_admin $fsid mgr stat -f json 2>/dev/null | jq -r '.active_name // empty')
+    # What is set, read from the configuration database: a localized module option is not one config get knows
+    dump=$(ceph_admin $fsid config dump -f json 2>/dev/null) || return 1
+    while read -r row; do
+        [ -z "$row" ] && continue
+        id=$(jq -r .id <<<"$row")
+        host=$(jq -r .host <<<"$row")
+        addr=$(jq -r --arg h "$host" '.[] | select(.hostname == $h) | .addr' <<<"$hosts" | head -1)
+        [[ "$id" =~ ^[A-Za-z0-9_.-]+$ ]] && [[ "$addr" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+        cur=$(jq -r --arg n "mgr/prometheus/$id/server_addr" '.[] | select(.name == $n) | .value' <<<"$dump" | head -1)
+        [ "$cur" = "$addr" ] && continue
+        ceph_admin $fsid config set mgr mgr/prometheus/$id/server_addr $addr >/dev/null || return 1
+        echo "the prometheus module of mgr $id listens on $addr"
+        if [ "$id" = "$active" ]; then
+            activechanged=1
+        else
+            restart+=("$id")
+        fi
+    done < <(jq -c '.[] | {id: .daemon_id, host: .hostname}' <<<"$mgrs")
+    for id in "${restart[@]}"; do
+        ceph_admin $fsid orch daemon restart mgr.$id >/dev/null 2>&1
+    done
+    [ $activechanged = 1 ] || return 0
+    ceph_admin $fsid mgr fail "$active" >/dev/null 2>&1
+    for i in $(seq 1 60); do
+        sleep 2
+        ceph_admin $fsid mgr stat -f json 2>/dev/null | jq -e '.available == true' >/dev/null &&
+            ceph_admin $fsid orch status -f json >/dev/null 2>&1 && return 0
+    done
+    echo "the mgrs did not come back in 2 minutes after the failover"
+    return 1
+}
+
 # backend_health <cluster uuid> <input>: the health of the cluster as this host sees it, the JSON of
 # shared-storage-design.md §14.1 on stdout: ceph health detail (HEALTH_OK / WARN / ERR and its checks), the hosts
 # (ceph orch host ls), the OSDs (ceph osd tree), the capacity (ceph df), nearfull when Ceph says an OSD or a pool is
 # near full. A managed cluster is checked as client.admin on an admin host, an imported one as its client user, which
-# may not see the hosts or the OSDs. On a managed cluster the mgr prometheus module is switched on when it is off
-# (§14.3: the metrics come from it).
+# may not see the hosts or the OSDs. On a managed cluster the mgr prometheus module is switched on when it is off, and
+# every mgr's listens on the address of its host (§14.3: the metrics come from it).
 function backend_health()
 {
     local uuid=$1 input=$2 mode fsid user conf detail status health hosts tree df
@@ -288,6 +333,7 @@ function backend_health()
         if ! timeout 60 "${c[@]}" mgr module ls -f json 2>/dev/null | jq -e '.enabled_modules | index("prometheus")' >/dev/null 2>&1; then
             timeout 60 "${c[@]}" mgr module enable prometheus >/dev/null 2>&1
         fi
+        CEPH_TIMEOUT=60 ceph_prometheus_bind "$fsid" >/dev/null 2>&1
     fi
     tree=$(timeout 60 "${c[@]}" osd tree -f json 2>/dev/null)
     df=$(timeout 60 "${c[@]}" df -f json 2>/dev/null)

@@ -354,7 +354,20 @@ func TestStorageCephDeployPG(t *testing.T) {
 	if added == nil || added.Status != model.StorageDiskActive || added.Name != "osd.3" {
 		t.Fatalf("added disk %+v", added)
 	}
+	// A pool keeps its replicas on hosts with OSDs of its media: the only SSD going would leave an SSD pool nowhere
+	ssdPool := &model.StoragePool{Name: name + "-ssd", ClusterID: c.ID, Driver: model.StorageDriverCephRBD, Media: "ssd", Replicas: 1}
+	hddPool := &model.StoragePool{Name: name + "-hdd", ClusterID: c.ID, Driver: model.StorageDriverCephRBD, Media: "hdd", Replicas: 3}
+	must(t, db.Create(ssdPool).Error)
+	must(t, db.Create(hddPool).Error)
+	_, err = StorageClusters.RemoveDisk(ctx, c.UUID, added.UUID)
+	wantCodeMsg(t, err, ErrStorageInvalidPlan, "ssd OSDs would be left on 0 hosts")
+	if !strings.Contains(err.Error(), "Pool "+name+"-ssd keeps 1 replicas") {
+		t.Fatalf("the refusal names the pool: %v", err)
+	}
+	db.Unscoped().Delete(ssdPool)
+	// HDD OSDs stay on three hosts: the HDD pool of three replicas is fine
 	rtask, err := StorageClusters.RemoveDisk(ctx, c.UUID, added.UUID)
+	db.Unscoped().Delete(hddPool)
 	must(t, err)
 	sent = f.expect("remove the OSD", "ceph_cluster.sh", h[0])
 	if sent[0].input["action"] != "remove_osds" || len(sent[0].input["osd_ids"].([]interface{})) != 1 || sent[0].input["osd_ids"].([]interface{})[0] != float64(3) {
@@ -440,7 +453,12 @@ func TestStorageCephDeployPG(t *testing.T) {
 	succeed(sent, none)
 	f.wantTask(gtask.ID, model.StorageTaskSucceeded, "")
 
+	// Gone for good only after 30 minutes offline: a host that reboots comes back
 	f.setHostStatus(h[3], 10)
+	must(t, db.Model(&model.Hyper{}).Where("hostid = ?", h[3]).Update("offline_at", time.Now().Add(-5*time.Minute)).Error)
+	_, err = StorageClusters.RemoveNode(ctx, c.UUID, &StorageNodeRemove{Hostid: h[3], Offline: true, Confirm: "stc-h4"})
+	wantCodeMsg(t, err, ErrStorageInvalidPlan, "offline for 5 minutes only")
+	must(t, db.Model(&model.Hyper{}).Where("hostid = ?", h[3]).Update("offline_at", time.Now().Add(-31*time.Minute)).Error)
 	ntask, err := StorageClusters.RemoveNode(ctx, c.UUID, &StorageNodeRemove{Hostid: h[3], Offline: true, Confirm: "stc-h4"})
 	must(t, err)
 	sent = f.expect("remove the client", "ceph_cluster.sh", h[0])

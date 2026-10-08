@@ -102,7 +102,7 @@ function check_peers()
 
 function check_disks()
 {
-    local disk id serial wwn size wipe n=0
+    local disk id serial wwn size wipe shared mounts n=0
     system_disk_list=$(system_disks)
     local_pool_list=$(local_pools)
     while read -r disk; do
@@ -113,11 +113,28 @@ function check_disks()
         wwn=$(jq -r '.wwn // ""' <<<"$disk")
         size=$(jq -r '.size_bytes // 0' <<<"$disk")
         wipe=$(jq -r '.wipe // false' <<<"$disk")
+        shared=$(jq -r '.shared == true' <<<"$disk")
         if ! disk_identity "$id" "$serial" "$wwn" "$size"; then
             item "disk $id" fail "$identity_error"
             continue
         fi
         classify_disk $identity_path
+        # The shared disk layout takes shared LUNs only. classify_disk stops at "shared" before looking at the
+        # content, and a LUN of the cluster served by other hosts holds its data: whether it is empty is checked
+        # when it is claimed (stc_resolve_disks.sh), here only that it is still a shared LUN nothing has mounted
+        if [ "$shared" = "true" ]; then
+            mounts=$(lsblk -nlo MOUNTPOINTS $identity_path 2>/dev/null | grep -v '^$' | xargs)
+            if [ "$disk_state" != shared ]; then
+                item "disk $id" fail "$identity_path is no shared LUN on this host: $disk_state ($disk_detail)"
+            elif [ -n "$mounts" ]; then
+                item "disk $id" fail "$identity_path is a shared LUN with something mounted ($mounts)"
+            elif [ "$wipe" = "true" ]; then
+                item "disk $id" warn "$identity_path, shared LUN; it will be wiped if it has data on it"
+            else
+                item "disk $id" ok "$identity_path, shared LUN"
+            fi
+            continue
+        fi
         case $disk_state in
             free) item "disk $id" ok "$identity_path, free" ;;
             dirty)

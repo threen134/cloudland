@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	. "api/src/common"
 	"api/src/dbs"
@@ -415,6 +416,9 @@ func (a *StorageClusterAdmin) RemoveDisk(ctx context.Context, uuid, diskUUID str
 	if err = backend.CheckLayout(afterNodes, afterDisks, params); err != nil {
 		return nil, planError("Without this disk: %s", planMessage(err))
 	}
+	if err = checkStorageRemoval(dbs.DBContext(ctx), backend, cluster, params, afterDisks, false); err != nil {
+		return nil, planError("Without this disk: %s", planMessage(err))
+	}
 	ids := []int64{}
 	for _, d := range disks {
 		if leaving[d.ID] {
@@ -435,6 +439,10 @@ func (a *StorageClusterAdmin) RemoveDisk(ctx context.Context, uuid, diskUUID str
 			return cluster.ID, storageRefreshReserve(tx, cluster)
 		}})
 }
+
+// storageOfflineRemoveAfter is how long a host is offline before it may be removed as gone for good: a host that
+// reboots, or lost its network for a while, comes back within it, and its data would be dropped for nothing (§7.5)
+var storageOfflineRemoveAfter = 30 * time.Minute
 
 // StorageNodeRemove takes a host out of a cluster
 type StorageNodeRemove struct {
@@ -477,6 +485,11 @@ func (a *StorageClusterAdmin) RemoveNode(ctx context.Context, uuid string, req *
 		if online {
 			return nil, planError("%s is online: remove it the normal way", hyper.Hostname)
 		}
+		// Offline as cland saw it (a host that never came up, deploying or failed, has no time and no wait)
+		if hyper.Status == model.HyperStatusOffline && hyper.OfflineAt != nil && time.Since(*hyper.OfflineAt) < storageOfflineRemoveAfter {
+			return nil, planError("%s has been offline for %d minutes only: a host that reboots comes back; remove it as gone for good once it is offline for %d minutes",
+				hyper.Hostname, int(time.Since(*hyper.OfflineAt).Minutes()), int(storageOfflineRemoveAfter.Minutes()))
+		}
 	} else if !online {
 		return nil, planError("%s is offline: remove it as a host that is gone for good", hostName(db, req.Hostid))
 	}
@@ -493,6 +506,9 @@ func (a *StorageClusterAdmin) RemoveNode(ctx context.Context, uuid string, req *
 	}
 	afterNodes, afterDisks := layoutAfter(nodes, disks, nil, nil, req.Hostid, 0)
 	if err = backend.CheckLayout(afterNodes, afterDisks, params); err != nil {
+		return nil, planError("Without %s: %s", hostName(db, req.Hostid), planMessage(err))
+	}
+	if err = checkStorageRemoval(db, backend, cluster, params, afterDisks, req.Offline); err != nil {
 		return nil, planError("Without %s: %s", hostName(db, req.Hostid), planMessage(err))
 	}
 	node.Status = model.StorageNodeLeaving

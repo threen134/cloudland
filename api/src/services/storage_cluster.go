@@ -89,6 +89,10 @@ func planMessage(err error) string {
 // storageHostConflict tells why a host may not hold roles in a cluster while it is in another cluster of the same
 // kind; whether it may is up to the backend (§4.1). Empty when it may
 func storageHostConflict(db *gorm.DB, backend StorageBackend, kind string, clusterID int64, hostid int32, roles []string) (string, error) {
+	// The leave it missed stops GPFS on it and wipes the disks the deleted cluster claimed: it must run first
+	if c := storagePendingCleanupOf(db, hostid); c != nil {
+		return fmt.Sprintf("still has to clean up storage cluster %s, deleted while it was offline: it does so by itself shortly after it is online", c.ClusterName), nil
+	}
 	others := []*model.StorageClusterNode{}
 	err := db.Joins("JOIN storage_clusters c ON c.id = storage_cluster_nodes.cluster_id AND c.deleted_at IS NULL").
 		Where("storage_cluster_nodes.hostid = ? AND c.kind = ? AND storage_cluster_nodes.cluster_id <> ?", hostid, kind, clusterID).Find(&others).Error
@@ -236,7 +240,9 @@ type storageDiskIdentity struct {
 	Wipe      bool   `json:"wipe,omitempty"`
 	// In the cluster already: it holds data, only its identity is checked
 	InUse bool `json:"in_use,omitempty"`
-	// A shared LUN another host of the cluster wipes or keeps serving: released or left without wiping it
+	// A shared LUN another host of the cluster wipes or keeps serving: released or left without wiping it. In the
+	// input of the precheck: a shared LUN is expected (the shared disk layout), so the host does not take it for a
+	// local disk it can not use
 	Shared bool `json:"shared,omitempty"`
 }
 
@@ -383,6 +389,7 @@ func precheckInput(db *gorm.DB, plan *storagePlanParams, hostid int32) (*storage
 		return nil, fmt.Errorf("host %d is not in the plan", hostid)
 	}
 	diskCount := 0
+	takesShared := storageTakesShared(backend, params)
 	for _, d := range plan.Disks {
 		if d.Hostid != hostid {
 			continue
@@ -391,7 +398,9 @@ func precheckInput(db *gorm.DB, plan *storagePlanParams, hostid int32) (*storage
 		if err := db.Where("hostid = ? AND disk_id = ?", hostid, d.DiskID).Take(disk).Error; err != nil {
 			return nil, fmt.Errorf("disk %s is not in the scan result of host %d", d.DiskID, hostid)
 		}
-		in.Disks = append(in.Disks, diskIdentity(disk, d.Wipe))
+		id := diskIdentity(disk, d.Wipe)
+		id.Shared = takesShared
+		in.Disks = append(in.Disks, id)
 		diskCount++
 	}
 	for _, dir := range req.DataDirs {

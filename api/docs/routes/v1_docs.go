@@ -12336,6 +12336,13 @@ const docTemplatev1 = `{
                 "status_name": {
                     "type": "string"
                 },
+                "storage_cleanups": {
+                    "description": "What the host still has to clean up of storage clusters deleted while it was offline",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.HostStorageCleanup"
+                    }
+                },
                 "storage_pools": {
                     "type": "array",
                     "items": {
@@ -14869,6 +14876,10 @@ const docTemplatev1 = `{
                 },
                 "status": {
                     "type": "string"
+                },
+                "test_layout": {
+                    "description": "Made in the test layout of its kind: one copy of the data (shared-storage-design.md §6.3)",
+                    "type": "boolean"
                 },
                 "unsupported": {
                     "type": "boolean"
@@ -18290,6 +18301,35 @@ const docTemplatev1 = `{
                     "type": "integer"
                 },
                 "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "services.HostStorageCleanup": {
+            "type": "object",
+            "properties": {
+                "attempts": {
+                    "type": "integer"
+                },
+                "cluster": {
+                    "type": "string"
+                },
+                "cluster_uuid": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "string"
+                },
+                "tried_at": {
                     "type": "string"
                 }
             }

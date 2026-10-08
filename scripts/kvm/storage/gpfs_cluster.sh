@@ -3,7 +3,9 @@
 #   create:   {"cluster_uuid", "cluster_name", "nodes": [{"ip", "quorum", "manager"}], "server_license": [ip],
 #              "client_license": [ip], "pagepool_mib"}         result: {"cluster_name", "cluster_id"}
 #   start:    {"cluster_uuid"}                                  every node up and active
-#   teardown: {"cluster_uuid", "cluster_name", "filesystems": [name], "nsds": [name]}
+#   teardown: {"cluster_uuid", "cluster_name", "filesystems": [name], "nsds": [name], "offline": [ip]}
+#             offline: members that are offline now; mmdelnode -a may fail on them, they drop the cluster when they
+#             leave (stc_leave.sh, run on them once they are back)
 #   add:      {"cluster_uuid", "nodes": [{"ip", "quorum", "manager"}], "server_license": [ip], "client_license": [ip]}
 #             hosts join a running cluster (§7.5): added, licensed, started and mounting every file system
 #   remove:   {"cluster_uuid", "ip", "offline"}     a host leaves; offline: it is gone for good, nothing runs on it
@@ -145,7 +147,7 @@ function teardown_ece()
 
 function do_teardown()
 {
-    local input=$1 uuid name fs nsd list
+    local input=$1 uuid name fs nsd list offline
     uuid=$(jq -r .cluster_uuid <<<"$input")
     name=$(jq -r .cluster_name <<<"$input")
     valid_uuid "$uuid" || stc_fail "invalid cluster uuid"
@@ -185,7 +187,12 @@ function do_teardown()
     fi
     stc_progress 70 "stopping GPFS"
     $gpfs_bin/mmshutdown -a
-    $gpfs_bin/mmdelnode -a || stc_fail "mmdelnode failed"
+    if ! $gpfs_bin/mmdelnode -a; then
+        offline=$(jq -r '.offline[]?' <<<"$input" | xargs)
+        [ -n "$offline" ] || stc_fail "mmdelnode failed"
+        # Every host drops the configuration of the cluster when it leaves, the ones offline now once they are back
+        echo "mmdelnode -a failed with members offline ($offline): the hosts drop the cluster when they leave"
+    fi
     stc_result '{"removed": true}'
 }
 

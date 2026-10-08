@@ -642,6 +642,10 @@ func (a *HyperAdmin) releaseStorage(db *gorm.DB, hostID int32, keepPools bool) (
 	if fences > 0 {
 		return NewCLError(ErrHypervisorInvalidState, "Hypervisor is still fenced on a storage cluster: lift the fence first, or mark it lifted by hand", nil)
 	}
+	// What it still had to clean up of deleted storage clusters goes with it: a reinstalled host has none of it
+	if err = db.Where("hostid = ?", hostID).Delete(&model.StoragePendingCleanup{}).Error; err != nil {
+		return NewCLError(ErrSQLSyntaxError, "Failed to delete the pending storage cleanups of the host", err)
+	}
 	var pools, volumes int64
 	// Only local pools live on the host; rows of shared pools only say whether the host can reach them
 	if err = db.Model(&model.HyperStoragePool{}).Joins("JOIN storage_pools ON storage_pools.id = hyper_storage_pools.pool_id").

@@ -576,6 +576,10 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
                 <AlertTriangle :size="16" />
                 <span>{{ t('storage.clusterDetail.unsupportedBanner') }}</span>
             </div>
+            <div v-if="cluster.test_layout" class="banner banner-warning">
+                <AlertTriangle :size="16" />
+                <span>{{ t('storage.clusterDetail.testLayoutBanner') }}</span>
+            </div>
 
             <DetailTabs v-model="activeTab" :tabs="tabs" />
 

@@ -198,6 +198,9 @@ function do_configure()
         ceph_admin $fsid config set osd osd_memory_target_autotune false &&
         ceph_admin $fsid config set osd osd_memory_target $target &&
         ceph_admin $fsid config set mon mon_allow_pool_delete false &&
+        # Clients reclaiming their global_id without proving it may be someone else (CVE-2021-20288); every client of
+        # CloudLand is newer than the fix. cephadm bootstrap sets it too, here it stays so when cephadm changes
+        ceph_admin $fsid config set mon auth_allow_insecure_global_id_reclaim false &&
         # OSDs are made on the disks CloudLand claimed and on nothing else
         ceph_admin $fsid orch apply osd --all-available-devices --unmanaged=true
     } >/dev/null || stc_fail "setting the configuration failed"
@@ -211,6 +214,8 @@ function do_configure()
     ceph_admin $fsid auth get-or-create client.$user mon 'profile rbd' osd 'profile rbd' mgr 'profile rbd' >/dev/null ||
         stc_fail "making client.$user failed"
     key=$(ceph_admin $fsid auth get-key client.$user) || stc_fail "reading the key of client.$user failed"
+    stc_progress 80 "binding the metrics of the mgrs to the addresses of their hosts"
+    ceph_prometheus_bind $fsid || echo "binding the mgr prometheus modules failed: the health check does it again"
     mons=$(mon_addrs_json)
     [ "$(jq length <<<"$mons")" -gt 0 ] || stc_fail "the mon map has no address"
     echo "mon addresses: $mons"
@@ -320,6 +325,25 @@ function wait_removed()
     done
 }
 
+# removal_room <OSD ids as JSON>: the OSDs that stay take the data of the ones leaving without getting near full
+# (shared-storage-design.md §8.5; Ceph stops the writes of a full OSD). Per device class: the pools of a media keep
+# their data on OSDs of that class. What moves is the data of the leaving OSDs (kb_used_data, not their own metadata)
+function removal_room()
+{
+    local ids=$1 df ratio short
+    df=$(ceph_admin $fsid osd df -f json 2>/dev/null) || stc_fail "reading the capacity of the OSDs failed"
+    ratio=$(ceph_admin $fsid osd dump -f json 2>/dev/null | jq -r '.nearfull_ratio // 0.85')
+    short=$(jq -r --argjson i "$ids" --argjson r "$ratio" '
+        [.nodes[] | {c: (.device_class // "none"), kb, used: .kb_used, data: (.kb_used_data // .kb_used), gone: (.id as $x | $i | index($x) != null)}]
+        | group_by(.c)[] | select(any(.gone))
+        | {c: .[0].c, left: (map(select(.gone | not) | .kb) | add // 0), stay: (map(select(.gone | not) | .used) | add // 0),
+           moving: (map(select(.gone) | .data) | add // 0)}
+        | select(.moving > 0 and (.left == 0 or .stay + .moving >= .left * $r))
+        | if .left == 0 then "no \(.c) OSD would be left for the data"
+          else "the \(.c) OSDs that stay would be \(((.stay + .moving) * 100 / .left) | floor)% full" end' <<<"$df" | head -1)
+    [ -z "$short" ] || stc_fail "the data of the OSDs has no room on the others: $short (Ceph calls $(awk -v r="$ratio" 'BEGIN { printf "%d", r * 100 }')% near full)"
+}
+
 function do_remove_osds()
 {
     local ids offline
@@ -332,6 +356,7 @@ function do_remove_osds()
     elif [ "$offline" = "true" ]; then
         purge_osds "$ids" || stc_fail "purging the OSDs failed"
     else
+        removal_room "$ids"
         # orch osd rm marks them out, waits until their data is elsewhere, removes them and zaps the devices
         ceph_admin $fsid orch osd rm $(jq -r 'join(" ")' <<<"$ids") --zap || stc_fail "starting the removal of the OSDs failed"
         wait_removed "$ids"
@@ -441,6 +466,7 @@ function do_remove_host()
         stc_progress 20 "removing $name, gone for good"
         ceph_admin $fsid orch host rm "$name" --offline --force || stc_fail "removing $name failed"
     else
+        [ "$(jq length <<<"$ids")" -gt 0 ] && ! osds_gone "$ids" && removal_room "$ids"
         stc_progress 10 "draining $name"
         ceph_admin $fsid orch host drain "$name" --zap-osd-devices || stc_fail "draining $name failed"
         [ "$(jq length <<<"$ids")" -gt 0 ] && wait_removed "$ids"

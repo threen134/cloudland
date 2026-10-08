@@ -7,7 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 package services
 
 // The rotation of the keys of a managed Ceph cluster (storage_cluster_keys.go): the SSH key, which the orchestrator
-// keeps a copy of (ceph cephadm set-priv-key), and the key of client.cloudland, renewed through a pending key
+// keeps a copy of (both halves written with config-key set mgr/cephadm/ssh_identity_key|pub, then a mgr failover:
+// cephadm set-priv-key / set-pub-key each pair the new half with the old one and keep the old key silently), and
+// the key of client.cloudland, renewed through a pending key
 // (ceph auth get-or-create-pending, Squid and later). The cluster takes both keys only until the pending key is first
 // used: it then becomes the key and the old one is refused for new sessions (verified on 20.2, 2026-10-04). Sessions
 // opened before keep working: their tickets renew without the key, across a mon restart too, so a running QEMU goes on

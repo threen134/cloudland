@@ -900,6 +900,7 @@ func StartStorageTaskWorker() {
 				// The clusters' own rounds: every 4 rounds (a minute)
 				if round%4 == 0 {
 					maintainStorageClusters(ctx)
+					maintainStorageCleanups(ctx)
 				}
 				// Package clean-up deals in hours, the pool lists are a safety net: every 20 rounds (5 minutes)
 				if round%20 == 0 {

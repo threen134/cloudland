@@ -233,8 +233,9 @@ func init() {
 		Slot: storageSlotStructural,
 		Steps: map[string]*storageStepDef{
 			"teardown": {Script: "ceph_cluster.sh", Input: cephActionInput("teardown")},
-			"leave":    {Script: "stc_leave.sh", Input: gpfsLeaveInput},
-			"forget":   storageForgetStep,
+			// A host offline leaves when it is back (storageRecordSkippedHosts)
+			"leave":  {Script: "stc_leave.sh", Input: gpfsLeaveInput, OnlineOnly: true},
+			"forget": storageForgetStep,
 		},
 		Finish: gpfsDeleteFinish,
 	})

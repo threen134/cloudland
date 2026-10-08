@@ -177,8 +177,9 @@ func init() {
 		Slot: storageSlotStructural,
 		Steps: map[string]*storageStepDef{
 			"teardown": {Script: "gpfs_cluster.sh", Input: gpfsTeardownInput},
-			"leave":    {Script: "stc_leave.sh", Input: gpfsLeaveInput},
-			"forget":   storageForgetStep,
+			// A host offline leaves when it is back (storageRecordSkippedHosts)
+			"leave":  {Script: "stc_leave.sh", Input: gpfsLeaveInput, OnlineOnly: true},
+			"forget": storageForgetStep,
 		},
 		Finish: gpfsDeleteFinish,
 	})
@@ -810,9 +811,16 @@ func gpfsRememberHosts(tx *gorm.DB, task *model.StorageTask, nodes []*model.Stor
 }
 
 func gpfsTeardownInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
-	cluster, _, disks, err := storageClusterOfTask(db, task)
+	cluster, nodes, disks, err := storageClusterOfTask(db, task)
 	if err != nil {
 		return nil, err
+	}
+	// mmdelnode -a reaches every node: with members offline it may fail, and they drop the cluster when they leave
+	offline := []string{}
+	for _, n := range nodes {
+		if hyper, online := hostOnline(db, n.Hostid); !online && hyper != nil && hyper.HostIP != "" {
+			offline = append(offline, hyper.HostIP)
+		}
 	}
 	fss := []*model.StorageFilesystem{}
 	db.Where("cluster_id = ?", cluster.ID).Find(&fss)
@@ -820,7 +828,8 @@ func gpfsTeardownInput(ctx context.Context, db *gorm.DB, task *model.StorageTask
 	for _, f := range fss {
 		fsNames = append(fsNames, f.Name)
 	}
-	in := map[string]interface{}{"action": "teardown", "cluster_uuid": cluster.UUID, "cluster_name": cluster.Name, "filesystems": fsNames}
+	in := map[string]interface{}{"action": "teardown", "cluster_uuid": cluster.UUID, "cluster_name": cluster.Name, "filesystems": fsNames,
+		"offline": offline}
 	if cluster.Layout == model.StorageLayoutECE {
 		// The disks are pdisks of the recovery group, which goes with the erasure code layer
 		in["nsds"], in["ece"] = []string{}, gpfsECETeardown(cluster)
@@ -873,6 +882,10 @@ func gpfsDeleteFinish(ctx context.Context, tx *gorm.DB, task *model.StorageTask,
 	}
 	if !succeeded {
 		return tx.Model(cluster).Update("status", model.StorageClusterError).Error
+	}
+	// The hosts the leave skipped (offline) run it once they are back: their inputs are made from the records first
+	if err := storageRecordSkippedHosts(ctx, tx, task, cluster); err != nil {
+		return err
 	}
 	// The fences go with the cluster: nothing is left to keep a host off
 	for _, m := range []interface{}{&model.StorageFilesystem{}, &model.StorageClusterDisk{}, &model.StorageClusterNode{}, &model.StorageFence{}} {

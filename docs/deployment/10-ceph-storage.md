@@ -138,17 +138,17 @@ ceph auth get-or-create client.cloudland mon 'profile rbd' osd 'profile rbd pool
 |---|---|
 | 添加节点 | 预检、装软件、`ceph orch host add` 按角色打标签，选了盘的同时建 OSD，最后配置客户端 |
 | 添加磁盘 | `ceph orch daemon add osd`；Ceph 自动把一部分数据迁到新盘 |
-| 移除磁盘 | `ceph orch osd rm <编号> --zap`：先把数据迁走再删 OSD、清盘，进度在任务详情里（「moving the data off」） |
-| 移除节点 | `ceph orch host drain`（迁走全部守护进程与数据）→ `ceph orch host rm`；只是客户端的节点不碰集群 |
-| 离线移除 | 节点已永久坏了：`ceph orch host rm --offline --force`，它的 OSD `purge`，Ceph 用其余副本恢复 |
+| 移除磁盘 | `ceph orch osd rm <编号> --zap`：先把数据迁走再删 OSD、清盘，进度在任务详情里（「moving the data off」）。开始前检查：每个存储池按它的介质，剩下有这种 OSD 的节点数不少于它的副本数；同一设备类里留下的 OSD 装得下要迁走的数据、不到 `nearfull_ratio`（默认 85%）。不满足就拒绝，免得数据永远迁不完 |
+| 移除节点 | `ceph orch host drain`（迁走全部守护进程与数据）→ `ceph orch host rm`；只是客户端的节点不碰集群。开始前的检查同「移除磁盘」 |
+| 离线移除 | 节点已永久坏了（离线满 30 分钟）：`ceph orch host rm --offline --force`，它的 OSD `purge`，Ceph 用其余副本恢复 |
 | 换盘 | 只对健康检查报告不是 `up` 的 OSD 出现，新盘必须在同一台主机：`ceph osd out` → `ceph orch daemon rm osd.<编号> --force` → `ceph osd destroy <编号> --force --yes-i-really-mean-it`（保留编号），再在新盘上建 OSD（沿用原编号）并 `ceph osd in`，数据从其他副本回填。OSD 还是 `up` 时拒绝。不用 `ceph orch osd rm --replace`：它要等 `safe-to-destroy`，OSD 主机数等于副本数时降级的数据无处可去，永远等不到。坏盘不擦除（回环测试盘外面那层 `clceph-*` 卷组会被去掉） |
 | 改角色 | 改 `mon` / `mgr` / `_admin` 标签，cephadm 按标签增减守护进程；mon 要保持奇数，mgr 1–2 台，管理节点必须是 mon。客户端节点第一次得到标签时先加为 cephadm 主机。mon 有变化时（加节点、改角色、移除节点都会），任务最后读出新的 mon 地址，重写所有客户端配置的 `mon_host` |
 | 自动加为客户端 | 同 GPFS（[共享存储](./09-shared-storage.md#运维)）：所选可用区里的节点逐台以客户端加入（装 `ceph-common`、写客户端配置与 libvirt secret） |
-| 删除集群 | 先停掉编排器（`ceph mgr module disable cephadm`），每台节点 `cephadm rm-cluster --zap-osds`，删客户端配置、libvirt secret、`authorized_keys` 那一行，擦盘 |
+| 删除集群 | 先停掉编排器（`ceph mgr module disable cephadm`），每台在线节点 `cephadm rm-cluster --zap-osds`，删客户端配置、libvirt secret、`authorized_keys` 那一行，擦盘。离线的节点回来后平台自动补做（同 GPFS，见[共享存储](./09-shared-storage.md#运维)） |
 | 轮换密钥 | 可选集群 SSH 密钥与客户端密钥。SSH 密钥同 GPFS 的三轮，中间让编排器换钥匙：`config-key set mgr/cephadm/ssh_identity_key` 与 `…_pub` 一起写再 `ceph mgr fail`（mgr 切换一次，几秒），然后 `ceph cephadm check-host` 每台主机。**不要用 `ceph cephadm set-priv-key` / `set-pub-key` 换钥匙**：它们各自拿新的一半去配旧的另一半，校验不过就静默保留旧钥匙（退出码 0）。客户端密钥：`ceph auth get-or-create-pending client.cloudland` 生成新密钥，写到每台节点的 keyring 与 libvirt secret，**第一次被使用时 Ceph 就把它转正**，旧密钥此后不能建立新连接。正在运行的云服务器不受影响（已建立的会话续期不需要密钥），下次启动或迁移时用上新密钥 |
 | 升级 | 各节点装发行版现有的 Ceph 版本（`ceph-common`、`cephadm`，不能比集群旧），cephadm 主机拉对应的官方镜像（集群用自己的镜像时要填新版本的镜像），再 `ceph orch upgrade start --image …` 逐个升级守护进程、跟到 `ceph versions` 只剩新版本。不用迁走云服务器；云服务器用的是节点上的 `librbd`，下次启动或迁移时用上新版本。所有守护进程已是这个版本时直接成功 |
 
-**健康检查、告警、曲线**：做法与 GPFS 相同（[共享存储](./09-shared-storage.md#运维)）。检查用 `ceph health detail`、`ceph orch host ls`、`ceph osd tree`、`ceph df`，Ceph 报 `*_NEARFULL` / `*_FULL` 时立即发「Ceph 容量接近满」告警。曲线来自活动 mgr 的 `prometheus` 模块（端口 9283）：部署时打开，已有集群由健康检查第一次运行时打开；Prometheus 的 `storage_clusters` 任务从 clapi 取 mgr 主机列表（`/api/v1/prometheus/sd/storage`），升级控制面后要用新的 `prometheus.yml` 重建 prometheus 容器。只有活动的 mgr 有数据，备用 mgr 的目标是空的。导入的外部集群（2026-10-07 第二轮起）由它的客户端节点以客户端身份执行 `ceph -s` / `ceph df detail` 取容量、读写、OSD，客户端身份要能读 mon（`mon 'allow r'`）
+**健康检查、告警、曲线**：做法与 GPFS 相同（[共享存储](./09-shared-storage.md#运维)）。检查用 `ceph health detail`、`ceph orch host ls`、`ceph osd tree`、`ceph df`，Ceph 报 `*_NEARFULL` / `*_FULL` 时立即发「Ceph 容量接近满」告警。曲线来自活动 mgr 的 `prometheus` 模块（端口 9283）：部署时打开，已有集群由健康检查第一次运行时打开；每个 mgr 的模块只监听所在节点的内网地址（`mgr/prometheus/<mgr 名>/server_addr`，部署时设、健康检查时补设，地址变了的 mgr 会重启或切换一次）；Prometheus 的 `storage_clusters` 任务从 clapi 取 mgr 主机列表（`/api/v1/prometheus/sd/storage`），升级控制面后要用新的 `prometheus.yml` 重建 prometheus 容器。只有活动的 mgr 有数据，备用 mgr 的目标是空的。导入的外部集群（2026-10-07 第二轮起）由它的客户端节点以客户端身份执行 `ceph -s` / `ceph df detail` 取容量、读写、OSD，客户端身份要能读 mon（`mon 'allow r'`）
 
 **节点宕机后的恢复**：同 GPFS（[共享存储](./09-shared-storage.md#运维)），隔离是另一台管理节点把宕机节点的内网地址加进黑名单：`ceph osd blocklist range add <地址>/32 315360000`（有效期 10 年；不给有效期时默认 1 小时就自动解除，旧的写入者会恢复写盘），`ceph osd blocklist ls` 里是 `cidr:<地址>:0/32`（同时出现的带进程号、1 小时的那一条是新客户端打破旧锁时 Ceph 自己加的）。实测（TC-24 REC-05/06）：被隔离节点上的旧 QEMU 立即暂停在 I/O 错误上，70 分钟后恢复它仍然写不进去。节点回来、对账清掉旧副本后再过 5 分钟才自动删掉这条黑名单（同 GPFS）。RBD 的排他锁挡不住两个写入者，这一步不能省。系统盘在 RBD 上的 UEFI 云服务器，NVRAM 在原节点本地，疏散时从模板重建（启动项丢失，走默认启动路径）。导入的集群由 CloudLand 的客户端身份加黑名单（只能加、不能删），解除要它的管理员 `ceph osd blocklist range rm <地址>/32`，然后在节点详情点「已手工解除」
 

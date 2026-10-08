@@ -291,6 +291,25 @@ func StorageClusterLayoutInfo(cluster *model.StorageCluster) map[string]interfac
 	return nil
 }
 
+// storageTestLayout is a backend with a test layout: one copy of the data, losing any disk or host loses data (§6.3)
+type storageTestLayout interface {
+	TestLayout(params interface{}) bool
+}
+
+// StorageClusterTestLayout tells whether a cluster was made in the test layout of its kind, for the API
+func StorageClusterTestLayout(cluster *model.StorageCluster) bool {
+	backend, err := storageBackendOf(cluster.Kind)
+	if err != nil {
+		return false
+	}
+	t, ok := backend.(storageTestLayout)
+	if !ok || cluster.Mode != model.StorageModeManaged {
+		return false
+	}
+	params, err := backend.ParseParams([]byte(cluster.Params))
+	return err == nil && t.TestLayout(params)
+}
+
 // StorageClusterCapabilities is what a cluster supports, for the API; nil for a kind CloudLand does not know
 func StorageClusterCapabilities(cluster *model.StorageCluster) *StorageCapabilities {
 	backend, err := storageBackendOf(cluster.Kind)
@@ -298,6 +317,21 @@ func StorageClusterCapabilities(cluster *model.StorageCluster) *StorageCapabilit
 		return nil
 	}
 	return storageClusterCapabilities(backend, cluster)
+}
+
+// storageRemovalChecker is a backend with checks of its own on what stays of a cluster when disks or a host leave it,
+// besides its role rules (CheckLayout): what the pools of the cluster need. offline: the host leaving is gone for good,
+// its data is lost either way
+type storageRemovalChecker interface {
+	CheckRemoval(db *gorm.DB, cluster *model.StorageCluster, params interface{}, disks []*StorageDiskPlan, offline bool) error
+}
+
+// checkStorageRemoval runs the removal checks of a backend that has some
+func checkStorageRemoval(db *gorm.DB, backend StorageBackend, cluster *model.StorageCluster, params interface{}, disks []*StorageDiskPlan, offline bool) error {
+	if c, ok := backend.(storageRemovalChecker); ok {
+		return c.CheckRemoval(db, cluster, params, disks, offline)
+	}
+	return nil
 }
 
 // storageClusterMaintainer is a backend that has something to do for its ready clusters every minute, besides the

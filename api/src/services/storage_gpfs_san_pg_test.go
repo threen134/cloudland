@@ -104,6 +104,16 @@ func TestStorageGPFSSANPG(t *testing.T) {
 		return `{"disks":[` + strings.Join(list, ",") + `]}`
 	}
 	succeed(f.expect("precheck", "stc_precheck.sh", h[:3]...), func(s *stcSent) string {
+		// The precheck takes the LUNs for shared ones, not for local disks it can not use
+		disks := s.input["disks"].([]interface{})
+		if len(disks) == 0 {
+			t.Fatalf("precheck on %d has no disks", s.hostid)
+		}
+		for _, d := range disks {
+			if d.(map[string]interface{})["shared"] != true {
+				t.Fatalf("precheck on %d: a LUN not marked shared: %v", s.hostid, d)
+			}
+		}
 		return fmt.Sprintf(`{"items":[],"facts":{"hostname":"h%d","os":"ubuntu 24.04","host_key":"ssh-ed25519 KEY%d"}}`, s.hostid, s.hostid)
 	})
 	succeed(f.expect("join", "stc_join.sh", h[:3]...), none)

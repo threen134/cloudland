@@ -2945,6 +2945,11 @@ export default {
                 '確認已在儲存叢集上手動解除了對 {host} 的隔離？這裡只刪除記錄（匯入的 Ceph 叢集只能由它的管理員解除黑名單）。',
             unfenceStarted: '已開始解除隔離',
             forgotten: '已刪除隔離記錄',
+            cleanups: '待補清理',
+            cleanupsHint:
+                '這些儲存叢集是在節點離線時刪除的。節點上線後會自動補做當時錯過的清理（停掉儲存軟體、擦掉叢集認領過的磁碟），失敗了過一會兒再試；清理完成前這台節點不能加入任何儲存叢集。',
+            cleanupWaiting: '等待節點上線',
+            cleanupAttempts: '已嘗試 {n} 次',
             evacuate: '疏散',
             evacuateTitle: '疏散 {host}',
             evacuateIntro:
@@ -3033,7 +3038,8 @@ export default {
                 'NSD 用 SAN 上的共享 LUN（FC、iSCSI、多路徑），一個 LUN 由能看到它的多台節點共同服務。資料由儲存陣列保護，檔案系統只存一份。',
             sanHostsIntro:
                 '在每台要服務某個 LUN 的節點下勾選同一個共享 LUN（同一個標識）：這些節點就是它的 NSD 伺服器，最多 8 台。只有標為「疑似共享」的磁碟可選；多路徑磁碟請選多路徑裝置，不要選它的某條路徑。仲裁節點要奇數個（至少 3 個，測試佈局可 1 個），管理節點 1–2 個。',
-            sanParamsIntro: '每個 LUN 是一個 NSD，伺服器清單就是勾選了它的節點。儲存陣列負責資料備援，檔案系統的資料和中繼資料都只存一份。',
+            sanParamsIntro:
+                '每個 LUN 是一個 NSD，伺服器清單就是勾選了它的節點。儲存陣列負責資料備援，檔案系統的資料和中繼資料都只存一份。',
             eceHostsIntro:
                 '提供磁碟的 NSD 節點就是復原群組的伺服器：3–32 台，每台磁碟的數量與介質相同，合計至少 12 塊。仲裁節點要奇數個（至少 3 個），管理節點 1–2 個；其餘節點作為用戶端。選中的磁碟在提交時就被認領，有舊資料的磁碟要勾選「清除舊資料」。',
             eceParamsIntro:
@@ -3205,6 +3211,7 @@ export default {
             taskStarted: '任務已開始',
             taskHolds: '有任務正在佔用這個叢集：',
             unsupportedBanner: '這個叢集部署在不受支援的系統或核心上，只能用於測試。',
+            testLayoutBanner: '這個叢集是測試佈局：資料只有一份，壞一塊磁碟或一台節點就會遺失資料，只能用於功能測試。',
             busy: '任務中',
             layout: '佈局',
             layouts: { replica: '副本', ece: '糾刪碼', san: '共享磁碟' },
@@ -3480,6 +3487,7 @@ export default {
                 import: '匯入叢集',
                 precheck: '節點預檢',
                 selftest: '鏈路自檢',
+                cleanup: '補清理',
                 replace_disk: '換盤',
                 change_roles: '改角色',
                 create_fs: '新建檔案系統',
@@ -3778,11 +3786,13 @@ export default {
             mountedBy: '由 {cluster} 掛載',
             mountedFrom: '掛載自 {cluster}',
             create: '遠端掛載到其他叢集',
-            createIntro: '目標叢集的節點會以同樣的名字和掛載點掛載這個檔案系統；目標叢集不能已有同名或同掛載點的檔案系統。',
+            createIntro:
+                '目標叢集的節點會以同樣的名字和掛載點掛載這個檔案系統；目標叢集不能已有同名或同掛載點的檔案系統。',
             target: '掛載方叢集',
             noTarget: '沒有可用的叢集：要另一個平台部署、就緒的同類叢集',
             delete: '取消遠端掛載',
-            deleteMessage: '{cluster} 的節點將卸載檔案系統 {fs}，授權隨之撤銷。那些節點上還在用這個檔案系統上的磁碟區的雲端伺服器要先遷走或刪除。',
+            deleteMessage:
+                '{cluster} 的節點將卸載檔案系統 {fs}，授權隨之撤銷。那些節點上還在用這個檔案系統上的磁碟區的雲端伺服器要先遷走或刪除。',
             statuses: { mounting: '掛載中', ready: '已掛載', unmounting: '卸載中', error: '出錯' },
         },
         diskStates: {

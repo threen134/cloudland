@@ -183,7 +183,7 @@
 
 **预期**：
 - 第 2 步：400（镜像必须以仓库地址开头；有仓库就要口令）。
-- 第 3 步：口令加密进 `secrets`、不在参数里（集群详情、任务输入都看不到明文）；安装步骤 `docker login --password-stdin` 后拉镜像，bootstrap 带 `--registry-json`（600 权限的临时文件，之后删除）；部署成功。
+- 第 3 步：确认页的参数汇总里 `registry_password` 是 `******`（回归点 26）；口令加密进 `secrets`、不在参数里（集群详情、任务输入都看不到明文）；安装步骤 `docker login --password-stdin` 后拉镜像，bootstrap 带 `--registry-json`（600 权限的临时文件，之后删除）；部署成功。
 
 ## CEPH-17 mon 变化后刷新客户端（未执行，E13）
 
@@ -199,6 +199,25 @@
 **预期**：
 - 第 1 步：预检只要求守护进程节点同一发行版，通过；客户端的 `ceph-common`（20.2）不低于镜像版本（19.2），安装收尾核对通过。客户端低于镜像版本时失败。
 - 第 2 步：预检失败（守护进程节点不是同一个发行版）。
+
+## CEPH-19 设计复查后补的检查（未在真机执行，2026-10-07）
+
+WSL 真 Ceph 单节点端到端 `TestStorageCephWSL` 已核对第 1、2 条和第 3 条的「唯一的 OSD」；PostgreSQL `TestStorageCephDeployPG` 核对第 3 条按介质的拒绝与第 5 条；WSL `stc-test18.sh` 核对容量检查与 mgr 绑定的逻辑。
+
+1. 部署后在每台 mgr 节点上 `ss -ltn | grep 9283`
+2. `ceph config get mon auth_allow_insecure_global_id_reclaim`
+3. 有一个介质为 SSD、3 副本的池时，移除使 SSD 节点少于 3 台的盘；把剩下的 OSD 灌到接近 85% 后移除一块盘
+4. 改一个 mgr 节点的地址（或手工 `ceph config rm mgr mgr/prometheus/<mgr 名>/server_addr`），等一次健康检查
+5. 离线不到 30 分钟时离线移除主机
+6. 有主机离线时删除集群，主机回来后看补清理（同 TC-20 SHS-18）
+
+**预期**：
+- 第 1 步：只监听节点内网地址的 9283（不是 `*` 或 `[::]`）；只有活动 mgr 返回数据。
+- 第 2 步：`false`。
+- 第 3 步：400「Pool … keeps 3 replicas on different hosts; ssd OSDs would be left on 2 hosts」；容量不够时任务在 `remove_osds` 失败「the data of the OSDs has no room on the others」，什么都没动。
+- 第 4 步：健康检查重新设上，地址变了的 mgr 重启（备用）或切换一次（活动），之后再检查什么都不做。
+- 第 5 步：400「offline for N minutes only」。
+- 第 6 步：`leave` 只在在线主机上跑；回来后补清理的 `cephadm rm-cluster` 删掉它上面残留的 mon / OSD 与卷组，盘被擦。
 
 ## 历史缺陷回归点汇总
 
@@ -225,6 +244,11 @@
 | 19 | 保护脚本在 `ExecStartPost` 里同步等容器（最多约 190 秒，`docker inspect` 无超时），cephadm 单元的启动超时 200 秒把它算进去：容器起得慢时单元被判启动失败、守护进程被停掉并反复重启（代码审查） | drop-in 经 `systemd-run --no-block` 把脚本放进独立的临时单元，`docker` 调用加 `timeout`，心跳每 5 分钟巡检兜底（`stc-test9-oom.sh` 第 10 项：单元启动超时 10 秒、容器 20 秒后才起，单元保持 active、不重启、随后受保护；旧写法同样条件下 `start-post operation timed out`，40 秒内重启 3 次） |
 | 20 | drop-in 与手工补跑都直接执行脚本文件，漏了可执行位时保护静默失效（`ExecStartPost=-` 吞掉 EACCES）（代码审查） | 一律 `/bin/bash <脚本>`（`stc-test9-oom.sh` 第 11 项：去掉可执行位后仍受保护） |
 | 21 | 加盘、移除盘不重算内存预留：`reserved_mem_mb` 只在建集群、加节点、改角色时算，给已有节点加 OSD 后数据库与节点上的预留都还按原来的盘数（每个 OSD 少扣 `osd_memory_target`+512 MiB），调度器多分内存给云服务器（2026-10-07 核对代码发现） | 加盘、移除盘、换盘的开始与收尾 `storageRefreshReserve`，Ceph 加盘、移除盘最后对相关节点跑 `finish`（PG `TestStorageCephDeployPG`：加盘后 h[1] 3584 → 5120 且 `finish` 下发 5120，移除后回到 3584，换盘不变）。work-x 2026-10-07：work-02 加一块回环盘后数据库、节点 `reserved_mb`、`storage_reserved_memory` 4608 → 6144 MiB，新 OSD 自动受保护；移除后回到 4608，`system.slice` 由下一轮巡检调回 |
+| 22 | mgr 的 prometheus 模块（9283）监听所有地址，只靠节点防火墙挡住非私网来源（2026-10-07 设计复查） | 每个 mgr 设 `mgr/prometheus/<mgr 名>/server_addr` 为所在主机地址，configure 与健康检查时核对；CEPH-19 第 1、4 步，WSL 端到端 |
+| 23 | 没显式设 `auth_allow_insecure_global_id_reclaim=false`（cephadm bootstrap 其实设了，2026-10-07 设计复查） | configure 里再设一次；CEPH-19 第 2 步，WSL 端到端 |
+| 24 | 移除盘 / 主机只按全部介质数主机，SSD 池的副本可能无处可放；不看剩余容量，数据可能永远迁不完（2026-10-07 设计复查） | `CheckRemoval` 按池的介质数主机，`removal_room` 按设备类算剩余容量；CEPH-19 第 3 步 |
+| 25 | 有主机离线时删除集群卡在 `leave`；离线主机一离线就能离线移除（2026-10-07 设计复查） | 同 TC-20 回归点 30、31；CEPH-19 第 5、6 步 |
+| 26 | 创建向导确认页明文显示私有仓库口令 `registry_password`（2026-10-07 设计复查） | 参数汇总遮住键名以 password / secret / token / `_key` 结尾的值；CEPH-16 第 3 步，`stc-ui-rev1007.js` |
 
 ## 清理
 

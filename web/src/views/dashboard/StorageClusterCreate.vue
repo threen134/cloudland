@@ -490,11 +490,15 @@ watch(steps, () => {
 })
 
 const stepLabel = (s: StepId) => t(`storage.wizard.steps.${s}`)
-// The parameters as the summary shows them: a key is never shown
+// The parameters as the summary shows them: a key or a password (the client key of an imported Ceph cluster, the
+// password of a private registry) is never shown
+const secretParam = (key: string) => /(password|secret|token|_key)$/.test(key)
 const paramsText = computed(() => {
     if (!params.value) return ''
-    const p = { ...params.value }
-    if (p.client_key) p.client_key = '******'
+    const p: Record<string, unknown> = { ...params.value }
+    for (const k of Object.keys(p)) {
+        if (secretParam(k) && p[k]) p[k] = '******'
+    }
     return JSON.stringify(p)
 })
 const selectedHosts = computed(() => picker.value?.selectedHosts || [])

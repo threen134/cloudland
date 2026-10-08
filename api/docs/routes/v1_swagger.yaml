@@ -1021,6 +1021,12 @@ definitions:
         type: integer
       status_name:
         type: string
+      storage_cleanups:
+        description: What the host still has to clean up of storage clusters deleted
+          while it was offline
+        items:
+          $ref: '#/definitions/services.HostStorageCleanup'
+        type: array
       storage_pools:
         items:
           $ref: '#/definitions/services.HostPoolFigures'
@@ -2839,6 +2845,10 @@ definitions:
         type: array
       status:
         type: string
+      test_layout:
+        description: 'Made in the test layout of its kind: one copy of the data (shared-storage-design.md
+          §6.3)'
+        type: boolean
       unsupported:
         type: boolean
       updated_at:
@@ -5275,6 +5285,25 @@ definitions:
       used_bytes:
         type: integer
       uuid:
+        type: string
+    type: object
+  services.HostStorageCleanup:
+    properties:
+      attempts:
+        type: integer
+      cluster:
+        type: string
+      cluster_uuid:
+        type: string
+      id:
+        type: integer
+      kind:
+        type: string
+      message:
+        type: string
+      task_id:
+        type: string
+      tried_at:
         type: string
     type: object
   services.MigrationTarget:

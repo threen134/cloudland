@@ -142,6 +142,21 @@ for i in $(seq 1 90); do n=$(pgrep -x ceph-osd); [ -n "$n" ] && [ "$n" != "$old"
 		time.Sleep(2 * time.Second)
 	}
 
+	// The mgr metrics listen on the address of the host only (§14.3); the mons check the global_id of the clients
+	// (CVE-2021-20288); the only OSD has nowhere to put its data, so it can not be removed (§8.5)
+	admin := fmt.Sprintf("ceph --conf /var/lib/ceph/%[1]s/config/ceph.conf --keyring /var/lib/ceph/%[1]s/config/ceph.client.admin.keyring", c.UUID)
+	out, _ = wsl(0, fmt.Sprintf(`for i in $(seq 1 60); do l=$(ss -ltnH | awk '$4 ~ /:9283$/ {print $4}' | sort -u | xargs); [ -n "$l" ] && break; sleep 2; done
+echo "LISTEN $l"; echo "RECLAIM $(%s config get mon auth_allow_insecure_global_id_reclaim)"`, admin))
+	if !strings.Contains(out, "LISTEN "+ip+":9283\n") || !strings.Contains(out, "RECLAIM false") {
+		t.Fatalf("the mgr metrics (want %s:9283 only) and the global_id reclaim (want false): %s", ip, out)
+	}
+	out, _ = wsl(0, fmt.Sprintf(`cd /opt/cloudland/scripts/backend/storage && source <(sed -e '/^stc_run "\$@"$/d' -e 's/^cd \$(dirname \$0)$/:/' ceph_cluster.sh)
+fsid=%s; stc_fail() { echo "FAILED $*"; exit 1; }
+(removal_room '[]' && echo "ROOM NONE"); removal_room '[0]'`, c.UUID))
+	if !strings.Contains(out, "ROOM NONE") || !strings.Contains(out, "OSD would be left for the data") {
+		t.Fatalf("room for the data of the OSDs removed: %s", out)
+	}
+
 	// A pool on the hdd OSDs
 	pools := &services.StoragePoolAdmin{}
 	pool, ptask, err := pools.CreateShared(ctx, &services.SharedPoolCreate{Name: name + "-p", ClusterUUID: c.UUID, Media: "hdd"})

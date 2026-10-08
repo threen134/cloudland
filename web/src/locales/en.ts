@@ -3050,6 +3050,11 @@ export default {
                 'Confirm the fence of {host} was lifted by hand on the storage cluster? Only the records go (the blocklist entry of an imported Ceph cluster can only be removed by its admin).',
             unfenceStarted: 'Lifting the fences',
             forgotten: 'Fence records removed',
+            cleanups: 'Pending cleanups',
+            cleanupsHint:
+                'These storage clusters were deleted while the host was offline. Once it is online it catches up on the cleanup it missed (stops the storage software, wipes the disks the cluster had claimed), again a while later when that fails; until it is done the host can not join any storage cluster.',
+            cleanupWaiting: 'Waiting for the host',
+            cleanupAttempts: '{n} attempts',
             evacuate: 'Evacuate',
             evacuateTitle: 'Evacuate {host}',
             evacuateIntro:
@@ -3325,6 +3330,8 @@ export default {
             taskStarted: 'Task started',
             taskHolds: 'A task holds the cluster:',
             unsupportedBanner: 'The cluster runs on a system or kernel outside the support matrix: for tests only.',
+            testLayoutBanner:
+                'The cluster was made in the test layout: its data has one copy, and a failed disk or host loses data. For functional tests only.',
             busy: 'busy',
             layout: 'Layout',
             layouts: { replica: 'Replica', ece: 'Erasure code', san: 'Shared disks' },
@@ -3609,6 +3616,7 @@ export default {
                 import: 'Import cluster',
                 precheck: 'Host precheck',
                 selftest: 'Task path selftest',
+                cleanup: 'Cleanup',
                 replace_disk: 'Replace a disk',
                 change_roles: 'Change roles',
                 create_fs: 'New file system',
@@ -3918,11 +3926,13 @@ export default {
             mountedBy: 'mounted by {cluster}',
             mountedFrom: 'mounted from {cluster}',
             create: 'Mount on another cluster',
-            createIntro: 'The hosts of the target cluster mount this file system under the same name and mount point; the target must have no file system of that name or mount point.',
+            createIntro:
+                'The hosts of the target cluster mount this file system under the same name and mount point; the target must have no file system of that name or mount point.',
             target: 'Cluster that mounts',
             noTarget: 'No cluster to choose: another ready cluster of the kind deployed by the platform is needed',
             delete: 'Stop the remote mount',
-            deleteMessage: 'The hosts of {cluster} unmount file system {fs} and its grant goes. Instances on those hosts using volumes on it must be moved or deleted first.',
+            deleteMessage:
+                'The hosts of {cluster} unmount file system {fs} and its grant goes. Instances on those hosts using volumes on it must be moved or deleted first.',
             statuses: { mounting: 'Mounting', ready: 'Mounted', unmounting: 'Unmounting', error: 'Error' },
         },
         diskStates: {

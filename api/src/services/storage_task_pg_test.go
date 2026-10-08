@@ -54,6 +54,8 @@ func newStcFixture(t *testing.T) *stcFixture {
 	must(t, db.Unscoped().Where("hostid IN ?", stcHosts).Delete(&model.HyperDisk{}).Error)
 	must(t, db.Unscoped().Where("hostid IN ?", stcHosts).Delete(&model.StorageClusterDisk{}).Error)
 	must(t, db.Unscoped().Where("hostid IN ?", stcHosts).Delete(&model.StorageClusterNode{}).Error)
+	// The worker would run cleanups an earlier test left on the hosts
+	must(t, db.Unscoped().Where("hostid IN ?", stcHosts).Delete(&model.StoragePendingCleanup{}).Error)
 	for i, h := range stcHosts {
 		must(t, db.Create(&model.Hyper{Hostid: h, Hostname: fmt.Sprintf("stc-h%d", i+1), Status: 1, HostIP: fmt.Sprintf("10.93.0.%d", i+1)}).Error)
 	}

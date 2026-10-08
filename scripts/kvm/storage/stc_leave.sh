@@ -37,6 +37,12 @@ function stc_main()
             continue
         fi
         path=$identity_path
+        # A host that missed the leave runs it when it is back: a disk a local pool took since is not the cluster's
+        disk_tags $path
+        if [ -n "$tag_pool" ]; then
+            echo "not wiping $id ($path): it holds CloudLand pool $tag_pool now"
+            continue
+        fi
         lsblk -nro MOUNTPOINT $path | grep -q . && stc_fail "$id ($path) has something mounted"
         stc_progress 50 "wiping $id ($path)"
         wipe_disk $path || stc_fail "wiping $id ($path) failed"

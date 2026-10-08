@@ -57,13 +57,22 @@ function backend_disks_resolved()
 # backend_leave <cluster uuid> <purge true|false>: what is left of GPFS on a host whose cluster is deleted
 function backend_leave()
 {
-    local uuid=$1 purge=$2
+    local uuid=$1 purge=$2 m
     # A host that never joined (its deployment stopped at the precheck) may run the GPFS of somebody else: the
     # daemon, the cluster configuration and the packages are left alone. The join step writes the mark first
     if [ ! -f $run_dir/storage/$uuid/member ]; then
         echo "this host never joined storage cluster $uuid: its GPFS is left alone"
         return 0
     fi
+    # A host that missed the leave (offline when the cluster was deleted) runs it when it is back. A host is in one
+    # GPFS cluster: if it is in another of CloudLand's by then, its daemon and configuration are that one's
+    for m in $run_dir/storage/*/member; do
+        [ "$m" = "$run_dir/storage/$uuid/member" ] && continue
+        if [ "$(cat $m 2>/dev/null)" = gpfs ]; then
+            echo "this host is in GPFS storage cluster $(basename $(dirname $m)) now: its GPFS is left alone"
+            return 0
+        fi
+    done
     if pgrep -x mmfsd >/dev/null; then
         $gpfs_bin/mmshutdown >/dev/null 2>&1 || pkill -x mmfsd
     fi

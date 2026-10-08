@@ -112,6 +112,14 @@ func TestStorageGPFSDeployPG(t *testing.T) {
 	}
 
 	sent := f.expect("precheck", "stc_precheck.sh", h...)
+	// Local disks of the replica layout: none of them is taken for a shared LUN
+	for _, s := range sent {
+		for _, d := range s.input["disks"].([]interface{}) {
+			if _, shared := d.(map[string]interface{})["shared"]; shared {
+				t.Fatalf("precheck on %d: a local disk marked shared: %v", s.hostid, d)
+			}
+		}
+	}
 	succeed(sent, precheckResult("ubuntu 26.04"))
 	f.wantTask(task.ID, model.StorageTaskFailed, "has no packages")
 	must(t, RetryStorageTask(ctx, task.ID))

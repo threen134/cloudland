@@ -215,8 +215,10 @@ type StorageClusterResponse struct {
 	// What the layout is made of, the keys the kind's own (gpfs ece: code, no_slot_map, recovery_group, vdisk_set,
 	// node_class; shared-storage-design.md §7.9); absent when the layout has nothing to show
 	LayoutInfo map[string]interface{} `json:"layout_info,omitempty"`
-	Status     string                 `json:"status"`
-	Health     string                 `json:"health"`
+	// Made in the test layout of its kind: one copy of the data (shared-storage-design.md §6.3)
+	TestLayout bool   `json:"test_layout,omitempty"`
+	Status     string `json:"status"`
+	Health     string `json:"health"`
 	// Detail only: the last health report and the alarms it raised
 	HealthInfo *StorageClusterHealthResponse `json:"health_info,omitempty"`
 	Version    string                        `json:"version,omitempty"`
@@ -602,6 +604,7 @@ func storageClusterResponse(ctx context.Context, cluster *model.StorageCluster, 
 		Kind: cluster.Kind, Mode: cluster.Mode, Layout: cluster.Layout, Status: cluster.Status, Health: cluster.Health,
 		Version: cluster.Version, ClusterRef: cluster.ClusterRef, Unsupported: cluster.Unsupported, Description: cluster.Description,
 		Capabilities: services.StorageClusterCapabilities(cluster), LayoutInfo: services.StorageClusterLayoutInfo(cluster),
+		TestLayout: services.StorageClusterTestLayout(cluster),
 	}
 	if cluster.ActiveTask > 0 || cluster.ActivePoolTask > 0 {
 		uuids := storageClusterAdmin.TaskUUIDs(ctx, []int64{cluster.ActiveTask, cluster.ActivePoolTask})
