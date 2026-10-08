@@ -10,7 +10,6 @@ package apis
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -50,10 +49,14 @@ type SecurityGroupPayload struct {
 	IsDefault   bool           `json:"is_default" binding:"omitempty"`
 }
 
+// PATCH 是部分更新：三个字段都用指针，才分得清「没传」和「传了空值 / false」。
+// 原先 Name 是 required，详情页只改描述时不带 name，必定 400；IsDefault 是 bool，
+// 不传等于 false，于是对任何默认安全组（系统默认组、组织默认组、VPC native 组）
+// 做任何修改都会被判成「想取消默认」而 400。
 type SecurityGroupPatchPayload struct {
-	Name        string `json:"name" binding:"required,min=2,max=32"`
-	Description string `json:"description" binding:"omitempty,max=256"`
-	IsDefault   bool   `json:"is_default" binding:"omitempty"`
+	Name        *string `json:"name" binding:"omitempty,min=2,max=32"`
+	Description *string `json:"description" binding:"omitempty,max=256"`
+	IsDefault   *bool   `json:"is_default"`
 }
 
 // @Summary get a secgroup
@@ -68,10 +71,10 @@ type SecurityGroupPatchPayload struct {
 func (v *SecgroupAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Get secgroup %s", uuID)
+	logger.Ctx(ctx).Debugf("Get secgroup %s", uuID)
 	secgroup, err := secgroupAdmin.GetSecgroupByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get secgroup %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get secgroup %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid security group query", err)
 		return
 	}
@@ -80,7 +83,7 @@ func (v *SecgroupAPI) Get(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Get secgroup successfully, %s, %+v", uuID, secgroupResp)
+	logger.Ctx(ctx).Debugf("Get secgroup successfully, %s, %+v", uuID, secgroupResp)
 	c.JSON(http.StatusOK, secgroupResp)
 }
 
@@ -97,29 +100,30 @@ func (v *SecgroupAPI) Get(c *gin.Context) {
 func (v *SecgroupAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Patch secgroup %s", uuID)
+	logger.Ctx(ctx).Debugf("Patch secgroup %s", uuID)
 	secgroup, err := secgroupAdmin.GetSecgroupByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get secgroup %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get secgroup %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid security group query", err)
 		return
 	}
 	payload := &SecurityGroupPatchPayload{}
 	err = c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind json, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind json, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Patching secgroup %s with %+v", uuID, payload)
-	if payload.IsDefault == false && secgroup.IsDefault {
-		logger.Errorf("Not allowed to patch default security group to false")
+	logger.Ctx(ctx).Debugf("Patching secgroup %s with %+v", uuID, payload)
+	// 只有显式传 is_default=false 才是「想取消默认」，不传就是没打算动它
+	if payload.IsDefault != nil && !*payload.IsDefault && secgroup.IsDefault {
+		logger.Ctx(ctx).Errorf("Not allowed to patch default security group to false")
 		ErrorResponse(c, http.StatusBadRequest, "Not allowed to patch default security group to false", err)
 		return
 	}
 	err = secgroupAdmin.Update(ctx, secgroup, payload.Name, payload.Description, payload.IsDefault)
 	if err != nil {
-		logger.Errorf("Failed to patch secgroup %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to patch secgroup %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch security group failed", err)
 		return
 	}
@@ -128,7 +132,7 @@ func (v *SecgroupAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Patch secgroup successfully, %s, %+v", uuID, secgroupResp)
+	logger.Ctx(ctx).Debugf("Patch secgroup successfully, %s, %+v", uuID, secgroupResp)
 	c.JSON(http.StatusOK, secgroupResp)
 }
 
@@ -144,16 +148,16 @@ func (v *SecgroupAPI) Patch(c *gin.Context) {
 func (v *SecgroupAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Delete secgroup %s", uuID)
+	logger.Ctx(ctx).Debugf("Delete secgroup %s", uuID)
 	secgroup, err := secgroupAdmin.GetSecgroupByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get secgroup %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get secgroup %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
 	err = secgroupAdmin.Delete(ctx, secgroup)
 	if err != nil {
-		logger.Errorf("Failed to delete secgroup %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to delete secgroup %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to delete", err)
 		return
 	}
@@ -171,28 +175,29 @@ func (v *SecgroupAPI) Delete(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /security_groups [post]
 func (v *SecgroupAPI) Create(c *gin.Context) {
-	logger.Debugf("Create secgroup")
+	logger.Ctx(c).Debugf("Create secgroup")
 	ctx := c.Request.Context()
 	payload := &SecurityGroupPayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind json, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind json, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	logger.Debugf("Creating secgroup with %+v", payload)
+	logger.Ctx(ctx).Debugf("Creating secgroup with %+v", payload)
 	var router *model.Router
 	if payload.VPC != nil {
 		router, err = routerAdmin.GetRouter(ctx, payload.VPC)
 		if err != nil {
-			logger.Errorf("Failed to get vpc %+v, %+v", payload.VPC, err)
+			logger.Ctx(ctx).Errorf("Failed to get vpc %+v, %+v", payload.VPC, err)
 			ErrorResponse(c, http.StatusBadRequest, "Failed to get vpc", err)
 			return
 		}
 	}
-	secgroup, err := secgroupAdmin.Create(ctx, payload.Name, payload.Description, payload.IsDefault, router)
+	// 用户创建的安全组不预置对全网开放的 SSH/RDP（withLoginRules=false），即使勾选了默认
+	secgroup, err := secgroupAdmin.Create(ctx, payload.Name, payload.Description, payload.IsDefault, false, router)
 	if err != nil {
-		logger.Errorf("Failed to create secgroup %+v, %+v", payload, err)
+		logger.Ctx(ctx).Errorf("Failed to create secgroup %+v, %+v", payload, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
 		return
 	}
@@ -201,7 +206,7 @@ func (v *SecgroupAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Create secgroup successfully, %+v", secgroupResp)
+	logger.Ctx(ctx).Debugf("Create secgroup successfully, %+v", secgroupResp)
 	c.JSON(http.StatusOK, secgroupResp)
 }
 
@@ -226,7 +231,7 @@ func (v *SecgroupAPI) getSecgroupResponse(ctx context.Context, secgroup *model.S
 	}
 	_, secrules, rulesErr := secruleAdmin.List(ctx, 0, -1, "-created_at", secgroup)
 	if rulesErr != nil {
-		logger.Errorf("Failed to load rules for secgroup %s: %v", secgroup.UUID, rulesErr)
+		logger.Ctx(ctx).Errorf("Failed to load rules for secgroup %s: %v", secgroup.UUID, rulesErr)
 	} else {
 		for _, rule := range secrules {
 			ruleResp, _ := secruleAPI.getSecruleResponse(ctx, rule)
@@ -284,44 +289,45 @@ func (v *SecgroupAPI) List(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
 	vpcID := strings.TrimSpace(c.DefaultQuery("vpc_id", ""))
-	logger.Debugf("List secgroups with offset %s, limit %s, query %s, vpc_id %s", offsetStr, limitStr, queryStr, vpcID)
+	var routerID int64
+	logger.Ctx(ctx).Debugf("List secgroups with offset %s, limit %s, query %s, vpc_id %s", offsetStr, limitStr, queryStr, vpcID)
 
 	if vpcID != "" {
-		logger.Debugf("Filtering secgroups by VPC ID: %s", vpcID)
+		logger.Ctx(ctx).Debugf("Filtering secgroups by VPC ID: %s", vpcID)
 		var router *model.Router
 		router, err := routerAdmin.GetRouterByUUID(ctx, vpcID)
 		if err != nil {
-			logger.Errorf("Invalid query vpc_id: %s, %+v", vpcID, err)
+			logger.Ctx(ctx).Errorf("Invalid query vpc_id: %s, %+v", vpcID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid query router by vpc_id UUID: "+vpcID, err)
 			return
 		}
 
-		logger.Debugf("The router with vpc_id: %+v\n", router)
-		logger.Debugf("The router_id in vpc is: %d", router.ID)
-		queryStr = fmt.Sprintf("router_id = %d", router.ID)
+		logger.Ctx(ctx).Debugf("The router with vpc_id: %+v\n", router)
+		logger.Ctx(ctx).Debugf("The router_id in vpc is: %d", router.ID)
+		routerID = router.ID
 	}
 
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		logger.Errorf("Invalid query offset: %s, %+v", offsetStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query offset: %s, %+v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
 		return
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("Invalid query limit: %s, %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid query limit: %s, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
 	if offset < 0 || limit < 0 {
 		errStr := "Invalid query offset or limit, cannot be negative"
-		logger.Errorf(errStr)
+		logger.Ctx(ctx).Errorf(errStr)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
 		return
 	}
-	total, secgroups, err := secgroupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	total, secgroups, err := secgroupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, routerID)
 	if err != nil {
-		logger.Errorf("Failed to list secgroups, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to list secgroups, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list secgroups", err)
 		return
 	}
@@ -338,6 +344,6 @@ func (v *SecgroupAPI) List(c *gin.Context) {
 			return
 		}
 	}
-	logger.Debugf("List secgroups successfully, %+v", secgroupListResp)
+	logger.Ctx(ctx).Debugf("List secgroups successfully, %+v", secgroupListResp)
 	c.JSON(http.StatusOK, secgroupListResp)
 }

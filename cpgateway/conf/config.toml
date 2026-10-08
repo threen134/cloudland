@@ -1,0 +1,64 @@
+[server]
+listen_addr = "0.0.0.0"
+listen_port = 8000
+# debug = false
+
+[db]
+type = "postgres"
+# uri = "host=localhost user=cland password=cland dbname=cpgateway sslmode=disable"
+# idle = 5
+# open = 50
+# lifetime = 30
+# debug = false
+
+[auth]
+rsa_private_key_path = "keys/private.pem"
+rsa_public_key_path = "keys/public.pem"
+secret_key = "change-me-to-a-random-string"
+access_token_expire_minutes = 120
+activation_token_expire_hours = 24
+
+[proxy]
+timeout_seconds = 30
+backend_request_timeout = 10
+backend_api_suffix = "/api/v1"
+
+[smtp]
+# host = ""
+# port = 587
+# tls = true
+# user = ""
+# password = ""
+# from = ""
+# from_name = "CloudLand"
+
+[quota.defaults]
+cpu_cores = 4.0
+ram_gb = 8.0
+public_ips = 2
+vpcs = 5
+load_balancers = 5
+images = 10
+vpn_gateways = 1
+disk_gb = 50.0
+
+[heartbeat]
+interval = 60
+timeout = 5
+offline_threshold = 3
+
+[superuser]
+email = "admin@cloudland.io"
+username = "admin"
+password = "changeme"
+
+[frontend]
+url = "http://localhost:5173"
+
+# Config values below are only fallbacks: system settings stored in the DB take precedence.
+[dns]
+upstream = "8.8.8.8"
+
+[feishu]
+# webhook_url = ""
+# secret = ""

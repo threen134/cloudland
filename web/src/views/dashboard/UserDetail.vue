@@ -4,10 +4,17 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { usersApi, type User } from '../../api/users'
-import { ArrowLeft, User as UserIcon, Trash2, Mail, Shield, AlertTriangle } from 'lucide-vue-next'
+import { ArrowLeft, User as UserIcon, Trash2, Mail, Shield, Check, Copy } from 'lucide-vue-next'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import StatusBadge from '../../components/base/StatusBadge.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import { useGoBack } from '../../composables/useGoBack'
+import { useCopyId } from '../../composables/useCopyId'
+import { formatDateTime } from '../../utils/format'
 
 const { t } = useI18n()
 const toast = useToast()
+const { copiedId, copyId } = useCopyId()
 const route = useRoute()
 const router = useRouter()
 const userId = route.params.id as string
@@ -21,8 +28,7 @@ const fetchUser = async () => {
     loading.value = true
     error.value = ''
     try {
-        const response = await usersApi.getUser(userId)
-        user.value = response.data as any
+        user.value = await usersApi.getUser(userId)
     } catch (err) {
         console.error('Failed to fetch user:', err)
         error.value = t('dashboard.userDetail.loadError')
@@ -31,30 +37,35 @@ const fetchUser = async () => {
     }
 }
 
-const handleDelete = async () => {
-    if (!confirm(t('dashboard.userDetail.deleteConfirm'))) return
-    
+// --- Delete Confirmation Modal ---
+const deleteModalVisible = ref(false)
+const deleteError = ref('')
+
+const handleDeleteClick = () => {
+    deleteModalVisible.value = true
+}
+
+const closeDeleteModal = () => {
+    deleteModalVisible.value = false
+    deleteError.value = ''
+}
+
+const confirmDelete = async () => {
     deleting.value = true
+    deleteError.value = ''
     try {
         await usersApi.deleteUser(userId)
         toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'users' })
     } catch (err) {
         console.error('Failed to delete user:', err)
-        alert(t('dashboard.userDetail.deleteFailed'))
+        deleteError.value = t('dashboard.userDetail.deleteFailed')
+    } finally {
         deleting.value = false
     }
 }
 
-const goBack = () => {
-    router.back()
-}
-
-const getStatusClass = (status: string) => {
-    if (status === 'active') return 'status-success'
-    if (status === 'disabled') return 'status-danger'
-    return 'status-warning'
-}
+const goBack = useGoBack('users')
 
 onMounted(fetchUser)
 </script>
@@ -78,22 +89,37 @@ onMounted(fetchUser)
 
         <div v-else-if="user" class="detail-content">
             <!-- Title Bar -->
-            <div class="title-bar card">
-                <div class="resource-icon">
-                    <UserIcon :size="32" />
-                </div>
+            <div class="title-bar">
                 <div class="title-info">
-                    <h1>{{ user.username || user.name || $t('dashboard.userDetail.unknownUser') }}</h1>
-                    <div class="subtitle">
-                        <span class="id-text">{{ user.uuid }}</span>
-                        <span :class="['status-badge', getStatusClass(user.status || 'active')]">
-                            {{ $t('userStatus.' + (user.status || 'active')) }}
-                        </span>
+                    <div class="title-icon">
+                        <UserIcon :size="20" />
+                    </div>
+                    <div>
+                        <h2 class="resource-title">
+                            {{ user.username || $t('dashboard.userDetail.unknownUser') }}
+                            <StatusBadge
+                                :status="user.status || 'active'"
+                                :label="$t('userStatus.' + (user.status || 'active'))"
+                            />
+                        </h2>
+                        <div class="resource-id-row">
+                            <span class="resource-id-text">{{ user.uuid }}</span>
+                            <button
+                                class="copy-btn"
+                                :title="$t('actions.copy')"
+                                :aria-label="$t('actions.copy')"
+                                @click="copyId(user.uuid)"
+                            >
+                                <Check v-if="copiedId === user.uuid" :size="12" class="copied-icon" />
+                                <Copy v-else :size="12" />
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="title-actions">
-                    <button class="btn btn-danger" @click="handleDelete" :disabled="deleting">
-                        <Trash2 :size="16" /> {{ deleting ? $t('dashboard.userDetail.deleting') : $t('dashboard.userDetail.deleteUser') }}
+                    <button class="btn btn-danger-outline btn-sm" @click="handleDeleteClick" :disabled="deleting">
+                        <Trash2 :size="14" />
+                        {{ deleting ? $t('dashboard.userDetail.deleting') : $t('dashboard.userDetail.deleteUser') }}
                     </button>
                 </div>
             </div>
@@ -104,116 +130,54 @@ onMounted(fetchUser)
                 <div class="card info-card">
                     <h3>{{ $t('dashboard.userDetail.generalInfo') }}</h3>
                     <div class="key-value-list">
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.userDetail.username') }}</span>
-                            <span class="value">{{ user.username || user.name }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label"><Mail :size="14" /> {{ $t('dashboard.userDetail.email') }}</span>
-                            <span class="value">{{ user.email || '-' }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label"><Shield :size="14" /> {{ $t('dashboard.userDetail.role') }}</span>
-                            <span class="value">{{ user.role || 'Member' }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.userDetail.createdAt') }}</span>
-                            <span class="value">{{ user.created_at || '-' }}</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Organization Info -->
-                 <div class="card info-card">
-                    <h3>{{ $t('dashboard.userDetail.organization') }}</h3>
-                     <div class="key-value-list">
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.userDetail.orgUuid') }}</span>
-                            <span class="value mono">{{ user.org?.uuid || '-' }}</span>
-                        </div>
-                         <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.userDetail.orgName') }}</span>
-                            <span class="value">{{ user.org?.name || '-' }}</span>
-                        </div>
+                        <InfoRow :label="$t('dashboard.userDetail.username')">{{ user.username }}</InfoRow>
+                        <InfoRow :label="$t('dashboard.userDetail.email')">
+                            <template #label><Mail :size="14" /> {{ $t('dashboard.userDetail.email') }}</template>
+                            {{ user.email || '-' }}
+                        </InfoRow>
+                        <!-- 接口（cpgateway 的 userOut）只返回系统角色，不返回任何组织内角色；
+                             原先这里写 user.role，该字段从不存在，永远显示回退值 Member -->
+                        <InfoRow :label="$t('dashboard.userDetail.systemRole')">
+                            <template #label
+                                ><Shield :size="14" /> {{ $t('dashboard.userDetail.systemRole') }}</template
+                            >
+                            {{ user.is_superuser ? $t('roles.superuser') : $t('roles.member') }}
+                        </InfoRow>
+                        <InfoRow :label="$t('dashboard.userDetail.language')">{{ user.language || '-' }}</InfoRow>
+                        <InfoRow :label="$t('dashboard.userDetail.createdAt')">{{
+                            formatDateTime(user.created_at)
+                        }}</InfoRow>
                     </div>
                 </div>
             </div>
         </div>
+
+        <DeleteModal
+            :show="deleteModalVisible"
+            :message="$t('dashboard.userDetail.deleteConfirm')"
+            :resource-name="user?.username"
+            :resource-id="user?.uuid"
+            :loading="deleting"
+            :error="deleteError"
+            @close="closeDeleteModal"
+            @confirm="confirmDelete"
+        />
     </div>
 </template>
 
 <style scoped>
-.detail-page {
-    max-width: 1200px;
-    margin: 0 auto;
-}
-
 .detail-header {
     margin-bottom: var(--spacing-4);
 }
 
-.loading-container, .error-container {
+.loading-container,
+.error-container {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: 60px;
 }
-
-/* Title Bar */
-.title-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-    padding: var(--spacing-6);
-    margin-bottom: var(--spacing-6);
-}
-
-.resource-icon {
-    width: 64px;
-    height: 64px;
-    background: var(--bg-tertiary);
-    color: var(--primary-color);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.title-info {
-    flex: 1;
-}
-
-.title-info h1 {
-    font-size: var(--font-size-xl);
-    font-weight: 600;
-    margin: 0 0 4px 0;
-    color: var(--text-primary);
-}
-
-.subtitle {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    font-size: var(--font-size-sm);
-}
-
-.id-text {
-    font-family: var(--font-family-mono);
-    color: var(--text-secondary);
-}
-
-.status-badge {
-    display: inline-flex;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-}
-
-.status-success { background: var(--success-50); color: var(--success-700); }
-.status-warning { background: var(--warning-50); color: var(--warning-700); }
 
 /* Info Grid */
 .info-grid {
@@ -228,7 +192,7 @@ onMounted(fetchUser)
 }
 
 .info-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-primary);
@@ -241,42 +205,4 @@ onMounted(fetchUser)
     flex-direction: column;
     gap: var(--spacing-3);
 }
-
-.kv-item {
-    display: flex;
-    justify-content: space-between;
-    font-size: var(--font-size-sm);
-}
-
-.kv-item .label {
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.kv-item .value {
-    color: var(--text-primary);
-    font-weight: 500;
-}
-
-.value.mono {
-    font-family: var(--font-family-mono);
-}
-
-.btn-danger {
-    background: var(--error-color);
-    color: white;
-    border: none;
-    padding: 8px 20px;
-    border-radius: var(--radius-md);
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-medium);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--spacing-2);
-}
-.btn-danger:hover { background: var(--error-dark); }
-.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

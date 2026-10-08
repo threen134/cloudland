@@ -38,7 +38,7 @@ docker compose logs -f clapi
 # 查看网关及认证日志
 docker compose logs -f cpgateway
 
-# 查看主控 SCI 通信日志
+# 查看主控 cland-go 日志（计算节点接入、命令分发）
 docker compose logs -f cloudland
 ```
 
@@ -80,7 +80,7 @@ cat volumes/host.list
 **症状**: Web 界面主机状态长时间为 `Offline`。
 **解决**:
 - **Host 模式确认**: 确保 `cloudland-cland` 容器运行在 `network_mode: host`。
-- **端口检查**: 在控制节点执行 `ss -tlnp | grep 9988` 确认 SCI 监听端口已开启。
+- **端口检查**: 在控制节点执行 `ss -tlnp | grep 5006` 确认 cland-go 的 gRPC 端口已监听。
 - **IP 连通性**: 在计算节点尝试 `ping <CONTROL_IP>`，并确认无防火墙拦截。
 
 ---
@@ -150,6 +150,56 @@ journalctl -u keepalived -f
 ssh -o BatchMode=yes root@<对端IP> true
 ```
 
+### 8. VPN 网关排查
+
+网关的进程与配置在承载它的两个计算节点上，目录是 `/opt/cloudland/cache/router/router-<N>/vpn-<网关 ID>/`（下称 `<vpn_dir>`，`router-<N>` 是 VPC 路由器的网络命名空间）。
+
+```bash
+# 1. IPsec 隧道（在主节点上；双活网关两个节点都要看）
+ip netns exec router-<N> swanctl --list-sas --uri unix://<vpn_dir>/run/charon.vici
+tail -n 100 <vpn_dir>/charon.log
+
+# 2. BGP / BFD 会话
+vtysh -N vpn-<网关 ID> -c 'show bgp summary'
+vtysh -N vpn-<网关 ID> -c 'show bfd peers'
+
+# 3. 主备切换过程（每次角色变化记分步时间戳，正常 2 秒内从 master start 走到 done）
+tail -n 50 <vpn_dir>/notify.log
+
+# 4. 莫名的 Permission denied：多半是 AppArmor
+journalctl -k | grep DENIED
+```
+
+- **VPN 相关接口返回 503**：控制节点 `.env` 里没有 `VPN_SECRET_KEY`，或者被换过（已保存的凭据解不开）。
+- **网关一直「创建中」**：可用区里只有一个可用节点，备节点放不下。
+- **流量曲线没有数据**：先看 Prometheus 目标里计算节点的 node_exporter 是否 up（`curl http://<INTERNAL_IP>:9090/api/v1/targets`）。
+- **模拟断网测试切换**：用 `tc qdisc add dev <公网网卡> root netem loss 100%`，不要用 iptables。iptables 拦不住 ARP，被隔离的节点继续回应公网地址，测出来的切换时间是假的。
+
+### 9. 中转网关排查
+
+中转网关在每台承载成员 VPC 云服务器的计算节点上都有一份：网络命名空间 `tgw-<网关 ID>`，以及每个成员 VPC 路由器 `router-<N>` 里的一条 veth `tr-<挂载 ID>`（对端 `ta-<挂载 ID>` 在 `tgw-<网关 ID>` 里）。节点按 `/opt/cloudland/cache/tgw/<网关 ID>/state.json`（上一次应用成功的状态）对账，收到过的最大代次在同目录 `generation`（比它小的状态会被丢弃；网关清空后这个文件保留）。
+
+```bash
+# 1. 网关侧：每个挂载一条 iif 规则，每张路由表一张内核表（1000 + 序号），末尾 blackhole default
+ip netns exec tgw-<ID> ip rule
+ip netns exec tgw-<ID> ip route show table all | grep -v ' table local'
+
+# 2. VPC 路由器侧：pref 100 的规则、表 252（tgw）、nonat 里中转网关加的条目
+ip netns exec router-<N> ip rule
+ip netns exec router-<N> ip route show table 252
+cat /opt/cloudland/cache/router/router-<N>/tgw.owner /opt/cloudland/cache/router/router-<N>/tgw.nonat
+
+# 3. 节点回报（需要先 touch /opt/cloudland/run/debug）
+grep apply_tgw /opt/cloudland/log/script.log | tail
+```
+
+- **挂载一直「挂载中」**：中转网关详情的节点列表里看哪台是 pending；那台节点上 `scripts/kvm/apply_tgw.sh` 是否存在、有没有可执行位，cloudlet 是否在线。clapi 会自动重发没确认的节点（日志 `Sending generation N of transit gateway <ID> again to nodes [...]`，1 分钟起逐次加倍、最长 10 分钟）。
+- **节点一直「退出中」**：节点离开网关后要回报应用了空状态才删掉这一行；节点离线时一直是退出中，回来后自动重发（日志 `Sending the empty state of transit gateway ...`）。
+- **节点报 `router busy` / `router not available`**：路由器锁（`/opt/cloudland/run/lock/router-<N>.lock`）被别的脚本长时间占着，`fuser` 看是谁；释放后等自动重发即可。
+- **路由器里 `ip rule` 有一条比 100 更小的浮动 IP 规则**：浮动 IP 规则必须带 `pref 32000`（`cloudrc` 的 `fip_rule_pref`）。旧脚本不带优先级加规则时，内核分配「第一条非 local 规则的优先级减一」，即 99，会把跨 VPC 流量拐进浮动 IP 表。
+- **计算节点上多出别的 VPC 的路由器**：正常，见使用指南；`clear_local_router.sh` 看到 `tr-*` 会保留路由器（日志 `kept, used by transit gateway attachment`）。
+- **手工恢复**：`POST /api/v1/transit_gateways/<id>/resync` 把当前状态重新发给所有节点，同时重发成员云服务器的转发条目。
+
 ---
 
 ## 性能与维护建议
@@ -158,6 +208,7 @@ ssh -o BatchMode=yes root@<对端IP> true
 - **备份**:
   - **核心数据库**: 建议定期执行 `pg_dump` 备份 `cloudland` 和 `cloudland_cpgateway` 数据库。
   - **SSH 密钥**: 备份 `/opt/cloudland/deploy/.ssh` 目录，这是控制计算节点的唯一凭证。
+  - **`.env`**: 备份 `deploy/docker/.env`。其中的 `VPN_SECRET_KEY` 要和数据库备份配套保存：只恢复数据库而密钥不对时，VPN 凭据全部解不开。
   - **SSL 证书**: 备份 `volumes/certs/` 目录，更换节点时可复用。
 - **升级**:
   1. 执行 `git pull` 拉取代码。

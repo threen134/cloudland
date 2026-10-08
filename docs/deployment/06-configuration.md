@@ -44,6 +44,8 @@ CloudLand 采用分层配置策略。对于容器化部署，大部分关键参�
 | `CPGATEWAY_SECRET_KEY` | 认证密钥，用于 Gateway 与 API 之间的可信验证。 | `RANDOM_STRING_HERE` |
 | `ADMIN_PASSWORD` | 系统初始管理员 `admin` 的密码。 | `AgFFTFV8AzK4FG0` |
 | `ADMIN_EMAIL` | 管理员邮箱地址。 | `admin@local.com` |
+| `CAPTURE_UPLOAD_SECRET` | 从虚拟机创建镜像时，计算节点把镜像上传回 clapi 所用凭证的签名密钥（启用 S3 时必需）。留空时部署脚本自动生成，HA 备节点沿用主节点的值。 | `openssl rand -hex 32` |
+| `VPN_SECRET_KEY` | VPN 网关凭据（站点连接的预共享密钥、BGP 口令，网关与客户端的 WireGuard 密钥）存库时的加密密钥。留空时部署脚本自动生成，HA 备节点沿用主节点的值；未配置时 VPN 相关接口返回 503。**生成后不要更换、要随数据库一起备份**：换掉或丢失后，已保存的凭据全部解不开，只能逐条重新填写。 | `openssl rand -hex 32` |
 
 ### 5. 通知与邮件
 | 变量名 | 说明 | 示例 |
@@ -78,8 +80,6 @@ CloudLand 采用分层配置策略。对于容器化部署，大部分关键参�
 | :--- | :--- | :--- |
 | `CLAPI_SD_ENDPOINT` | Prometheus http_sd 服务发现地址。 | `https://clapi:8255` |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana 管理员密码。 | `admin` |
-| `SLACK_WEBHOOK_URL` | Slack 告警 Webhook（可选）。 | `https://hooks.slack.com/...` |
-| `SLACK_CHANNEL` | Slack 告警频道。 | `#cloudland-alerts` |
 
 ---
 

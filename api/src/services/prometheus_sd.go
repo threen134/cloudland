@@ -14,8 +14,12 @@ type SDTarget struct {
 }
 
 // GetPrometheusTargets queries all hypers and returns target groups
-// for the specified exporter type ("libvirt_exporter" or "node_exporter").
+// for the specified exporter type ("libvirt_exporter", "node_exporter" or "storage").
 func GetPrometheusTargets(exporterType string) ([]SDTarget, error) {
+	if exporterType == "storage" {
+		// The storage clusters scraped besides the node_exporter of their hosts (the Ceph mgrs)
+		return StorageScrapeTargets()
+	}
 	db := dbs.DB()
 	var hypers []*model.Hyper
 	if err := db.Where("host_ip != '' AND hostid >= 0").Find(&hypers).Error; err != nil {

@@ -1,17 +1,17 @@
+import { STORAGE_KEYS } from '../utils/storage'
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { authApi } from '../api/auth'
-import { setAuthToken, beginTokenSwitch } from '../api/client'
+import { authApi, type UserOrgItem } from '../api/auth'
+import { setAuthToken, beginTokenSwitch, decodeTokenClaims, getToken } from '../api/client'
 import { useAuthStore } from './auth'
+import { errorMessage } from '../utils/error'
 
-export interface Organization {
+/**
+ * GET /auth/me/orgs 返回的 UserOrgItem 加上一个前端补出来的 id（= uuid）。
+ * 原来是 Partial + [key: string]: any 的松散结构，这里直接沿用接口类型。
+ */
+export interface Organization extends UserOrgItem {
     id: string
-    name: string
-    slug?: string
-    org_role?: number
-    is_owner?: boolean
-    is_current?: boolean
-    [key: string]: any
 }
 
 export const useTenantStore = defineStore('tenant', () => {
@@ -23,12 +23,12 @@ export const useTenantStore = defineStore('tenant', () => {
 
     // Current organization computed property
     const currentOrg = computed(() => {
-        return organizations.value.find(org => org.id === currentOrgId.value) || null
+        return organizations.value.find((org) => org.id === currentOrgId.value) || null
     })
 
     // Initialize from localStorage
     const init = () => {
-        const storedOrgId = localStorage.getItem('cloudland_org_id')
+        const storedOrgId = localStorage.getItem(STORAGE_KEYS.orgId)
         if (storedOrgId) {
             currentOrgId.value = storedOrgId
         }
@@ -40,24 +40,32 @@ export const useTenantStore = defineStore('tenant', () => {
         error.value = null
 
         try {
-            const response = await authApi.getMyOrgs()
-            const raw = Array.isArray(response.data) ? response.data : (response.data?.orgs || [])
+            // GET /auth/me/orgs 直接返回数组（cpgateway 的 GetMyOrgs）
+            const raw = await authApi.getMyOrgs()
             // Backend returns uuid as the identifier
-            organizations.value = raw.map((o: any) => ({
+            organizations.value = raw.map((o) => ({
                 ...o,
-                id: o.uuid || o.id,
+                id: o.uuid,
             }))
 
             // Ensure we have an org selected and a scoped token
             if (organizations.value.length > 0) {
-                const targetOrgId = currentOrgId.value && organizations.value.some(o => o.id === currentOrgId.value)
-                    ? currentOrgId.value
-                    : organizations.value[0].id
-                await switchOrg(targetOrgId)
+                const targetOrgId =
+                    currentOrgId.value && organizations.value.some((o) => o.id === currentOrgId.value)
+                        ? currentOrgId.value
+                        : organizations.value[0].id
+                // Switching issues a new token and revokes the current one: only do it when the token is not
+                // scoped to that org yet, so reloading a page does not invalidate the tokens of other windows
+                if (decodeTokenClaims(getToken())?.org_id === targetOrgId) {
+                    currentOrgId.value = targetOrgId
+                    localStorage.setItem(STORAGE_KEYS.orgId, targetOrgId)
+                } else {
+                    await switchOrg(targetOrgId)
+                }
             }
-        } catch (err: any) {
+        } catch (err) {
             console.warn('Failed to fetch organizations:', err)
-            error.value = err.message
+            error.value = errorMessage(err, 'Failed to fetch organizations')
         } finally {
             isLoading.value = false
         }
@@ -72,14 +80,14 @@ export const useTenantStore = defineStore('tenant', () => {
 
         try {
             const response = await authApi.switchOrg(orgId)
-            const newToken = response.data?.access_token
+            const newToken = response?.access_token
             if (newToken) {
                 setAuthToken(newToken)
             }
-            localStorage.setItem('cloudland_org_id', orgId)
-        } catch (err: any) {
+            localStorage.setItem(STORAGE_KEYS.orgId, orgId)
+        } catch (err) {
             console.error('Failed to switch org:', err)
-            error.value = err.message
+            error.value = errorMessage(err, 'Failed to switch org')
             isSwitching.value = false
             throw err
         } finally {
@@ -106,14 +114,14 @@ export const useTenantStore = defineStore('tenant', () => {
     // Set current organization (local only, no API call)
     const setCurrentOrg = (orgId: string) => {
         currentOrgId.value = orgId
-        localStorage.setItem('cloudland_org_id', orgId)
+        localStorage.setItem(STORAGE_KEYS.orgId, orgId)
     }
 
     // Clear tenant state (on logout)
     const clear = () => {
         organizations.value = []
         currentOrgId.value = null
-        localStorage.removeItem('cloudland_org_id')
+        localStorage.removeItem(STORAGE_KEYS.orgId)
     }
 
     // Initialize on store creation
@@ -129,6 +137,6 @@ export const useTenantStore = defineStore('tenant', () => {
         fetchOrganizations,
         switchOrg,
         setCurrentOrg,
-        clear
+        clear,
     }
 })

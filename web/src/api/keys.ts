@@ -1,13 +1,22 @@
 import client from './client'
 
+// 对应 api/src/apis/key.go 的 KeyResponse（内嵌 common.ResourceReference）
 export interface SSHKey {
     id: string
     name: string
-    finger_print?: string
-    public_key?: string
-    type?: string
+    owner?: string
+    owner_uuid?: string
     created_at?: string
-    [key: string]: any
+    updated_at?: string
+    finger_print: string
+    public_key: string
+}
+
+export interface KeyListResponse {
+    offset: number
+    total: number
+    limit: number
+    keys: SSHKey[]
 }
 
 export interface CreateKeyPayload {
@@ -16,23 +25,32 @@ export interface CreateKeyPayload {
 }
 
 export const keysApi = {
-    // List keys
-    fetchKeys() {
-        return client.get('/keys')
+    // List keys（分页与搜索都在服务端做）
+    async fetchKeys(params?: {
+        offset?: number
+        limit?: number
+        order?: string
+        query?: string
+    }): Promise<KeyListResponse> {
+        const response = await client.get<KeyListResponse>('/keys', { params })
+        return response.data
     },
 
     // Get single key
-    getKey(id: string) {
-        return client.get(`/keys/${id}`)
+    async getKey(id: string): Promise<SSHKey> {
+        const response = await client.get<SSHKey>(`/keys/${id}`)
+        return response.data
     },
 
     // Create key
-    createKey(payload: CreateKeyPayload) {
-        return client.post('/keys', payload)
+    async createKey(payload: CreateKeyPayload): Promise<SSHKey> {
+        const response = await client.post<SSHKey>('/keys', payload)
+        return response.data
     },
 
     // Delete key
-    deleteKey(id: string) {
-        return client.delete(`/keys/${id}`)
-    }
+    async deleteKey(id: string): Promise<void> {
+        const response = await client.delete<void>(`/keys/${id}`)
+        return response.data
+    },
 }

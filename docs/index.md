@@ -27,7 +27,7 @@ features:
   - title: 电信级可靠
     details: 内置自愈引擎与故障热迁移，确保业务在极端场景下依然持续可用。
   - title: 智能网络
-    details: 深度集成的 Open vSwitch 与 VPC 模型，支持动态安全组与高性能负载均衡。
+    details: 基于 Linux bridge 与 VXLAN 的 VPC 模型，支持动态安全组与高性能负载均衡。
   - title: 企业级多租户
     details: 严格的组织隔离与配额控制，满足私有云与混合云的复杂管理需求。
   - title: 开放性 API

@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { AlertTriangle, Search, ChevronDown, ChevronRight, CheckCircle, XCircle, RefreshCw, Check, Copy } from 'lucide-vue-next'
+import { BellRing, CheckCircle, XCircle, RefreshCw, Check, Copy } from 'lucide-vue-next'
 import { alarmEventsApi, type AlarmEvent, type AlarmDeliveryLog } from '../../api/alarmEvents'
 import { useCopyId } from '../../composables/useCopyId'
+import { formatDateTime } from '../../utils/format'
+import PageToolbar from '../../components/base/PageToolbar.vue'
+import DataTable, { type Column } from '../../components/base/DataTable.vue'
+import PaginationBar from '../../components/base/PaginationBar.vue'
 
 const { t } = useI18n()
 const events = ref<AlarmEvent[]>([])
@@ -16,28 +20,21 @@ const page = ref(1)
 const pageSize = ref(20)
 const statusFilter = ref('')
 const searchQuery = ref('')
-const expandedEvent = ref<string | null>(null)
 const deliveryLogs = ref<Record<string, AlarmDeliveryLog[]>>({})
 const loadingLogs = ref<string | null>(null)
-
-const filteredEvents = computed(() => {
-    if (!searchQuery.value) return events.value
-    const q = searchQuery.value.toLowerCase()
-    return events.value.filter(e =>
-        e.alert_name.toLowerCase().includes(q) ||
-        e.vm_name.toLowerCase().includes(q) ||
-        e.vm_uuid.toLowerCase().includes(q)
-    )
-})
 
 const fetchEvents = async () => {
     loading.value = true
     try {
-        const params: Record<string, any> = { page: page.value, page_size: pageSize.value }
+        const params: { status?: string; query?: string; page?: number; page_size?: number } = {
+            page: page.value,
+            page_size: pageSize.value,
+        }
         if (statusFilter.value) params.status = statusFilter.value
+        if (searchQuery.value.trim()) params.query = searchQuery.value.trim()
         const res = await alarmEventsApi.list(params)
-        events.value = res.data.events || []
-        total.value = res.data.total || 0
+        events.value = res.events || []
+        total.value = res.total || 0
     } catch (err) {
         console.error('Failed to fetch alarm events:', err)
         errorMsg.value = t('messages.error')
@@ -46,240 +43,244 @@ const fetchEvents = async () => {
     }
 }
 
-const toggleExpand = async (eventUuid: string) => {
-    if (expandedEvent.value === eventUuid) {
-        expandedEvent.value = null
-        return
-    }
-    expandedEvent.value = eventUuid
-    if (!deliveryLogs.value[eventUuid]) {
-        loadingLogs.value = eventUuid
-        try {
-            const res = await alarmEventsApi.getDeliveryLogs(eventUuid)
-            deliveryLogs.value[eventUuid] = res.data.delivery_logs || []
-        } catch (err) {
-            console.error('Failed to fetch delivery logs:', err)
-            deliveryLogs.value[eventUuid] = []
-        } finally {
-            loadingLogs.value = null
-        }
+// 展开某一条时才拉它的发送流水（展开态由 DataTable 维护）
+const loadDeliveryLogs = async (eventUuid: string) => {
+    if (deliveryLogs.value[eventUuid]) return
+    loadingLogs.value = eventUuid
+    try {
+        const res = await alarmEventsApi.getDeliveryLogs(eventUuid)
+        deliveryLogs.value[eventUuid] = res.delivery_logs || []
+    } catch (err) {
+        console.error('Failed to fetch delivery logs:', err)
+        deliveryLogs.value[eventUuid] = []
+    } finally {
+        loadingLogs.value = null
     }
 }
 
-const totalPages = computed(() => Math.ceil(total.value / pageSize.value))
-
-const prevPage = () => { if (page.value > 1) page.value-- }
-const nextPage = () => { if (page.value < totalPages.value) page.value++ }
-
-const formatTime = (ts: string | null) => {
-    if (!ts) return '-'
-    return new Date(ts).toLocaleString()
-}
+const columns = computed<Column[]>(() => [
+    { key: 'alert_name', label: t('dashboard.alarmAlertName') },
+    { key: 'vm', label: 'VM' },
+    { key: 'severity', label: t('dashboard.alarmSeverity') },
+    { key: 'status', label: t('dashboard.table.status') },
+    { key: 'fired_at', label: t('dashboard.alarmFiredAt') },
+    { key: 'last_fired_at', label: t('dashboard.alarmLastFired') },
+    { key: 'resolved_at', label: t('dashboard.alarmResolvedAt') },
+])
 
 const severityClass = (severity: string) => {
     switch (severity) {
-        case 'critical': return 'badge-critical'
-        case 'warning': return 'badge-warning'
-        default: return 'badge-info'
+        case 'critical':
+            return 'badge-critical'
+        case 'warning':
+            return 'badge-warning'
+        default:
+            return 'badge-info'
     }
 }
 
-watch([page, statusFilter], fetchEvents)
+watch([page, statusFilter], () => fetchEvents())
+watch(pageSize, () => {
+    if (page.value === 1) fetchEvents()
+    else page.value = 1
+})
+
+// 搜索走服务端（此前是在当前页的 20 条里前端过滤，翻页后就搜不到别的页了）。
+// 输入防抖 400ms，并回到第一页——换了搜索条件后停留在第 3 页没有意义
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(searchQuery, () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+        if (page.value === 1) fetchEvents()
+        else page.value = 1
+    }, 400)
+})
+onUnmounted(() => {
+    if (searchTimer) clearTimeout(searchTimer)
+})
+
 onMounted(fetchEvents)
 </script>
 
 <template>
     <div class="vpc-list-container">
-        <div class="page-header">
-            <div class="search-wrapper">
-                <div class="search-box">
-                    <Search :size="16" class="search-icon" />
-                    <input v-model="searchQuery" :placeholder="t('actions.search') + '...'" class="search-input" />
-                </div>
+        <PageToolbar v-model:search="searchQuery">
+            <template #filters>
                 <select v-model="statusFilter" @change="fetchEvents" class="filter-select">
                     <option value="">{{ t('dashboard.alarmFilterAll') }}</option>
                     <option value="firing">{{ t('dashboard.alarmStatusFiring') }}</option>
                     <option value="resolved">{{ t('dashboard.alarmStatusResolved') }}</option>
                 </select>
-            </div>
-            <div class="header-actions">
+            </template>
+            <template #actions>
                 <button class="btn btn-secondary btn-sm btn-icon" @click="fetchEvents" :title="t('actions.refresh')">
                     <RefreshCw :size="14" :class="{ spinning: loading }" />
                 </button>
-            </div>
-        </div>
+            </template>
+        </PageToolbar>
 
-        <div v-if="errorMsg" class="error-banner" @click="errorMsg = ''">{{ errorMsg }}</div>
+        <DataTable
+            :columns="columns"
+            :rows="events"
+            row-key="uuid"
+            :loading="loading"
+            :error="errorMsg"
+            expandable
+            :row-class="(event) => (event.status === 'resolved' ? 'row-resolved' : undefined)"
+            @expand="loadDeliveryLogs"
+            @retry="() => fetchEvents()"
+        >
+            <template #empty>
+                <BellRing :size="48" style="opacity: 0.2; margin-bottom: 16px" />
+                <p>{{ searchQuery || statusFilter ? t('messages.noResults') : t('messages.noData') }}</p>
+            </template>
 
-        <div class="card table-card">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th style="width: 30px"></th>
-                        <th>{{ t('dashboard.alarmAlertName') }}</th>
-                        <th>VM</th>
-                        <th>{{ t('dashboard.alarmSeverity') }}</th>
-                        <th>{{ t('dashboard.table.status') }}</th>
-                        <th>{{ t('dashboard.alarmFiredAt') }}</th>
-                        <th>{{ t('dashboard.alarmLastFired') }}</th>
-                        <th>{{ t('dashboard.alarmResolvedAt') }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-if="loading">
-                        <td colspan="8" class="text-center">
-                            <div class="loading-spinner" style="margin: 20px auto;"></div>
-                        </td>
-                    </tr>
-                    <template v-else-if="filteredEvents.length > 0" v-for="event in filteredEvents" :key="event.uuid">
-                        <tr class="event-row" @click="toggleExpand(event.uuid)">
-                            <td>
-                                <component :is="expandedEvent === event.uuid ? ChevronDown : ChevronRight" :size="14" />
-                            </td>
-                            <td>
-                                <span class="alert-name-cell" :data-tooltip="event.alert_name">{{ event.alert_name }}</span>
-                            </td>
-                             <td>
-                                <div v-if="event.vm_name" class="resource-name">{{ event.vm_name }}</div>
-                                <div class="resource-id-row">
-                                    <span class="resource-id" :title="event.vm_uuid">{{ event.vm_uuid.slice(0, 8) + '...' }}</span>
-                                    <button class="copy-btn-mini" @click.stop.prevent="copyId(event.vm_uuid)" :title="t('actions.copy')" :aria-label="t('actions.copy')">
-                                        <Check v-if="copiedId === event.vm_uuid" :size="10" style="color: #10b981;" />
-                                        <Copy v-else :size="10" />
-                                    </button>
-                                </div>
-                            </td>
-                            <td>
-                                <span class="badge" :class="severityClass(event.severity)">
-                                    {{ t('dashboard.vmAlarmRules.levels.' + event.severity) }}
-                                </span>
-                            </td>
-                            <td>
-                                <span class="badge" :class="event.status === 'firing' ? 'badge-firing' : 'badge-resolved'">
-                                    {{ event.status === 'firing' ? t('dashboard.alarmStatusFiring') : t('dashboard.alarmStatusResolved') }}
-                                </span>
-                            </td>
-                            <td>{{ formatTime(event.fired_at) }}</td>
-                            <td>{{ formatTime(event.last_fired_at) }}</td>
-                            <td>{{ formatTime(event.resolved_at) }}</td>
-                        </tr>
-                        <!-- Expanded: Delivery Logs -->
-                        <tr v-if="expandedEvent === event.uuid" class="expanded-row">
-                            <td colspan="8">
-                                <div class="delivery-logs">
-                                    <h4>{{ t('dashboard.alarmDeliveryLogs') }}</h4>
-                                    <div v-if="loadingLogs === event.uuid" class="loading-spinner" style="margin: 12px auto;"></div>
-                                    <table v-else-if="deliveryLogs[event.uuid]?.length" class="data-table nested-table">
-                                        <thead>
-                                            <tr>
-                                                <th>{{ t('dashboard.alarmChannelName') }}</th>
-                                                <th>{{ t('dashboard.notificationChannelType') }}</th>
-                                                <th>{{ t('dashboard.alarmNotifyType') }}</th>
-                                                <th>{{ t('dashboard.table.status') }}</th>
-                                                <th>{{ t('dashboard.alarmSentAt') }}</th>
-                                                <th>{{ t('dashboard.alarmError') }}</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr v-for="log in deliveryLogs[event.uuid]" :key="log.uuid">
-                                                <td>{{ log.channel_name }}</td>
-                                                <td>{{ log.channel_type }}</td>
-                                                <td>
-                                                    <span class="badge" :class="{
-                                                        'badge-notify-trigger': log.notify_type === 'firing_trigger',
-                                                        'badge-notify-remind': log.notify_type === 'repeat_remind',
-                                                        'badge-resolved': log.notify_type === 'resolved',
-                                                        'badge-secondary': !['firing_trigger','repeat_remind','resolved'].includes(log.notify_type)
-                                                    }">{{ t('dashboard.alarmNotifyTypes.' + log.notify_type) }}</span>
-                                                </td>
-                                                <td>
-                                                    <CheckCircle v-if="log.status === 'sent'" :size="16" class="text-success" />
-                                                    <XCircle v-else :size="16" class="text-danger" />
-                                                    <span style="vertical-align: middle; margin-left: 4px;">{{ log.status === 'sent' ? t('messages.success') : t('messages.error') }}</span>
-                                                </td>
-                                                <td>{{ formatTime(log.sent_at) }}</td>
-                                                <td class="error-cell">{{ log.error_message || '-' }}</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                    <p v-else class="text-muted">{{ t('dashboard.alarmNoDeliveryLogs') }}</p>
-                                </div>
-                            </td>
-                        </tr>
-                    </template>
-                    <tr v-else>
-                        <td colspan="8" class="text-center text-secondary" style="padding: 48px;">
-                            <div class="empty-state">
-                                <AlertTriangle :size="48" style="opacity: 0.2; margin-bottom: 16px;" />
-                                <p>{{ t('messages.noData') }}</p>
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+            <template #cell-alert_name="{ row: event }">
+                <span class="alert-name-cell" :data-tooltip="event.alert_name">{{ event.alert_name }}</span>
+            </template>
 
-        <!-- Pagination -->
-        <div v-if="totalPages > 1" class="pagination">
-            <button class="btn btn-ghost btn-sm" :disabled="page <= 1" @click="prevPage">{{ t('dashboard.pagination.prev') }}</button>
-            <span class="page-info">{{ page }} / {{ totalPages }} ({{ total }} {{ t('dashboard.overview.total') }})</span>
-            <button class="btn btn-ghost btn-sm" :disabled="page >= totalPages" @click="nextPage">{{ t('dashboard.pagination.next') }}</button>
-        </div>
+            <template #cell-vm="{ row: event }">
+                <template v-if="event.vm_uuid">
+                    <div v-if="event.vm_name" class="resource-name">{{ event.vm_name }}</div>
+                    <div class="resource-id-row">
+                        <span class="resource-id" :title="event.vm_uuid">{{ event.vm_uuid.slice(0, 8) + '...' }}</span>
+                        <button
+                            class="copy-btn-mini"
+                            @click.stop.prevent="copyId(event.vm_uuid)"
+                            :title="t('actions.copy')"
+                            :aria-label="t('actions.copy')"
+                        >
+                            <Check v-if="copiedId === event.vm_uuid" :size="10" style="color: var(--success-color)" />
+                            <Copy v-else :size="10" />
+                        </button>
+                    </div>
+                </template>
+                <!-- 节点级告警没有虚拟机 -->
+                <span v-else class="text-muted">-</span>
+            </template>
+
+            <template #cell-severity="{ row: event }">
+                <span class="badge" :class="severityClass(event.severity)">
+                    {{ t('dashboard.vmAlarmRules.levels.' + event.severity) }}
+                </span>
+            </template>
+
+            <!-- 状态只用一个小圆点 + 灰字：一屏里「严重级别」已经在用色了，
+                 状态再用彩色胶囊会和它抢注意力，扫一眼分不出该先看哪条 -->
+            <template #cell-status="{ row: event }">
+                <span class="event-status" :class="{ firing: event.status === 'firing' }">
+                    <span class="event-status-dot"></span>
+                    {{
+                        event.status === 'firing'
+                            ? t('dashboard.alarmStatusFiring')
+                            : t('dashboard.alarmStatusResolved')
+                    }}
+                </span>
+            </template>
+
+            <template #cell-fired_at="{ row: event }">{{ formatDateTime(event.fired_at) }}</template>
+            <template #cell-last_fired_at="{ row: event }">{{ formatDateTime(event.last_fired_at) }}</template>
+            <template #cell-resolved_at="{ row: event }">{{ formatDateTime(event.resolved_at) }}</template>
+
+            <template #expanded="{ row: event }">
+                <div class="delivery-logs">
+                    <h4>{{ t('dashboard.alarmDeliveryLogs') }}</h4>
+                    <div v-if="loadingLogs === event.uuid" class="loading-spinner" style="margin: 12px auto"></div>
+                    <table v-else-if="deliveryLogs[event.uuid]?.length" class="data-table nested-table">
+                        <thead>
+                            <tr>
+                                <th>{{ t('dashboard.alarmChannelName') }}</th>
+                                <th>{{ t('dashboard.notificationChannelType') }}</th>
+                                <th>{{ t('dashboard.alarmNotifyType') }}</th>
+                                <th>{{ t('dashboard.table.status') }}</th>
+                                <th>{{ t('dashboard.alarmSentAt') }}</th>
+                                <th>{{ t('dashboard.alarmError') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="log in deliveryLogs[event.uuid]" :key="log.uuid">
+                                <td>{{ log.channel_name }}</td>
+                                <td>{{ log.channel_type }}</td>
+                                <td>
+                                    <span
+                                        class="badge"
+                                        :class="{
+                                            'badge-notify-trigger': log.notify_type === 'firing_trigger',
+                                            'badge-notify-remind': log.notify_type === 'repeat_remind',
+                                            'badge-resolved': log.notify_type === 'resolved',
+                                            'badge-secondary': ![
+                                                'firing_trigger',
+                                                'repeat_remind',
+                                                'resolved',
+                                            ].includes(log.notify_type),
+                                        }"
+                                        >{{ t('dashboard.alarmNotifyTypes.' + log.notify_type) }}</span
+                                    >
+                                </td>
+                                <td>
+                                    <CheckCircle v-if="log.status === 'sent'" :size="16" class="text-success" />
+                                    <XCircle v-else :size="16" class="text-danger" />
+                                    <span style="vertical-align: middle; margin-left: 4px">{{
+                                        log.status === 'sent' ? t('messages.success') : t('messages.error')
+                                    }}</span>
+                                </td>
+                                <td>{{ formatDateTime(log.sent_at) }}</td>
+                                <td class="error-cell">{{ log.error_message || '-' }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p v-else class="text-muted">{{ t('dashboard.alarmNoDeliveryLogs') }}</p>
+                </div>
+            </template>
+
+            <template #footer>
+                <PaginationBar
+                    :page="page"
+                    :page-size="pageSize"
+                    :total="total"
+                    @update:page="page = $event"
+                    @update:page-size="pageSize = $event"
+                />
+            </template>
+        </DataTable>
     </div>
 </template>
 
 <style scoped>
-.page-header {
-    display: flex;
-    justify-content: space-between;
+/* 状态：圆点 + 灰字。触发中的点用错误色，已恢复的点用浅灰 */
+.event-status {
+    display: inline-flex;
     align-items: center;
-    margin-bottom: 0;
-    padding-right: 20px;
+    gap: 6px;
+    font-size: var(--font-size-sm);
+    color: var(--text-tertiary);
+    white-space: nowrap;
 }
 
-.search-wrapper {
-    display: flex;
-    gap: 8px;
-    flex: 1;
-    max-width: 560px;
+.event-status.firing {
+    color: var(--text-secondary);
 }
 
-.header-actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
+.event-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--gray-300);
+    flex-shrink: 0;
 }
 
-.search-box {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: var(--bg-secondary);
-    padding: 0 12px;
-    height: 40px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-light);
-    transition: all 0.2s;
-    flex: 1;
+.event-status.firing .event-status-dot {
+    background: var(--error-color);
 }
 
-.search-box:focus-within {
-    border-color: var(--primary-300);
-    box-shadow: 0 0 0 2px var(--primary-100);
+/* 已恢复的整行调淡，让还在触发的条目先被看到；hover 时恢复正常便于阅读 */
+:deep(tr.row-resolved) {
+    opacity: 0.55;
 }
 
-.search-icon { color: var(--gray-400); }
-
-.search-input {
-    border: none;
-    background: transparent;
-    width: 100%;
-    height: 100%;
-    font-size: 0.875rem;
-    color: var(--text-primary);
+:deep(tr.row-resolved:hover) {
+    opacity: 1;
 }
-
-.search-input:focus { outline: none; }
 
 .filter-select {
     height: 40px;
@@ -292,32 +293,70 @@ onMounted(fetchEvents)
     min-width: 120px;
 }
 
-.table-card { padding: 0; overflow: hidden; }
+.delivery-logs {
+    padding: 12px 16px;
+    background: var(--bg-secondary, var(--gray-50));
+}
+.delivery-logs h4 {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+}
+.nested-table {
+    margin: 0;
+    font-size: 13px;
+    width: 100%;
+}
+.nested-table th,
+.nested-table td {
+    text-align: center;
+}
 
-.event-row { cursor: pointer; }
-.event-row:hover { background: var(--bg-hover, #f3f4f6); }
-.expanded-row td { padding: 0; }
-.delivery-logs { padding: 12px 16px; background: var(--bg-secondary, #f9fafb); }
-.delivery-logs h4 { margin: 0 0 8px 0; font-size: 13px; }
-.nested-table { margin: 0; font-size: 13px; width: 100%; }
-.nested-table th, .nested-table td { text-align: center; }
-
-.pagination { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 16px 0; }
-.page-info { font-size: 13px; color: #6b7280; }
-
-.badge-firing { background: #ef4444; color: white; }
-.badge-resolved { background: #22c55e; color: white; }
-.badge-critical { background: #dc2626; color: white; }
-.badge-warning { background: #f59e0b; color: white; }
-.badge-info { background: #3b82f6; color: white; }
-.badge-secondary { background: #6b7280; color: white; }
-.badge-notify-trigger { background: #1e3a8a; color: white; }
-.badge-notify-remind { background: #60a5fa; color: white; }
-.text-success { color: #22c55e; }
-.text-danger { color: #ef4444; }
-.text-center { text-align: center; }
-.text-muted { color: #9ca3af; }
-.error-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge-resolved {
+    background: var(--success-color);
+    color: white;
+}
+.badge-critical {
+    background: var(--error-dark);
+    color: white;
+}
+.badge-warning {
+    background: var(--warning-color);
+    color: white;
+}
+.badge-info {
+    background: var(--primary-color);
+    color: white;
+}
+.badge-secondary {
+    background: var(--gray-500);
+    color: white;
+}
+.badge-notify-trigger {
+    background: var(--primary-900);
+    color: white;
+}
+.badge-notify-remind {
+    background: var(--primary-400);
+    color: white;
+}
+.text-success {
+    color: var(--success-color);
+}
+.text-danger {
+    color: var(--error-color);
+}
+.text-center {
+    text-align: center;
+}
+.text-muted {
+    color: var(--gray-400);
+}
+.error-cell {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 .alert-name-cell {
     display: inline-block;
     max-width: 200px;
@@ -335,7 +374,7 @@ onMounted(fetchEvents)
     top: 100%;
     margin-top: 4px;
     background: rgba(0, 0, 0, 0.75);
-    color: #fff;
+    color: var(--text-inverse);
     padding: 4px 8px;
     border-radius: 4px;
     font-size: 12px;
@@ -343,19 +382,9 @@ onMounted(fetchEvents)
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.15s;
-    z-index: 100;
+    z-index: var(--z-tooltip);
 }
 .alert-name-cell:hover::after {
     opacity: 1;
 }
-.error-banner {
-    background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;
-    border-radius: 6px; padding: 10px 14px; margin-bottom: 12px;
-    font-size: 13px; cursor: pointer;
-}
-
-.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; }
-
-.spinning { animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
 </style>

@@ -1,5 +1,5 @@
 <disk type='file' device='disk'>
-   <driver name='qemu' type='qcow2' cache='none'/>
+   <driver name='qemu' type='qcow2' cache='none' discard='unmap' error_policy='enospace'/>
    <source file='VOLUME_SOURCE'/>
    <target dev='VOLUME_TARGET' bus='virtio'/>
 </disk>

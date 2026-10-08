@@ -1,12 +1,12 @@
 package model
 
 import (
+	"api/src/dbs"
 	"log"
 	"time"
-	"api/src/dbs"
 
-	"github.com/jinzhu/gorm"
 	_ "github.com/lib/pq"
+	"gorm.io/gorm"
 )
 
 const (

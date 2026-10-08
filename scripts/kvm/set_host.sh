@@ -16,6 +16,7 @@ domain=$6
 vlan_dir=$cache_dir/router/$router/$vlan
 mkdir -p $vlan_dir
 dhcp_host=$vlan_dir/dhcp_hosts
+touch $dhcp_host
 sed -i "/\<$vm_ip\>/d" $dhcp_host
 echo "$vm_mac,$vm_name.$domain,$vm_ip" >> $dhcp_host
 dnsmasq_pid=$(ps -ef | grep dnsmasq | grep "\<interface=ns-$vlan\>" | awk '{print $2}')

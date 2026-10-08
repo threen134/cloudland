@@ -25,6 +25,6 @@ ip netns exec $router iptables -D INPUT -d ${local_ip%/*} -m conntrack --ctstate
 ip netns exec $router iptables -D INPUT -d ${peer_ip%/*} -m conntrack --ctstate NEW -j ACCEPT
 ip netns exec $router ip addr show ns-$vrrp_vlan | grep 'inet '
 if [ $? -ne 0 ]; then
-    ./clear_link.sh $vrrp_vlan
+    ./clear_link.sh $vrrp_vlan vrrp
     ./clear_local_router.sh $router_ID
 fi

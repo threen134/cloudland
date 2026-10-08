@@ -1,0 +1,81 @@
+# OpenTelemetry Collector：接收各服务、计算节点与浏览器（经 cpgateway 转发）的 span
+# 1. 在尾部采样之前计算服务拓扑与 RED 指标（指标不受采样影响），由 Prometheus 抓取 :8889
+# 2. 按尾部采样策略导出到 Tempo（多 Region 统一存储时 TRACING_BACKEND_ENDPOINT 指向中央 Collector/Tempo）
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 1024
+    spike_limit_mib: 256
+  batch: {}
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    policies:
+      # 出错的链路全部保留
+      - name: errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+      # 慢链路全部保留
+      - name: slow
+        type: latency
+        latency:
+          threshold_ms: ${env:TAIL_SAMPLING_LATENCY_MS:-2000}
+      # 其余链路按比例保留，默认全部保留
+      - name: probabilistic
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: ${env:TAIL_SAMPLING_PERCENT:-100}
+
+connectors:
+  span_metrics:
+    histogram:
+      explicit:
+        buckets: [5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s, 30s]
+    dimensions:
+      - name: http.request.method
+      - name: http.response.status_code
+    metrics_flush_interval: 15s
+  service_graph:
+    latency_histogram_buckets: [10ms, 50ms, 100ms, 250ms, 500ms, 1s, 5s, 10s]
+    store:
+      ttl: 10s
+      max_items: 10000
+  forward: {}
+
+exporters:
+  otlp_grpc/tempo:
+    endpoint: ${env:TRACING_BACKEND_ENDPOINT:-tempo:4317}
+    tls:
+      insecure: true
+  prometheus:
+    endpoint: 0.0.0.0:8889
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter]
+      exporters: [span_metrics, service_graph, forward]
+    traces/sampled:
+      receivers: [forward]
+      processors: [tail_sampling, batch]
+      exporters: [otlp_grpc/tempo]
+    metrics:
+      receivers: [span_metrics, service_graph]
+      processors: [batch]
+      exporters: [prometheus]

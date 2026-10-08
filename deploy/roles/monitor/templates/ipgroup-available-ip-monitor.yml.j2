@@ -16,6 +16,8 @@ groups:
         severity: {{ severity | default("warning") }}
         component: network
         alert_type: ipgroup_low_ips
+        owner: "{{ owner }}"
+        rule_group: "{{ rule_group }}"
       annotations:
         summary: "IP Group {{ $labels.ipgroup_name }} - Low Available IPs in subnets:({{ $labels.subnet_name }})"
         description: |

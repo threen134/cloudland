@@ -16,6 +16,8 @@ groups:
       severity: warning
       node_type: compute
       alert_type: "node-vcpu"
+      owner: "{{ owner }}"
+      rule_group: "{{ rule_group }}"
       zone: "{{ $labels.zone }}"
       region: "{{ $labels.region }}"
     annotations:

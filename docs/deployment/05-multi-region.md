@@ -42,8 +42,11 @@ export ADMIN_EMAIL=admin@cloudland.local
 export COMPOSE_PROFILES=dev,region
 
 # 执行部署
-curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-control-node.sh | sudo -E bash
+curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-control-node.sh | bash
 ```
+
+> [!IMPORTANT]
+> 请以 root 身份执行（例如先 `sudo -i`，再 export 环境变量并执行命令）；Ubuntu 26.04 默认的 sudo-rs 会忽略 `sudo -E`，导出的环境变量不会传入脚本。
 
 ---
 

@@ -102,56 +102,56 @@ const (
 	ErrMigrationDeleteFailed ErrCode = 111804
 	ErrMigrationInProgress   ErrCode = 111805
 
+	// placement group related errors (1117xx)
+	ErrPlacementGroupNotFound ErrCode = 111701
+	ErrPlacementGroupExists   ErrCode = 111702
+	ErrPlacementGroupInUse    ErrCode = 111703
+	ErrPlacementGroupNoHost   ErrCode = 111704 // strict spread: no host without a member
+	ErrPlacementGroupHostFull ErrCode = 111705 // strict pack: the host of the group can not take more, or is not usable
+	ErrPlacementGroupConflict ErrCode = 111706 // a given host or target, or the zone, breaks the rules of a strict group
+	ErrPlacementGroupLimit    ErrCode = 111707
+	ErrPlacementGroupBusy     ErrCode = 111708 // strict pack: members are migrating
+
 	// Volume related errors (121xxx)
-	ErrVolumeNotFound           ErrCode = 121001
-	ErrVolumeCreationFailed     ErrCode = 121002
-	ErrVolumeUpdateFailed       ErrCode = 121003
-	ErrVolumeDeleteFailed       ErrCode = 121004
-	ErrVolumeAttachFailed       ErrCode = 121005
-	ErrVolumeDetachFailed       ErrCode = 121006
-	ErrVolumeInvalidState       ErrCode = 121007
-	ErrVolumeInvalidSize        ErrCode = 121008
-	ErrBootVolumeNotFound       ErrCode = 121009
-	ErrBootVolumeUpdateFailed   ErrCode = 121010
-	ErrBootVolumeDeleteFailed   ErrCode = 121011
-	ErrVolumeIsInUse            ErrCode = 121012
-	ErrBootVolumeCannotDetach   ErrCode = 121013
-	ErrVolumeIsBusy             ErrCode = 121014
-	ErrVolumeIsRestoring        ErrCode = 121015
-	ErrVolumeInConsistencyGroup ErrCode = 121016 // volume is in a consistency group, cannot be deleted
+	ErrVolumeNotFound         ErrCode = 121001
+	ErrVolumeCreationFailed   ErrCode = 121002
+	ErrVolumeUpdateFailed     ErrCode = 121003
+	ErrVolumeDeleteFailed     ErrCode = 121004
+	ErrVolumeAttachFailed     ErrCode = 121005
+	ErrVolumeDetachFailed     ErrCode = 121006
+	ErrVolumeInvalidState     ErrCode = 121007
+	ErrVolumeInvalidSize      ErrCode = 121008
+	ErrBootVolumeNotFound     ErrCode = 121009
+	ErrBootVolumeUpdateFailed ErrCode = 121010
+	ErrBootVolumeDeleteFailed ErrCode = 121011
+	ErrVolumeIsInUse          ErrCode = 121012
+	ErrBootVolumeCannotDetach ErrCode = 121013
+	ErrVolumeIsBusy           ErrCode = 121014
 
-	// Snapshot/Backup related errors (1251xx)
-	ErrBackupNotFound                      ErrCode = 125100
-	ErrBackupCreationFailed                ErrCode = 125101
-	ErrBackupUpdateFailed                  ErrCode = 125102
-	ErrBackupDeleteFailed                  ErrCode = 125103
-	ErrBackupInUse                         ErrCode = 125104
-	ErrCannotRestoreWhileInstanceIsRunning ErrCode = 125105
-	ErrCannotRestoreFromBackup             ErrCode = 125106
-	ErrBackupInvalidState                  ErrCode = 125107
+	// Storage pool related errors (122xxx)
+	ErrStoragePoolNotFound     ErrCode = 122001
+	ErrStoragePoolUnavailable  ErrCode = 122002 // the pool is not usable on the host (missing, unavailable, disabled)
+	ErrStorageCapacityExceeded ErrCode = 122003 // admission refused: not enough room in the pool on the host
+	ErrStoragePoolInUse        ErrCode = 122004 // the pool still holds volumes, reservations or migrations
+	ErrStorageDiskNotAllowed   ErrCode = 122005 // a selected disk may not be used (system, shared, unknown member, ...)
+	ErrStorageMediaMismatch    ErrCode = 122006 // media of the selected disks differ; confirm with allow_media_mismatch
+	ErrStoragePoolInvalidState ErrCode = 122007
+	ErrStorageConfirmMismatch  ErrCode = 122008 // the typed confirmation does not match the host or pool name
 
-	// Consistency Group related errors (1252xx)
-	ErrCGNotFound                  ErrCode = 125200
-	ErrCGCreationFailed            ErrCode = 125201
-	ErrCGUpdateFailed              ErrCode = 125202
-	ErrCGDeleteFailed              ErrCode = 125203
-	ErrCGInvalidState              ErrCode = 125204
-	ErrCGIsBusy                    ErrCode = 125205
-	ErrCGSnapshotExists            ErrCode = 125206
-	ErrCGVolumeNotInSamePool       ErrCode = 125207
-	ErrCGVolumeIsBusy              ErrCode = 125208
-	ErrCGVolumeInvalidState        ErrCode = 125209
-	ErrCGSnapshotNotFound          ErrCode = 125210
-	ErrCGSnapshotCreationFailed    ErrCode = 125211
-	ErrCGSnapshotDeleteFailed      ErrCode = 125212
-	ErrCGSnapshotRestoreFailed     ErrCode = 125213
-	ErrCGSnapshotIsBusy            ErrCode = 125214
-	ErrCGCannotModifyWithSnapshots ErrCode = 125215
-	ErrCGInstanceNotShutoff        ErrCode = 125216 // instance must be shutoff before restoring CG snapshot
-	ErrCGNoVolumes                 ErrCode = 125217 // consistency group has no volumes
-	ErrCGVolumeAttachedNoInstance  ErrCode = 125218 // volume status is attached but has no instance ID
-	ErrCGSnapshotCannotRestore     ErrCode = 125219 // snapshot cannot be restored (invalid state)
-	ErrCGSnapshotRestoreInProgress ErrCode = 125220 // a restore operation is already in progress for this snapshot
+	// Storage cluster related errors (123xxx)
+	ErrStorageClusterNotFound ErrCode = 123001
+	ErrStorageClusterBusy     ErrCode = 123002 // another task holds the cluster
+	ErrStorageTaskNotFound    ErrCode = 123003
+	ErrStorageTaskState       ErrCode = 123004 // the task can not be retried or aborted in its state
+	ErrStoragePackageNotFound ErrCode = 123011
+	ErrStoragePackageState    ErrCode = 123012 // not ready, license not accepted, upload out of order, still in use
+	ErrStorageNeedsS3         ErrCode = 123013 // packages are kept in S3, which is not configured or not reachable
+	ErrStorageInvalidPlan     ErrCode = 123021 // roles, hosts or disks of a request do not make a valid cluster
+	// A host can not be fenced on a storage cluster (no admin host left online, an imported GPFS cluster) and nobody
+	// confirmed it is powered off; or it can not be let back in yet
+	ErrStorageFenceUnavailable ErrCode = 123031
+	// The instances of a host can not be evacuated: it is not offline (long enough), or the instance can not be
+	ErrEvacuationRefused ErrCode = 123032
 
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)
@@ -237,6 +237,47 @@ const (
 	ErrBackendUpdateFailed      = 131518
 	ErrBackendDeleteFailed      = 131519
 
+	// VPN gateway related errors (1320xx)
+	ErrVpnGatewayNotFound        ErrCode = 132001
+	ErrVpnGatewayCreateFailed    ErrCode = 132002
+	ErrVpnGatewayUpdateFailed    ErrCode = 132003
+	ErrVpnGatewayDeleteFailed    ErrCode = 132004
+	ErrVpnGatewayExists          ErrCode = 132005 // the VPC already has a gateway
+	ErrVpnGatewayNotReady        ErrCode = 132006 // the gateway is still being built or is in error
+	ErrVpnGatewayInUse           ErrCode = 132007 // connections or clients still exist
+	ErrVpnGatewayDisabled        ErrCode = 132008 // the gateway is disabled
+	ErrVpnGatewayNeedsNodes      ErrCode = 132009 // the zone has too few available compute nodes for the gateway
+	ErrVpnConnectionNotFound     ErrCode = 132011
+	ErrVpnConnectionCreateFailed ErrCode = 132012
+	ErrVpnConnectionUpdateFailed ErrCode = 132013
+	ErrVpnConnectionDeleteFailed ErrCode = 132014
+	ErrVpnClientNotFound         ErrCode = 132021
+	ErrVpnClientCreateFailed     ErrCode = 132022
+	ErrVpnClientUpdateFailed     ErrCode = 132023
+	ErrVpnClientDeleteFailed     ErrCode = 132024
+	ErrVpnClientPoolExhausted    ErrCode = 132025
+	ErrSecretUnavailable         ErrCode = 132031 // VPN_SECRET_KEY missing or cannot decrypt stored credentials (VPN and storage clusters)
+	ErrVpnCidrConflict           ErrCode = 132032 // overlaps a VPC subnet, the VRRP subnet, the router links or another prefix
+	ErrRouterHasVpnGateway       ErrCode = 132033
+
+	// Transit gateway related errors (1330xx)
+	ErrTgwNotFound            ErrCode = 133001
+	ErrTgwExists              ErrCode = 133002 // the name is taken in the organization
+	ErrTgwInUse               ErrCode = 133003 // VPCs are still attached
+	ErrTgwAttachmentNotFound  ErrCode = 133011
+	ErrTgwAttachmentExists    ErrCode = 133012 // the VPC is attached to a transit gateway already
+	ErrTgwAttachmentLimit     ErrCode = 133013
+	ErrTgwCidrConflict        ErrCode = 133014 // member networks overlap each other, a reserved range or a VPN network
+	ErrTgwAttachmentBusy      ErrCode = 133015 // the attachment is being detached
+	ErrTgwRouteTableNotFound  ErrCode = 133021
+	ErrTgwRouteTableExists    ErrCode = 133022
+	ErrTgwRouteTableInUse     ErrCode = 133023 // attachments are associated with it, or it is the default table
+	ErrTgwRouteNotFound       ErrCode = 133031
+	ErrTgwRouteExists         ErrCode = 133032
+	ErrTgwPropagationNotFound ErrCode = 133041
+	ErrTgwPropagationExists   ErrCode = 133042
+	ErrRouterHasTgwAttachment ErrCode = 133051
+
 	// Security related errors (141xxx)
 	ErrSecurityGroupNotFound       ErrCode = 141001
 	ErrSecurityGroupCreateFailed   ErrCode = 141002
@@ -253,18 +294,16 @@ const (
 	ErrSecurityRuleUpdateFailed    ErrCode = 141013
 
 	// Image related errors (151xxx)
-	ErrImageNotFound            ErrCode = 151000
-	ErrImageInUse               ErrCode = 151001
-	ErrImageNoQA                ErrCode = 151002
-	ErrImageCreateFailed        ErrCode = 151003
-	ErrImageUpdateFailed        ErrCode = 151004
-	ErrImageDeleteFailed        ErrCode = 151005
-	ErrImageNotAvailable        ErrCode = 151006
-	ErrImageStorageCreateFailed ErrCode = 151007
-	ErrImageStorageDeleteFailed ErrCode = 151008
-	ErrImageStorageUpdateFailed ErrCode = 151009
-	ErrImageStorageNotFound     ErrCode = 151010
-	ErrRescueImageNotFound      ErrCode = 151011
+	ErrImageNotFound       ErrCode = 151000
+	ErrImageInUse          ErrCode = 151001
+	ErrImageNoQA           ErrCode = 151002
+	ErrImageCreateFailed   ErrCode = 151003
+	ErrImageUpdateFailed   ErrCode = 151004
+	ErrImageDeleteFailed   ErrCode = 151005
+	ErrImageNotAvailable   ErrCode = 151006
+	ErrRescueImageNotFound ErrCode = 151011
+	ErrImageCopyNotFound   ErrCode = 151012
+	ErrImageCopyInUse      ErrCode = 151013
 
 	// ssh key related errors (161xxx)
 	ErrSSHKeyNotFound       ErrCode = 161001
@@ -305,8 +344,39 @@ func (c ErrCode) ToHTTPStatus() int {
 		return 400
 	case c == ErrCannotRemoveOwner || c == ErrLastSystemAdmin || c == ErrCannotSelfDemote || c == ErrMissingOrgContext || c == ErrSlugImmutable || c == ErrSlugInvalid:
 		return 400
-	case c == ErrResourceNotFound || (c >= 100200 && c <= 100207 && c%2 == 0) || c == ErrZoneNotFound || c == ErrHypervisorNotFound:
+	case c == ErrResourceNotFound || (c >= 100200 && c <= 100207 && c%2 == 0) || c == ErrZoneNotFound || c == ErrHypervisorNotFound || c == ErrStoragePoolNotFound:
 		return 404
+	case c == ErrVpnGatewayNotFound || c == ErrVpnConnectionNotFound || c == ErrVpnClientNotFound:
+		return 404
+	case c == ErrVpnGatewayExists || c == ErrVpnGatewayInUse || c == ErrVpnClientPoolExhausted || c == ErrRouterHasVpnGateway:
+		return 409
+	case c == ErrVpnCidrConflict || c == ErrVpnGatewayNotReady || c == ErrVpnGatewayDisabled || c == ErrVpnGatewayNeedsNodes:
+		return 400
+	case c == ErrSecretUnavailable:
+		return 503
+	case c == ErrTgwNotFound || c == ErrTgwAttachmentNotFound || c == ErrTgwRouteTableNotFound || c == ErrTgwRouteNotFound || c == ErrTgwPropagationNotFound:
+		return 404
+	case c == ErrTgwExists || c == ErrTgwInUse || c == ErrTgwAttachmentExists || c == ErrTgwAttachmentLimit || c == ErrTgwAttachmentBusy ||
+		c == ErrTgwRouteTableExists || c == ErrTgwRouteTableInUse || c == ErrTgwRouteExists || c == ErrTgwPropagationExists || c == ErrRouterHasTgwAttachment:
+		return 409
+	case c == ErrTgwCidrConflict:
+		return 400
+	case c == ErrPlacementGroupNotFound:
+		return 404
+	case c == ErrPlacementGroupExists || c == ErrPlacementGroupInUse || c == ErrPlacementGroupNoHost ||
+		c == ErrPlacementGroupHostFull || c == ErrPlacementGroupLimit || c == ErrPlacementGroupBusy:
+		return 409
+	case c == ErrPlacementGroupConflict:
+		return 400
+	case c == ErrStorageCapacityExceeded || c == ErrStoragePoolInUse:
+		return 409
+	case c == ErrStorageClusterNotFound || c == ErrStorageTaskNotFound || c == ErrStoragePackageNotFound:
+		return 404
+	case c == ErrStorageClusterBusy || c == ErrStorageTaskState || c == ErrStoragePackageState ||
+		c == ErrStorageFenceUnavailable || c == ErrEvacuationRefused:
+		return 409
+	case c == ErrStorageNeedsS3 || c == ErrStorageInvalidPlan:
+		return 400
 	case c == ErrInsufficientResource || c == ErrInsufficientAddress || c == ErrEmailConflict || c == ErrOrgHasResources || c == ErrOrgHasMembers || c == ErrSlugConflict || c == ErrSlugReserved:
 		return 409
 	default:

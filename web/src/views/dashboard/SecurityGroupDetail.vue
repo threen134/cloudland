@@ -5,33 +5,71 @@ import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useSecurityGroup } from '../../composables/useSecurityGroup'
 import { securityGroupsApi, type SecurityGroup, type SecurityRule } from '../../api/networks'
-import { ArrowLeft, Shield, Trash2, Plus, X, Edit, ArrowUpDown, ArrowUp, ArrowDown, Network, Server, ChevronDown, Search } from 'lucide-vue-next'
+import { isValidName } from '../../utils/validation'
+import {
+    formatRulePort,
+    ruleServiceName,
+    filterAndSortRules,
+    type RuleSortKey,
+    type RuleFilter,
+} from '../../utils/securityRule'
+import SecurityRuleModal from '../../components/securityGroup/SecurityRuleModal.vue'
+import BaseModal from '../../components/modals/BaseModal.vue'
+import DeleteModal from '../../components/modals/DeleteModal.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import DetailTabs from '../../components/base/DetailTabs.vue'
+import { useGoBack } from '../../composables/useGoBack'
+import { useCopyId } from '../../composables/useCopyId'
+import { errorMessage } from '../../utils/error'
+import {
+    ArrowLeft,
+    Shield,
+    Trash2,
+    Plus,
+    X,
+    Pencil,
+    ArrowUpDown,
+    ArrowUp,
+    ArrowDown,
+    Network,
+    Server,
+    ChevronDown,
+    Search,
+    Check,
+    Copy,
+} from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const toast = useToast()
+const { copiedId, copyId } = useCopyId()
 const { translateDescription } = useSecurityGroup()
+const goBack = useGoBack('security-groups')
 const groupId = route.params.id as string
 
 const group = ref<SecurityGroup | null>(null)
 const loading = ref(true)
 const error = ref('')
-const deleting = ref(false)
-const addingRule = ref(false)
-const editingRuleId = ref<string | null>(null)
-const addRuleError = ref('')
 
-const showEditModal = ref(false)
-const editForm = ref({ name: '', description: '' })
-const savingInfo = ref(false)
-const editError = ref('')
-
-const showAddRuleModal = ref(false)
 const showActionMenu = ref(false)
-const activeTab = ref<'rules' | 'interfaces'>('rules')
+const activeTab = ref('rules')
+
+// 标签页文案里带数量（原先是文案后面的小徽标，DetailTabs 只接受文本）
+const tabs = computed(() => [
+    { id: 'rules', label: t('dashboard.table.securityRules'), count: group.value?.security_rules?.length || 0 },
+    {
+        id: 'interfaces',
+        label: t('dashboard.securityGroupDetail.associatedInterfaces'),
+        count: group.value?.target_interfaces?.length || 0,
+    },
+])
+
+// --- Rules filter and sort ---
 const showRuleFilter = ref(false)
-const ruleFilter = ref({ direction: '', protocol: '', keyword: '' })
+const ruleFilter = ref<RuleFilter>({ direction: '', protocol: '', keyword: '' })
+const sortKey = ref<RuleSortKey>('direction')
+const sortOrder = ref<'asc' | 'desc'>('asc')
 
 const toggleRuleFilter = () => {
     showRuleFilter.value = !showRuleFilter.value
@@ -40,21 +78,7 @@ const toggleRuleFilter = () => {
     }
 }
 
-const newRule = ref({
-    name: '',
-    direction: 'ingress',
-    protocol: 'tcp',
-    port_min: 80,
-    port_max: 80,
-    remote_cidr: '0.0.0.0/0'
-})
-
-type SortKey = 'name' | 'direction' | 'protocol' | 'port' | 'remote_cidr'
-type SortOrder = 'asc' | 'desc'
-const sortKey = ref<SortKey>('direction')
-const sortOrder = ref<SortOrder>('asc')
-
-const toggleSort = (key: SortKey) => {
+const toggleSort = (key: RuleSortKey) => {
     if (sortKey.value === key) {
         sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
     } else {
@@ -63,42 +87,23 @@ const toggleSort = (key: SortKey) => {
     }
 }
 
-const sortedRules = computed(() => {
-    const rules = group.value?.security_rules || []
-    const { direction, protocol, keyword } = ruleFilter.value
-    const kw = keyword.trim().toLowerCase()
-    const filtered = rules.filter(r => {
-        if (direction && r.direction !== direction) return false
-        if (protocol && r.protocol !== protocol) return false
-        if (kw && ![r.name, r.remote_cidr, r.protocol, r.direction]
-            .filter(Boolean).some(v => v!.toLowerCase().includes(kw))) return false
-        return true
-    })
-    return [...filtered].sort((a, b) => {
-        const dir = sortOrder.value === 'asc' ? 1 : -1
-        switch (sortKey.value) {
-            case 'name':
-                return dir * (a.name || '').localeCompare(b.name || '')
-            case 'direction':
-                return dir * a.direction.localeCompare(b.direction)
-            case 'protocol':
-                return dir * a.protocol.localeCompare(b.protocol)
-            case 'port':
-                return dir * ((a.port_min ?? -1) - (b.port_min ?? -1))
-            case 'remote_cidr':
-                return dir * (a.remote_cidr || '').localeCompare(b.remote_cidr || '')
-            default:
-                return 0
-        }
-    })
-})
+const sortedRules = computed(() =>
+    filterAndSortRules(group.value?.security_rules || [], ruleFilter.value, sortKey.value, sortOrder.value)
+)
+
+const ruleColumns: Array<{ key: RuleSortKey; label: string }> = [
+    { key: 'name', label: 'dashboard.table.name' },
+    { key: 'direction', label: 'dashboard.table.direction' },
+    { key: 'protocol', label: 'dashboard.table.protocol' },
+    { key: 'port', label: 'dashboard.table.portRange' },
+    { key: 'remote_cidr', label: 'dashboard.table.remoteCidr' },
+]
 
 const fetchGroup = async () => {
     loading.value = true
     error.value = ''
     try {
-        const response = await securityGroupsApi.get(groupId)
-        group.value = response
+        group.value = await securityGroupsApi.get(groupId)
     } catch (err) {
         console.error('Failed to fetch security group:', err)
         error.value = t('dashboard.securityGroupDetail.loadError')
@@ -107,85 +112,113 @@ const fetchGroup = async () => {
     }
 }
 
-const toggleActionMenu = () => { showActionMenu.value = !showActionMenu.value }
-const closeActionMenu = () => { showActionMenu.value = false }
-
-const handleDelete = async () => {
-    closeActionMenu()
-    if (!confirm(t('dashboard.securityGroupDetail.deleteConfirm'))) return
-
-    deleting.value = true
-    try {
-        await securityGroupsApi.delete(groupId)
-        toast.success(t('messages.deleteSuccess'))
-        router.push({ name: 'security-groups' })
-    } catch (err) {
-        console.error('Failed to delete security group:', err)
-        alert(t('messages.error'))
-        deleting.value = false
-    }
+const toggleActionMenu = () => {
+    showActionMenu.value = !showActionMenu.value
+}
+const closeActionMenu = () => {
+    showActionMenu.value = false
 }
 
-const handleDeleteRule = async (ruleId: string) => {
-    if (!confirm(t('dashboard.securityGroupDetail.deleteRuleConfirm'))) return
-    try {
-        await securityGroupsApi.deleteRule(groupId, ruleId)
-        await fetchGroup()
-        toast.success(t('messages.deleteSuccess'))
-    } catch (err) {
-        console.error('Failed to delete rule:', err)
-    }
-}
+// --- Add / Edit Rule ---
+const ruleModalVisible = ref(false)
+const ruleToEdit = ref<SecurityRule | null>(null)
 
 const openAddRuleModal = () => {
-    editingRuleId.value = null
-    newRule.value = {
-        name: '',
-        direction: 'ingress',
-        protocol: 'tcp',
-        port_min: 80,
-        port_max: 80,
-        remote_cidr: '0.0.0.0/0'
-    }
-    showAddRuleModal.value = true
+    ruleToEdit.value = null
+    ruleModalVisible.value = true
 }
 
 const openEditRuleModal = (rule: SecurityRule) => {
-    editingRuleId.value = rule.id
-    newRule.value = {
-        name: rule.name || '',
-        direction: rule.direction,
-        protocol: rule.protocol,
-        port_min: rule.protocol === 'icmp' ? 1 : (rule.port_min || 1),
-        port_max: rule.protocol === 'icmp' ? 65535 : (rule.port_max || 65535),
-        remote_cidr: rule.remote_cidr || ''
-    }
-    showAddRuleModal.value = true
+    ruleToEdit.value = rule
+    ruleModalVisible.value = true
 }
 
-const handleAddRule = async () => {
-    addRuleError.value = ''
-    if (newRule.value.protocol !== 'icmp' && newRule.value.port_min > newRule.value.port_max) {
-        addRuleError.value = t('dashboard.securityGroupDetail.portRangeError')
-        return
-    }
-    addingRule.value = true
+const onRuleSaved = async (edited: boolean) => {
+    ruleModalVisible.value = false
+    await fetchGroup()
+    toast.success(edited ? t('messages.updateSuccess') : t('messages.createSuccess'))
+}
+
+// --- Delete Rule ---
+const ruleToDelete = ref<SecurityRule | null>(null)
+const deletingRule = ref(false)
+const deleteRuleError = ref('')
+
+const handleDeleteRule = (rule: SecurityRule) => {
+    ruleToDelete.value = rule
+    deleteRuleError.value = ''
+}
+
+// 删除确认框里展示的规则描述（方向 + 协议 + 端口 + 来源）
+const ruleToDeleteName = computed(() => {
+    const rule = ruleToDelete.value
+    if (!rule) return ''
+    const direction = rule.direction === 'ingress' ? t('dashboard.table.ingress') : t('dashboard.table.egress')
+    return `${direction} ${rule.protocol.toUpperCase()} ${formatRulePort(rule, t)} ${rule.remote_cidr || ''}`.trim()
+})
+
+const closeDeleteRuleModal = () => {
+    if (deletingRule.value) return
+    ruleToDelete.value = null
+    deleteRuleError.value = ''
+}
+
+const confirmDeleteRule = async () => {
+    if (!ruleToDelete.value) return
+    deletingRule.value = true
+    deleteRuleError.value = ''
     try {
-        if (editingRuleId.value) {
-            await securityGroupsApi.patchRule(groupId, editingRuleId.value, newRule.value as any)
-        } else {
-            await securityGroupsApi.addRule(groupId, newRule.value as any)
-        }
-        showAddRuleModal.value = false
+        await securityGroupsApi.deleteRule(groupId, ruleToDelete.value.id)
         await fetchGroup()
-        toast.success(editingRuleId.value ? t('messages.updateSuccess') : t('messages.createSuccess'))
-    } catch (err: any) {
-        console.error('Failed to save rule:', err)
-        addRuleError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        ruleToDelete.value = null
+        toast.success(t('messages.deleteSuccess'))
+    } catch (err) {
+        console.error('Failed to delete rule:', err)
+        deleteRuleError.value = errorMessage(err, t('messages.error'))
     } finally {
-        addingRule.value = false
+        deletingRule.value = false
     }
 }
+
+// --- Delete Group ---
+const deleteGroupModalVisible = ref(false)
+const deletingGroup = ref(false)
+const deleteGroupError = ref('')
+
+const handleDelete = () => {
+    closeActionMenu()
+    deleteGroupError.value = ''
+    deleteGroupModalVisible.value = true
+}
+
+const closeDeleteGroupModal = () => {
+    if (deletingGroup.value) return
+    deleteGroupModalVisible.value = false
+    deleteGroupError.value = ''
+}
+
+const confirmDeleteGroup = async () => {
+    deletingGroup.value = true
+    deleteGroupError.value = ''
+    try {
+        await securityGroupsApi.delete(groupId)
+        toast.success(t('messages.deleteSuccess'))
+        deleteGroupModalVisible.value = false
+        router.push({ name: 'security-groups' })
+    } catch (err) {
+        console.error('Failed to delete security group:', err)
+        deleteGroupError.value = errorMessage(err, t('messages.error'))
+    } finally {
+        deletingGroup.value = false
+    }
+}
+
+// --- Edit Name / Description ---
+const showEditModal = ref(false)
+const editForm = ref({ name: '', description: '' })
+const savingInfo = ref(false)
+const editError = ref('')
+const isEditValid = computed(() => !!editForm.value.name.trim() && isValidName(editForm.value.name))
 
 const openEditModal = () => {
     closeActionMenu()
@@ -196,8 +229,12 @@ const openEditModal = () => {
 
 const saveInfo = async () => {
     editError.value = ''
+    if (!isEditValid.value) {
+        editError.value = t('messages.invalidHostname')
+        return
+    }
     const payload: { name?: string; description?: string } = {}
-    if (editForm.value.name && editForm.value.name !== group.value?.name) {
+    if (editForm.value.name !== group.value?.name) {
         payload.name = editForm.value.name
     }
     if (editForm.value.description !== (group.value?.description || '')) {
@@ -216,51 +253,15 @@ const saveInfo = async () => {
         }
         showEditModal.value = false
         toast.success(t('messages.updateSuccess'))
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to update info:', err)
-        editError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        editError.value = errorMessage(err, t('messages.error'))
     } finally {
         savingInfo.value = false
     }
 }
 
-const goBack = () => { router.back() }
-
-const WELL_KNOWN_PORTS: Record<number, string> = {
-    20: 'FTP-Data', 21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP',
-    53: 'DNS', 67: 'DHCP', 68: 'DHCP', 80: 'HTTP', 110: 'POP3',
-    119: 'NNTP', 123: 'NTP', 143: 'IMAP', 161: 'SNMP', 162: 'SNMP-Trap',
-    389: 'LDAP', 443: 'HTTPS', 445: 'SMB', 465: 'SMTPS',
-    514: 'Syslog', 587: 'SMTP', 636: 'LDAPS', 993: 'IMAPS', 995: 'POP3S',
-    1433: 'MSSQL', 1521: 'Oracle', 2049: 'NFS', 3306: 'MySQL',
-    3389: 'RDP', 5432: 'PostgreSQL', 5672: 'AMQP', 5900: 'VNC',
-    6379: 'Redis', 8080: 'HTTP-Alt', 8443: 'HTTPS-Alt',
-    9090: 'Prometheus', 9200: 'Elasticsearch', 27017: 'MongoDB',
-}
-
-const formatPort = (rule: SecurityRule) => {
-    if (rule.protocol === 'icmp' || (rule.port_min != null && rule.port_min < 0)) {
-        return '-'
-    }
-    if (rule.port_min === rule.port_max) {
-        return rule.port_min?.toString() || t('dashboard.forms.placeholder.all')
-    }
-    if (rule.port_min === 1 && rule.port_max === 65535) {
-        return t('dashboard.forms.placeholder.all')
-    }
-    return `${rule.port_min}-${rule.port_max}`
-}
-
-const getServiceName = (rule: SecurityRule): string | null => {
-    if (rule.protocol === 'icmp' || rule.port_min == null || rule.port_min < 0) return null
-    if (rule.port_min === rule.port_max && WELL_KNOWN_PORTS[rule.port_min]) {
-        return WELL_KNOWN_PORTS[rule.port_min]
-    }
-    return null
-}
-
 onMounted(fetchGroup)
-
 </script>
 
 <template>
@@ -271,47 +272,64 @@ onMounted(fetchGroup)
             </button>
         </div>
 
-        <div v-if="loading" class="loading-container">
+        <div v-if="loading && !group" class="loading-container">
             <div class="loading-spinner"></div>
         </div>
 
-        <div v-else-if="error" class="error-container card">
+        <div v-else-if="error && !group" class="error-container card">
             <p class="text-error">{{ error }}</p>
             <button class="btn btn-primary" @click="fetchGroup">{{ $t('actions.retry') }}</button>
         </div>
 
         <div v-else-if="group" class="detail-content">
             <!-- Title Bar -->
-            <div class="title-bar card">
-                <div class="resource-icon">
-                    <Shield :size="24" />
-                </div>
+            <div class="title-bar">
                 <div class="title-info">
-                    <h1>{{ group.name }}</h1>
-                    <div class="subtitle">
-                        <span class="id-text">{{ group.id }}</span>
-                        <span v-if="group.is_default" class="badge badge-primary">{{ $t('dashboard.table.default') }}</span>
+                    <div class="title-icon">
+                        <Shield :size="20" />
+                    </div>
+                    <div>
+                        <h2 class="resource-title">
+                            {{ group.name }}
+                            <span v-if="group.is_default" class="badge badge-secondary">{{
+                                $t('dashboard.table.default')
+                            }}</span>
+                        </h2>
+                        <div class="resource-id-row">
+                            <span class="resource-id-text">{{ group.id }}</span>
+                            <button
+                                class="copy-btn"
+                                :title="$t('actions.copy')"
+                                :aria-label="$t('actions.copy')"
+                                @click="copyId(group.id)"
+                            >
+                                <Check v-if="copiedId === group.id" :size="12" class="copied-icon" />
+                                <Copy v-else :size="12" />
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="title-actions">
                     <div class="action-dropdown">
-                        <button class="btn btn-primary" @click="toggleActionMenu">
+                        <button class="btn btn-secondary btn-sm" @click="toggleActionMenu">
                             {{ $t('actions.actions') }} <ChevronDown :size="14" />
                         </button>
                         <div v-if="showActionMenu" class="dropdown-backdrop" @click="closeActionMenu" />
                         <Transition name="dropdown">
                             <div v-if="showActionMenu" class="dropdown-menu">
                                 <button class="dropdown-item" @click="openEditModal">
-                                    <Edit :size="14" /> {{ $t('actions.edit') }}
+                                    <Pencil :size="14" /> {{ $t('actions.edit') }}
                                 </button>
                                 <div class="dropdown-divider" />
                                 <button
                                     class="dropdown-item dropdown-item-danger"
+                                    :title="
+                                        group.is_default ? $t('dashboard.securityGroupDetail.defaultNotDeletable') : ''
+                                    "
+                                    :disabled="group.is_default"
                                     @click="handleDelete"
-                                    :disabled="deleting || group.is_default"
                                 >
-                                    <Trash2 :size="14" />
-                                    {{ deleting ? $t('messages.deleting') : $t('actions.delete') }}
+                                    <Trash2 :size="14" /> {{ $t('actions.delete') }}
                                 </button>
                             </div>
                         </Transition>
@@ -324,27 +342,23 @@ onMounted(fetchGroup)
                 <div class="card info-card">
                     <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
                     <div class="key-value-list">
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.name') }}</span>
-                            <span class="value">{{ group.name }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.description') }}</span>
-                            <span class="value">{{ translateDescription(group.description) || '-' }}</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.vpc') }}</span>
-                            <span class="value" v-if="group.vpc">
-                                <router-link :to="{name: 'vpc-detail', params: {id: group.vpc.id}}" class="text-link">
-                                    {{ group.vpc.name }}
-                                </router-link>
-                            </span>
-                            <span class="value" v-else>-</span>
-                        </div>
-                        <div class="kv-item">
-                            <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
-                            <span class="value">{{ group.created_at || '-' }}</span>
-                        </div>
+                        <InfoRow :label="$t('dashboard.table.name')">{{ group.name }}</InfoRow>
+                        <InfoRow :label="$t('dashboard.table.description')">
+                            {{ translateDescription(group.description || '') || '-' }}
+                        </InfoRow>
+                        <InfoRow :label="$t('dashboard.table.vpc')">
+                            <router-link
+                                v-if="group.vpc"
+                                :to="{ name: 'vpc-detail', params: { id: group.vpc.id } }"
+                                class="text-link"
+                            >
+                                {{ group.vpc.name }}
+                            </router-link>
+                            <span v-else>-</span>
+                        </InfoRow>
+                        <InfoRow :label="$t('dashboard.table.createdAt')">
+                            {{ group.created_at ? group.created_at.replace(/\.\d+$/, '') : '-' }}
+                        </InfoRow>
                     </div>
                 </div>
             </div>
@@ -352,24 +366,13 @@ onMounted(fetchGroup)
             <!-- Tabbed Section -->
             <div class="card tab-card">
                 <div class="tab-header">
-                    <div class="tab-nav">
-                        <button
-                            :class="['tab-btn', { active: activeTab === 'rules' }]"
-                            @click="activeTab = 'rules'"
-                        >
-                            {{ $t('dashboard.table.securityRules') }}
-                            <span class="tab-count">{{ group.security_rules?.length || 0 }}</span>
-                        </button>
-                        <button
-                            :class="['tab-btn', { active: activeTab === 'interfaces' }]"
-                            @click="activeTab = 'interfaces'"
-                        >
-                            {{ $t('dashboard.securityGroupDetail.associatedInterfaces') }}
-                            <span class="tab-count">{{ group.target_interfaces?.length || 0 }}</span>
-                        </button>
-                    </div>
+                    <DetailTabs v-model="activeTab" :tabs="tabs" />
                     <div v-if="activeTab === 'rules'" class="tab-header-actions">
-                        <button :class="['btn btn-ghost btn-sm', { 'btn-filter-active': showRuleFilter }]" @click="toggleRuleFilter">
+                        <button
+                            :class="['btn btn-ghost btn-sm', { 'btn-filter-active': showRuleFilter }]"
+                            :title="$t('actions.filter')"
+                            @click="toggleRuleFilter"
+                        >
                             <Search :size="14" />
                         </button>
                         <button class="btn btn-primary btn-sm" @click="openAddRuleModal">
@@ -382,14 +385,18 @@ onMounted(fetchGroup)
                 <div v-if="activeTab === 'rules' && showRuleFilter" class="filter-bar">
                     <div class="select-wrapper filter-select">
                         <select v-model="ruleFilter.direction" class="form-input form-input-sm">
-                            <option value="">{{ $t('dashboard.table.direction') }}: {{ $t('dashboard.forms.placeholder.all') }}</option>
+                            <option value="">
+                                {{ $t('dashboard.table.direction') }}: {{ $t('dashboard.forms.placeholder.all') }}
+                            </option>
                             <option value="ingress">{{ $t('dashboard.table.ingress') }}</option>
                             <option value="egress">{{ $t('dashboard.table.egress') }}</option>
                         </select>
                     </div>
                     <div class="select-wrapper filter-select">
                         <select v-model="ruleFilter.protocol" class="form-input form-input-sm">
-                            <option value="">{{ $t('dashboard.table.protocol') }}: {{ $t('dashboard.forms.placeholder.all') }}</option>
+                            <option value="">
+                                {{ $t('dashboard.table.protocol') }}: {{ $t('dashboard.forms.placeholder.all') }}
+                            </option>
                             <option value="tcp">TCP</option>
                             <option value="udp">UDP</option>
                             <option value="icmp">ICMP</option>
@@ -401,7 +408,7 @@ onMounted(fetchGroup)
                             v-model="ruleFilter.keyword"
                             type="text"
                             class="filter-search-input"
-                            :placeholder="$t('dashboard.forms.placeholder.nameExample')"
+                            :placeholder="$t('actions.search') + '...'"
                         />
                         <button v-if="ruleFilter.keyword" class="filter-clear" @click="ruleFilter.keyword = ''">
                             <X :size="12" />
@@ -414,59 +421,57 @@ onMounted(fetchGroup)
                     <table class="data-table">
                         <thead>
                             <tr>
-                                 <th class="sortable-th" @click="toggleSort('name')">
-                                     {{ $t('dashboard.table.name') }}
-                                     <ArrowUp v-if="sortKey === 'name' && sortOrder === 'asc'" :size="12" />
-                                     <ArrowDown v-else-if="sortKey === 'name' && sortOrder === 'desc'" :size="12" />
-                                     <ArrowUpDown v-else :size="12" class="sort-idle" />
-                                 </th>
-                                 <th class="sortable-th" @click="toggleSort('direction')">
-                                     {{ $t('dashboard.table.direction') }}
-                                     <ArrowUp v-if="sortKey === 'direction' && sortOrder === 'asc'" :size="12" />
-                                     <ArrowDown v-else-if="sortKey === 'direction' && sortOrder === 'desc'" :size="12" />
-                                     <ArrowUpDown v-else :size="12" class="sort-idle" />
-                                 </th>
-                                 <th class="sortable-th" @click="toggleSort('protocol')">
-                                     {{ $t('dashboard.table.protocol') }}
-                                     <ArrowUp v-if="sortKey === 'protocol' && sortOrder === 'asc'" :size="12" />
-                                     <ArrowDown v-else-if="sortKey === 'protocol' && sortOrder === 'desc'" :size="12" />
-                                     <ArrowUpDown v-else :size="12" class="sort-idle" />
-                                 </th>
-                                 <th class="sortable-th" @click="toggleSort('port')">
-                                     {{ $t('dashboard.table.portRange') }}
-                                     <ArrowUp v-if="sortKey === 'port' && sortOrder === 'asc'" :size="12" />
-                                     <ArrowDown v-else-if="sortKey === 'port' && sortOrder === 'desc'" :size="12" />
-                                     <ArrowUpDown v-else :size="12" class="sort-idle" />
-                                 </th>
-                                 <th class="sortable-th" @click="toggleSort('remote_cidr')">
-                                     {{ $t('dashboard.table.remoteCidr') }}
-                                     <ArrowUp v-if="sortKey === 'remote_cidr' && sortOrder === 'asc'" :size="12" />
-                                     <ArrowDown v-else-if="sortKey === 'remote_cidr' && sortOrder === 'desc'" :size="12" />
-                                     <ArrowUpDown v-else :size="12" class="sort-idle" />
-                                 </th>
-                                 <th>{{ $t('dashboard.table.actions') }}</th>
+                                <th
+                                    v-for="col in ruleColumns"
+                                    :key="col.key"
+                                    class="sortable-th"
+                                    @click="toggleSort(col.key)"
+                                >
+                                    {{ $t(col.label) }}
+                                    <ArrowUp v-if="sortKey === col.key && sortOrder === 'asc'" :size="12" />
+                                    <ArrowDown v-else-if="sortKey === col.key && sortOrder === 'desc'" :size="12" />
+                                    <ArrowUpDown v-else :size="12" class="sort-idle" />
+                                </th>
+                                <th>{{ $t('dashboard.table.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-if="!sortedRules.length">
-                                 <td colspan="6" class="text-center text-secondary">{{ $t('messages.noData') }}</td>
+                                <td colspan="6" class="text-center text-secondary">{{ $t('messages.noData') }}</td>
                             </tr>
                             <tr v-else v-for="rule in sortedRules" :key="rule.id">
                                 <td>{{ rule.name || '-' }}</td>
                                 <td>
                                     <span :class="['direction-badge', rule.direction]">
-                                         {{ rule.direction === 'ingress' ? $t('dashboard.table.ingress') : $t('dashboard.table.egress') }}
+                                        {{
+                                            rule.direction === 'ingress'
+                                                ? $t('dashboard.table.ingress')
+                                                : $t('dashboard.table.egress')
+                                        }}
                                     </span>
                                 </td>
                                 <td class="mono">{{ rule.protocol.toUpperCase() }}</td>
-                                <td class="mono">{{ formatPort(rule) }} <span v-if="getServiceName(rule)" class="service-tag">{{ getServiceName(rule) }}</span></td>
-                                <td class="mono">{{ rule.remote_cidr }}</td>
-                                <td>
-                                    <button class="btn btn-ghost btn-sm" :title="$t('actions.edit')" @click="openEditRuleModal(rule)">
-                                        <Edit :size="14" />
+                                <td class="mono">
+                                    {{ formatRulePort(rule, t) }}
+                                    <span v-if="ruleServiceName(rule)" class="service-tag">{{
+                                        ruleServiceName(rule)
+                                    }}</span>
+                                </td>
+                                <td class="mono">{{ rule.remote_cidr || '-' }}</td>
+                                <td class="actions-cell">
+                                    <button
+                                        class="icon-btn-table"
+                                        :title="$t('actions.edit')"
+                                        @click="openEditRuleModal(rule)"
+                                    >
+                                        <Pencil :size="16" />
                                     </button>
-                                    <button class="btn btn-ghost btn-sm text-error" @click="handleDeleteRule(rule.id)">
-                                        <Trash2 :size="14" />
+                                    <button
+                                        class="icon-btn-table icon-danger"
+                                        :title="$t('actions.delete')"
+                                        @click="handleDeleteRule(rule)"
+                                    >
+                                        <Trash2 :size="16" />
                                     </button>
                                 </td>
                             </tr>
@@ -487,7 +492,9 @@ onMounted(fetchGroup)
                         </thead>
                         <tbody>
                             <tr v-if="!group.target_interfaces?.length">
-                                <td colspan="4" class="text-center text-secondary">{{ $t('dashboard.securityGroupDetail.noInterfaces') }}</td>
+                                <td colspan="4" class="text-center text-secondary">
+                                    {{ $t('dashboard.securityGroupDetail.noInterfaces') }}
+                                </td>
                             </tr>
                             <tr v-else v-for="iface in group.target_interfaces" :key="iface.id">
                                 <td>{{ iface.name || '-' }}</td>
@@ -500,7 +507,10 @@ onMounted(fetchGroup)
                                 <td>
                                     <div v-if="iface.from_instance" class="iface-cell">
                                         <Server :size="14" class="text-secondary" />
-                                        <router-link :to="{ name: 'instance-detail', params: { id: iface.from_instance.id } }" class="text-link">
+                                        <router-link
+                                            :to="{ name: 'instance-detail', params: { id: iface.from_instance.id } }"
+                                            class="text-link"
+                                        >
                                             {{ iface.from_instance.hostname || iface.from_instance.id }}
                                         </router-link>
                                     </div>
@@ -514,160 +524,93 @@ onMounted(fetchGroup)
             </div>
         </div>
 
-        <!-- Edit Security Group Modal -->
-        <div v-if="showEditModal" class="modal-overlay" @click.self="showEditModal = false">
-            <div class="modal-content card">
-                <div class="modal-header">
-                    <h3>{{ $t('actions.edit') }}</h3>
-                    <button class="btn btn-ghost btn-sm icon-btn" @click="showEditModal = false"><X :size="20" /></button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <label class="form-label">{{ $t('dashboard.table.name') }}</label>
-                        <input v-model="editForm.name" type="text" class="form-input" @keyup.enter="saveInfo" />
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">{{ $t('dashboard.table.description') }}</label>
-                        <input v-model="editForm.description" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.none')" @keyup.enter="saveInfo" />
-                    </div>
-                    <div v-if="editError" class="text-error" style="font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-                        {{ editError }}
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" @click="showEditModal = false" :disabled="savingInfo">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary" @click="saveInfo" :disabled="savingInfo">
-                        <span v-if="savingInfo" class="loading-spinner" style="width:16px;height:16px;border-width:2px;"></span>
-                        {{ savingInfo ? $t('messages.saving') : $t('actions.save') }}
-                    </button>
-                </div>
-            </div>
-        </div>
+        <!-- Add / Edit Rule Modal -->
+        <SecurityRuleModal
+            :show="ruleModalVisible"
+            :group-id="groupId"
+            :rule="ruleToEdit"
+            @close="ruleModalVisible = false"
+            @saved="onRuleSaved"
+        />
 
-        <!-- Add Rule Modal -->
-        <div v-if="showAddRuleModal" class="modal-overlay" @click.self="showAddRuleModal = false">
-             <div class="modal-content card">
-                <div class="modal-header">
-                     <h3>{{ editingRuleId ? $t('actions.edit') : $t('dashboard.buttons.addRule') }}</h3>
-                    <button class="btn btn-ghost btn-sm icon-btn" @click="showAddRuleModal = false"><X :size="20" /></button>
-                </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                         <label class="form-label">{{ $t('dashboard.table.name') }}</label>
-                         <input v-model="newRule.name" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.nameExample')">
-                    </div>
-                    <div class="form-group">
-                         <label class="form-label">{{ $t('dashboard.table.direction') }}</label>
-                        <select v-model="newRule.direction" class="form-input">
-                             <option value="ingress">{{ $t('dashboard.table.ingress') }}</option>
-                            <option value="egress">{{ $t('dashboard.table.egress') }}</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                         <label class="form-label">{{ $t('dashboard.table.protocol') }}</label>
-                        <select v-model="newRule.protocol" class="form-input">
-                            <option value="tcp">TCP</option>
-                            <option value="udp">UDP</option>
-                            <option value="icmp">ICMP</option>
-                        </select>
-                    </div>
-                    <div v-if="newRule.protocol !== 'icmp'" class="form-row">
-                        <div class="form-group flex-1">
-                             <label class="form-label">{{ $t('dashboard.table.portMin') }}</label>
-                            <input v-model.number="newRule.port_min" type="number" class="form-input" min="1" max="65535">
-                        </div>
-                        <div class="form-group flex-1">
-                             <label class="form-label">{{ $t('dashboard.table.portMax') }}</label>
-                            <input v-model.number="newRule.port_max" type="number" class="form-input" min="1" max="65535">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                         <label class="form-label">{{ $t('dashboard.table.remoteCidr') }}</label>
-                        <input v-model="newRule.remote_cidr" type="text" class="form-input" :placeholder="$t('dashboard.forms.placeholder.cidrExample')">
-                    </div>
-                    <div v-if="addRuleError" class="text-error" style="margin-bottom:var(--spacing-4);font-size:var(--font-size-sm);background:var(--error-light);padding:var(--spacing-2);border-radius:var(--radius-sm)">
-                        {{ addRuleError }}
-                    </div>
-                </div>
-                 <div class="modal-footer">
-                     <button class="btn btn-secondary" @click="showAddRuleModal = false">{{ $t('actions.cancel') }}</button>
-                    <button class="btn btn-primary" @click="handleAddRule" :disabled="addingRule">
-                          {{ addingRule ? (editingRuleId ? $t('messages.saving') : $t('messages.creating')) : (editingRuleId ? $t('actions.save') : $t('dashboard.buttons.addRule')) }}
-                    </button>
-                </div>
+        <!-- Edit Security Group Modal -->
+        <BaseModal
+            :show="showEditModal"
+            :title="$t('actions.edit')"
+            :loading="savingInfo"
+            form
+            @close="showEditModal = false"
+            @submit="saveInfo"
+        >
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.table.name') }}</label>
+                <input v-model="editForm.name" type="text" :class="['form-input', { 'input-error': !isEditValid }]" />
+                <div v-if="!isEditValid" class="text-error text-xs mt-1">{{ $t('messages.invalidHostname') }}</div>
             </div>
-        </div>
+            <div class="form-group">
+                <label class="form-label">{{ $t('dashboard.table.description') }}</label>
+                <input
+                    v-model="editForm.description"
+                    type="text"
+                    class="form-input"
+                    :placeholder="$t('messages.placeholderDescription')"
+                />
+            </div>
+            <div v-if="editError" class="error-box">{{ editError }}</div>
+
+            <template #footer>
+                <button type="button" class="btn btn-secondary" @click="showEditModal = false" :disabled="savingInfo">
+                    {{ $t('actions.cancel') }}
+                </button>
+                <button type="submit" class="btn btn-primary" :disabled="savingInfo || !isEditValid">
+                    <span
+                        v-if="savingInfo"
+                        class="loading-spinner"
+                        style="width: 16px; height: 16px; border-width: 2px"
+                    ></span>
+                    {{ savingInfo ? $t('messages.saving') : $t('actions.save') }}
+                </button>
+            </template>
+        </BaseModal>
+
+        <!-- Delete Rule Modal -->
+        <DeleteModal
+            :show="!!ruleToDelete"
+            :message="$t('dashboard.securityGroupDetail.deleteRuleConfirm')"
+            :resource-name="ruleToDeleteName"
+            :resource-id="ruleToDelete?.id"
+            :loading="deletingRule"
+            :error="deleteRuleError"
+            @close="closeDeleteRuleModal"
+            @confirm="confirmDeleteRule"
+        />
+
+        <!-- Delete Security Group Modal -->
+        <DeleteModal
+            :show="deleteGroupModalVisible && !!group"
+            :message="$t('dashboard.securityGroupDetail.deleteConfirm')"
+            :resource-name="group?.name"
+            :resource-id="group?.id"
+            :loading="deletingGroup"
+            :error="deleteGroupError"
+            @close="closeDeleteGroupModal"
+            @confirm="confirmDeleteGroup"
+        />
     </div>
 </template>
 
 <style scoped>
-.detail-page {
-    max-width: 1200px;
-    margin: 0 auto;
-}
-
 .detail-header {
     margin-bottom: var(--spacing-4);
 }
 
-.loading-container, .error-container {
+.loading-container,
+.error-container {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     padding: 60px;
-}
-
-/* Title Bar */
-.title-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-4);
-    padding: var(--spacing-6);
-    margin-bottom: var(--spacing-6);
-}
-
-.resource-icon {
-    width: 48px;
-    height: 48px;
-    background: var(--bg-tertiary);
-    color: var(--primary-color);
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.title-info {
-    flex: 1;
-}
-
-.title-info h1 {
-    font-size: var(--font-size-xl);
-    font-weight: 600;
-    margin: 0 0 4px 0;
-    color: var(--text-primary);
-}
-
-.subtitle {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-3);
-    font-size: var(--font-size-sm);
-}
-
-.id-text {
-    font-family: var(--font-family-mono);
-    color: var(--text-secondary);
-}
-
-.badge {
-    background: var(--primary-50);
-    color: var(--primary-700);
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 600;
 }
 
 /* Action Dropdown */
@@ -678,7 +621,7 @@ onMounted(fetchGroup)
 .dropdown-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 9;
+    z-index: var(--z-dropdown-backdrop);
 }
 
 .dropdown-menu {
@@ -686,12 +629,12 @@ onMounted(fetchGroup)
     top: calc(100% + 6px);
     right: 0;
     min-width: 160px;
-    background: var(--bg-primary, #fff);
+    background: var(--bg-primary, var(--bg-primary));
     border: 1px solid var(--border-light);
     border-radius: var(--radius-md);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
     padding: 4px 0;
-    z-index: 10;
+    z-index: var(--z-dropdown);
 }
 
 .dropdown-item {
@@ -710,7 +653,7 @@ onMounted(fetchGroup)
 }
 
 .dropdown-item:hover:not(:disabled) {
-    background: var(--bg-hover, #f3f4f6);
+    background: var(--bg-hover, var(--gray-100));
 }
 
 .dropdown-item:disabled {
@@ -719,11 +662,11 @@ onMounted(fetchGroup)
 }
 
 .dropdown-item-danger {
-    color: var(--error-color, #ef4444);
+    color: var(--error-color, var(--error-color));
 }
 
 .dropdown-item-danger:hover:not(:disabled) {
-    background: #fef2f2;
+    background: var(--error-light);
 }
 
 .dropdown-divider {
@@ -732,9 +675,21 @@ onMounted(fetchGroup)
     margin: 4px 0;
 }
 
-.dropdown-enter-active { transition: opacity 0.15s, transform 0.15s; }
-.dropdown-leave-active { transition: opacity 0.1s, transform 0.1s; }
-.dropdown-enter-from, .dropdown-leave-to { opacity: 0; transform: translateY(-4px); }
+.dropdown-enter-active {
+    transition:
+        opacity 0.15s,
+        transform 0.15s;
+}
+.dropdown-leave-active {
+    transition:
+        opacity 0.1s,
+        transform 0.1s;
+}
+.dropdown-enter-from,
+.dropdown-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
+}
 
 /* Info Grid */
 .info-grid {
@@ -749,7 +704,7 @@ onMounted(fetchGroup)
 }
 
 .info-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-primary);
@@ -763,46 +718,13 @@ onMounted(fetchGroup)
     gap: var(--spacing-3);
 }
 
-.kv-item {
-    display: flex;
-    justify-content: space-between;
-    font-size: var(--font-size-sm);
+.text-link {
+    color: var(--primary-600);
+    text-decoration: none;
 }
-
-.kv-item .label {
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    gap: 6px;
+.text-link:hover {
+    text-decoration: underline;
 }
-
-.kv-item .value {
-    color: var(--text-primary);
-    font-weight: 500;
-    text-align: right;
-}
-
-.text-link { color: var(--primary-600); text-decoration: none; }
-.text-link:hover { text-decoration: underline; }
-
-.value-with-edit {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-}
-
-.btn-icon-link {
-    background: none;
-    border: none;
-    padding: 0;
-    color: var(--text-tertiary);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    transition: color var(--transition-fast);
-}
-
-.btn-icon-link:hover { color: var(--primary-color); }
 
 /* Tabs */
 .tab-card {
@@ -814,57 +736,15 @@ onMounted(fetchGroup)
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
     padding: 0 var(--spacing-5);
     border-bottom: 1px solid var(--border-light);
 }
 
-.tab-nav {
-    display: flex;
-    gap: 0;
-}
-
-.tab-btn {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-2);
-    padding: var(--spacing-4) var(--spacing-4);
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
-    margin-bottom: -1px;
-}
-
-.tab-btn:hover {
-    color: var(--text-primary);
-}
-
-.tab-btn.active {
-    color: var(--primary-color);
-    border-bottom-color: var(--primary-color);
-}
-
-.tab-count {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 20px;
-    height: 18px;
-    padding: 0 5px;
-    background: var(--bg-tertiary);
-    border-radius: 9px;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-secondary);
-}
-
-.tab-btn.active .tab-count {
-    background: var(--primary-50);
-    color: var(--primary-700);
+/* 分隔线由 .tab-header 统一提供，去掉 DetailTabs 自带的下边线与下边距 */
+.tab-header .detail-tabs {
+    border-bottom: none;
+    margin-bottom: 0;
 }
 
 .tab-header-actions {
@@ -881,10 +761,11 @@ onMounted(fetchGroup)
 .filter-bar {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: var(--spacing-2);
     padding: var(--spacing-3) var(--spacing-5);
     border-bottom: 1px solid var(--border-light);
-    background: var(--bg-secondary, #f9fafb);
+    background: var(--bg-secondary, var(--gray-50));
 }
 
 .filter-select {
@@ -897,6 +778,7 @@ onMounted(fetchGroup)
     display: flex;
     align-items: center;
     flex: 1;
+    min-width: 160px;
     max-width: 260px;
 }
 
@@ -917,7 +799,9 @@ onMounted(fetchGroup)
     font-size: var(--font-size-sm);
     line-height: 1.5;
     outline: none;
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    transition:
+        border-color var(--transition-fast),
+        box-shadow var(--transition-fast);
 }
 
 .filter-search-input:focus {
@@ -949,29 +833,47 @@ onMounted(fetchGroup)
     overflow-x: auto;
 }
 
+.actions-cell {
+    white-space: nowrap;
+}
+
 .direction-badge {
     display: inline-block;
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 11px;
     font-weight: 600;
-    text-transform: uppercase;
 }
 
-.direction-badge.ingress { background: var(--success-50); color: var(--success-dark); }
-.direction-badge.egress { background: var(--info-50); color: var(--info-dark); }
+.direction-badge.ingress {
+    background: var(--success-light);
+    color: var(--success-dark);
+}
+.direction-badge.egress {
+    background: var(--info-light);
+    color: var(--info-dark);
+}
 
-.mono { font-family: var(--font-family-mono); }
+.mono {
+    font-family: var(--font-family-mono);
+}
 
 .sortable-th {
     cursor: pointer;
     user-select: none;
-    display: table-cell;
+    white-space: nowrap;
 }
 
-.sortable-th:hover { color: var(--primary-color); }
-.sortable-th svg { vertical-align: middle; margin-left: 4px; }
-.sort-idle { opacity: 0.3; }
+.sortable-th:hover {
+    color: var(--primary-color);
+}
+.sortable-th svg {
+    vertical-align: middle;
+    margin-left: 4px;
+}
+.sort-idle {
+    opacity: 0.3;
+}
 
 .service-tag {
     display: inline-block;
@@ -979,7 +881,7 @@ onMounted(fetchGroup)
     border-radius: 4px;
     font-size: 10px;
     font-weight: 600;
-    font-family: var(--font-family-base);
+    font-family: var(--font-family);
     background: var(--primary-50);
     color: var(--primary-700);
     margin-left: 6px;
@@ -992,25 +894,17 @@ onMounted(fetchGroup)
     gap: var(--spacing-2);
 }
 
-/* Modal */
-.form-group { margin-bottom: 16px; }
-.form-row { display: flex; gap: 16px; }
-.flex-1 { flex: 1; }
-
-.form-label {
-    display: block;
-    margin-bottom: 6px;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-secondary);
+.input-error {
+    border-color: var(--error-color) !important;
+    box-shadow: 0 0 0 3px var(--error-light) !important;
 }
 
-.form-input {
-    width: 100%;
-    padding: 8px 12px;
-    border: 1px solid var(--border-light);
-    border-radius: 6px;
-    background: var(--bg-primary);
-    color: var(--text-primary);
+.error-box {
+    color: var(--error-color);
+    font-size: var(--font-size-sm);
+    background: var(--error-light);
+    padding: var(--spacing-2);
+    border-radius: var(--radius-sm);
+    text-align: left;
 }
 </style>

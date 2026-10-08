@@ -1,0 +1,17 @@
+[Unit]
+Description=Cloudlet service (Go gRPC)
+After=network.target
+
+[Service]
+Type=simple
+User=cland
+EnvironmentFile=/etc/sysconfig/cloudlet
+ExecStart=/opt/cloudland/bin/cloudlet-go
+KillMode=process
+# cloudlet-go 仅在节点被控制面删除时正常退出，此时不应被拉起
+Restart=on-failure
+RestartSec=5
+OOMScoreAdjust=-1000
+
+[Install]
+WantedBy=multi-user.target

@@ -31,7 +31,6 @@ import (
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	logging "github.com/op/go-logging"
 	"github.com/spf13/viper"
 )
@@ -43,14 +42,12 @@ const (
 	// 无颜色，适合 Docker stdout / 日志采集（Loki/Promtail）
 	plainFormat  = "%{time:2006-01-02T15:04:05.000Z07:00} [%{level:.4s}] [%{module}] %{shortfile} %{message}"
 	defaultLevel = logging.INFO
-
-	RequestIDKey = "X-Request-ID"
 )
 
 type JSONFormatter struct{}
 
 func (f *JSONFormatter) Format(calldepth int, rec *logging.Record, w io.Writer) error {
-	_, file, line, ok := runtime.Caller(calldepth)
+	_, file, line, ok := runtime.Caller(calldepth + 1)
 	fileStr := "unknown"
 	if ok {
 		// Get short file name
@@ -60,12 +57,17 @@ func (f *JSONFormatter) Format(calldepth int, rec *logging.Record, w io.Writer) 
 			fileStr = fmt.Sprintf("%s:%d", file, line)
 		}
 	}
+	tag, msg := splitTrace(rec)
 	logData := map[string]interface{}{
 		"time":   rec.Time.Format("2006-01-02T15:04:05.000Z07:00"),
 		"level":  rec.Level.String(),
 		"module": rec.Module,
 		"file":   fileStr,
-		"msg":    rec.Message(),
+		"msg":    msg,
+	}
+	if tag != nil {
+		logData["trace_id"] = tag.traceID
+		logData["span_id"] = tag.spanID
 	}
 	encoder := json.NewEncoder(w)
 	return encoder.Encode(logData)
@@ -234,8 +236,9 @@ func setModuleLevel(moduleRegExp string, level string, isRegExp bool, revert boo
 
 // MustGetLogger is used in place of `logging.MustGetLogger` to allow us to
 // store a map of all modules and submodules that have loggers in the system.
-func MustGetLogger(module string) *logging.Logger {
-	l := logging.MustGetLogger(module)
+func MustGetLogger(module string) *ModuleLogger {
+	l := &ModuleLogger{Logger: logging.MustGetLogger(module), wrapped: logging.MustGetLogger(module)}
+	l.wrapped.ExtraCalldepth = 1
 	lock.Lock()
 	defer lock.Unlock()
 	modules[module] = GetModuleLevel(module)
@@ -297,19 +300,12 @@ func InitLogLevelFromSpec(spec string) string {
 	return levelAll.String()
 }
 
-// RequestID is a Gin middleware that injects a request ID into every request.
-func RequestID() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		requestID := c.GetHeader(RequestIDKey)
-		if requestID == "" {
-			requestID = uuid.New().String()
-		}
-		c.Set(RequestIDKey, requestID)
-		ctx := context.WithValue(c.Request.Context(), RequestIDKey, requestID)
-		c.Request = c.Request.WithContext(ctx)
-		c.Header(RequestIDKey, requestID)
-		c.Next()
+// traceIDOrDash 返回 ctx 中的 trace id，没有时返回 "-"
+func traceIDOrDash(ctx context.Context) string {
+	if id := traceIDFromContext(ctx); id != "" {
+		return id
 	}
+	return "-"
 }
 
 // Logger is a Gin middleware that logs each request.
@@ -327,13 +323,7 @@ func Logger() gin.HandlerFunc {
 		if raw != "" {
 			path = path + "?" + raw
 		}
-		requestIDValue, exists := c.Get(RequestIDKey)
-		requestID := "-"
-		if exists {
-			if str, ok := requestIDValue.(string); ok {
-				requestID = str
-			}
-		}
+		traceID := traceIDOrDash(c.Request.Context())
 
 		if viper.GetString("logging.log_dir") == "" {
 			logData := map[string]interface{}{
@@ -346,7 +336,7 @@ func Logger() gin.HandlerFunc {
 				"status":     statusCode,
 				"latency_ms": float64(latency.Nanoseconds()/1000) / 1000.0,
 				"ip":         clientIP,
-				"request_id": requestID,
+				"trace_id":   traceID,
 			}
 			if errorMessage != "" {
 				logData["errors"] = errorMessage
@@ -356,9 +346,9 @@ func Logger() gin.HandlerFunc {
 			return
 		}
 
-		logger.Infof("API REQUEST JSON: %s %s IP: %s RequestID: %s | %d %v | DATA: {\"method\":\"%s\",\"path\":\"%s\",\"status\":%d,\"latency_ms\":%.3f,\"ip\":\"%s\",\"request_id\":\"%s\",\"errors\":\"%s\"}",
-			method, path, clientIP, requestID, statusCode, latency,
-			method, path, statusCode, float64(latency.Nanoseconds())/1e6, clientIP, requestID, errorMessage)
+		logger.Infof("API REQUEST JSON: %s %s IP: %s TraceID: %s | %d %v | DATA: {\"method\":\"%s\",\"path\":\"%s\",\"status\":%d,\"latency_ms\":%.3f,\"ip\":\"%s\",\"trace_id\":\"%s\",\"errors\":\"%s\"}",
+			method, path, clientIP, traceID, statusCode, latency,
+			method, path, statusCode, float64(latency.Nanoseconds())/1e6, clientIP, traceID, errorMessage)
 	}
 }
 
@@ -377,12 +367,7 @@ func MacaronLogger() macaron.Handler {
 			path = path + "?" + raw
 		}
 
-		// Macaron doesn't have a standard RequestID middleware in this project's context,
-		// but we can try to get it from the header or generate a temporary one if needed.
-		requestID := req.Header.Get(RequestIDKey)
-		if requestID == "" {
-			requestID = "-"
-		}
+		traceID := traceIDOrDash(c.Req.Context())
 
 		if viper.GetString("logging.log_dir") == "" {
 			logData := map[string]interface{}{
@@ -395,30 +380,15 @@ func MacaronLogger() macaron.Handler {
 				"status":     statusCode,
 				"latency_ms": float64(latency.Nanoseconds()/1000) / 1000.0,
 				"ip":         clientIP,
-				"request_id": requestID,
+				"trace_id":   traceID,
 			}
 			jsonData, _ := json.Marshal(logData)
 			fmt.Fprintln(os.Stdout, string(jsonData))
 			return
 		}
 
-		logger.Infof("WEB REQUEST JSON: %s %s IP: %s | %d %v | DATA: {\"method\":\"%s\",\"path\":\"%s\",\"status\":%d,\"latency_ms\":%.3f,\"ip\":\"%s\",\"request_id\":\"%s\"}",
+		logger.Infof("WEB REQUEST JSON: %s %s IP: %s | %d %v | DATA: {\"method\":\"%s\",\"path\":\"%s\",\"status\":%d,\"latency_ms\":%.3f,\"ip\":\"%s\",\"trace_id\":\"%s\"}",
 			method, path, clientIP, statusCode, latency,
-			method, path, statusCode, float64(latency.Nanoseconds())/1e6, clientIP, requestID)
-	}
-}
-
-// MacaronRequestID is a Macaron middleware that injects a request ID into every request.
-func MacaronRequestID() macaron.Handler {
-	return func(res http.ResponseWriter, req *http.Request, c *macaron.Context) {
-		requestID := req.Header.Get(RequestIDKey)
-		if requestID == "" {
-			requestID = uuid.New().String()
-		}
-		// Macaron doesn't have a built-in context like Gin, but we can set it in the header
-		// so that the logger and subsequent handlers can find it.
-		req.Header.Set(RequestIDKey, requestID)
-		res.Header().Set(RequestIDKey, requestID)
-		c.Next()
+			method, path, statusCode, float64(latency.Nanoseconds())/1e6, clientIP, traceID)
 	}
 }

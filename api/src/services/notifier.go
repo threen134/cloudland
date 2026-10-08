@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/tls"
@@ -16,6 +17,9 @@ import (
 	"time"
 
 	"api/src/model"
+	"api/src/utils/tracing"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 // NotifyResult 通知发送结果
@@ -40,6 +44,7 @@ func NewAlarmNotifier() *AlarmNotifier {
 
 // SendNotification 向指定渠道发送通知（同步执行，由调用方决定是否用 goroutine）
 func (n *AlarmNotifier) SendNotification(
+	ctx context.Context,
 	channel *model.NotificationChannel,
 	event *model.AlarmEvent,
 	notifyType string, // firing_trigger, repeat_remind, resolved
@@ -57,6 +62,9 @@ func (n *AlarmNotifier) SendNotification(
 		}
 	}()
 
+	// 通知渠道（飞书、Slack、webhook、邮件）均为外部服务：只建 span，不注入 trace 头
+	_, span := tracing.StartChild(ctx, "notify."+channel.Type, trace.WithSpanKind(trace.SpanKindClient))
+
 	var err error
 	switch channel.Type {
 	case "feishu":
@@ -71,6 +79,7 @@ func (n *AlarmNotifier) SendNotification(
 		err = fmt.Errorf("unsupported channel type: %s", channel.Type)
 	}
 
+	tracing.EndSpan(span, err)
 	if err != nil {
 		result.Status = "failed"
 		result.Error = err.Error()
@@ -149,25 +158,17 @@ func (n *AlarmNotifier) sendWebhook(
 ) error {
 	var config struct {
 		URL     string            `json:"url"`
-		Method  string            `json:"method"`  // HTTP 方法，默认 POST
+		Method  string            `json:"method"` // HTTP 方法，默认 POST
 		Headers map[string]string `json:"headers"`
 	}
 	if err := json.Unmarshal([]byte(channel.Config), &config); err != nil {
 		return fmt.Errorf("parse webhook config: %w", err)
 	}
 	if config.URL == "" {
-		// fallback 到系统设置镜像中的全局 Webhook 配置
-		config.URL = GetMirrorSetting("CUSTOM_WEBHOOK_URL")
-	}
-	if config.URL == "" {
-		return fmt.Errorf("webhook url is empty (not configured in channel or system settings)")
+		return fmt.Errorf("webhook url is empty in the notification channel config")
 	}
 	if config.Method == "" {
-		// 优先使用 channel 配置中的 Method，其次从镜像读取，最后默认 POST
-		config.Method = GetMirrorSetting("CUSTOM_WEBHOOK_METHOD")
-		if config.Method == "" {
-			config.Method = "POST"
-		}
+		config.Method = "POST"
 	}
 
 	payload := map[string]interface{}{
@@ -288,12 +289,8 @@ func (n *AlarmNotifier) sendSlack(
 	if err := json.Unmarshal([]byte(channel.Config), &config); err != nil {
 		return fmt.Errorf("parse slack config: %w", err)
 	}
-	// channel.Config 为空时，从系统设置镜像中读取全局 Slack Webhook URL
 	if config.WebhookURL == "" {
-		config.WebhookURL = GetMirrorSetting("SLACK_WEBHOOK_URL")
-	}
-	if config.WebhookURL == "" {
-		return fmt.Errorf("slack webhook_url is empty (not configured in channel or system settings)")
+		return fmt.Errorf("slack webhook_url is empty in the notification channel config")
 	}
 
 	title := n.buildTitle(event, notifyType)
@@ -433,4 +430,3 @@ func (n *AlarmNotifier) doHTTPPost(url string, payload interface{}) error {
 	}
 	return nil
 }
-

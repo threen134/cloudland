@@ -2,19 +2,23 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { subnetsApi, type Subnet } from '../../api/networks'
-import { ArrowLeft, Network, Trash2, Globe, Lock, Activity, Copy, Check, ChevronDown, Pencil } from 'lucide-vue-next'
+import { ArrowLeft, Network, Trash2, Copy, Check, ChevronDown } from 'lucide-vue-next'
 import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import DeleteModal from '../../components/modals/DeleteModal.vue'
+import InfoRow from '../../components/base/InfoRow.vue'
+import { useCopyId } from '../../composables/useCopyId'
+import { useGoBack } from '../../composables/useGoBack'
+import { errorMessage } from '../../utils/error'
 
 const route = useRoute()
 const router = useRouter()
 const subnetId = route.params.id as string
+const { copiedId: copiedField, copyId: copyToClipboard } = useCopyId()
 
 const subnet = ref<Subnet | null>(null)
 const loading = ref(true)
 const error = ref('')
-const copiedField = ref<string | null>(null)
 const showActionMenu = ref(false)
 const { t } = useI18n()
 const toast = useToast()
@@ -41,9 +45,9 @@ const confirmDelete = async () => {
         await subnetsApi.delete(subnetId)
         toast.success(t('messages.deleteSuccess'))
         router.push({ name: 'subnets' })
-    } catch (err: any) {
+    } catch (err) {
         console.error('Failed to delete subnet:', err)
-        deleteError.value = err.response?.data?.error_message || err.message || t('messages.error')
+        deleteError.value = errorMessage(err, t('messages.error'))
     } finally {
         deletingResource.value = false
     }
@@ -63,23 +67,14 @@ const fetchSubnet = async () => {
     }
 }
 
-const goBack = () => {
-    router.back()
-}
-
-const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-        copiedField.value = field
-        setTimeout(() => { copiedField.value = null }, 2000)
-    })
-}
+const goBack = useGoBack('subnets')
 
 const getTypeBadgeClass = (type: string) => {
     const map: Record<string, string> = {
-        'public': 'badge-success',
-        'internal': 'badge-primary',
-        'private': 'badge-info',
-        'site': 'badge-warning'
+        public: 'badge-success',
+        internal: 'badge-primary',
+        private: 'badge-info',
+        site: 'badge-warning',
     }
     return map[type] || 'badge-gray'
 }
@@ -114,19 +109,25 @@ onMounted(fetchSubnet)
 
         <div v-else-if="subnet" class="detail-content">
             <!-- Title Bar -->
-            <div class="title-bar card">
+            <div class="title-bar">
                 <div class="title-info">
                     <div class="title-icon">
-                        <Network :size="28" />
+                        <Network :size="20" />
                     </div>
                     <div>
                         <h2 class="resource-title">
                             {{ subnet.name }}
-                            <span :class="['badge', getTypeBadgeClass(subnet.type || 'internal')]">{{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}</span>
+                            <span class="badge badge-secondary">{{
+                                $t('dashboard.subnetTypes.' + (subnet.type || 'internal'))
+                            }}</span>
                         </h2>
                         <div class="resource-id-row">
                             <span class="resource-id-text">{{ subnet.id }}</span>
-                            <button class="copy-btn" @click="copyToClipboard(subnet.id, 'id')" :title="$t('messages.copied')">
+                            <button
+                                class="copy-btn"
+                                @click="copyToClipboard(subnet.id, 'id')"
+                                :title="$t('messages.copied')"
+                            >
                                 <Check v-if="copiedField === 'id'" :size="12" class="copied-icon" />
                                 <Copy v-else :size="12" />
                             </button>
@@ -135,7 +136,7 @@ onMounted(fetchSubnet)
                 </div>
                 <div class="title-actions">
                     <div class="action-dropdown">
-                        <button class="btn btn-primary" @click="toggleActionMenu">
+                        <button class="btn btn-secondary btn-sm" @click="toggleActionMenu">
                             {{ $t('actions.actions') }} <ChevronDown :size="14" />
                         </button>
                         <Transition name="dropdown">
@@ -157,14 +158,8 @@ onMounted(fetchSubnet)
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.table.generalInformation') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.name') }}</span>
-                                <span class="value">{{ subnet.name }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.createdAt') }}</span>
-                                <span class="value">{{ subnet.created_at || '-' }}</span>
-                            </div>
+                            <InfoRow :label="$t('dashboard.table.name')">{{ subnet.name }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.createdAt')">{{ subnet.created_at || '-' }}</InfoRow>
                         </div>
                     </div>
 
@@ -172,22 +167,16 @@ onMounted(fetchSubnet)
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.table.ipUsageStats') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.totalIps') }}</span>
-                                <span class="value">{{ subnet.total_count }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.allocated') }}</span>
-                                <span class="value text-blue">{{ subnet.allocated_count }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.available') }}</span>
-                                <span class="value text-green">{{ subnet.available_count }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.idleReserved') }}</span>
-                                <span class="value">{{ subnet.idle_count }} / {{ subnet.reserved_count }}</span>
-                            </div>
+                            <InfoRow :label="$t('dashboard.table.totalIps')">{{ subnet.total_count }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.allocated')">
+                                <span class="text-blue">{{ subnet.allocated_count }}</span>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.available')">
+                                <span class="text-green">{{ subnet.available_count }}</span>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.idleReserved')"
+                                >{{ subnet.idle_count }} / {{ subnet.reserved_count }}</InfoRow
+                            >
                         </div>
                     </div>
                 </div>
@@ -197,46 +186,39 @@ onMounted(fetchSubnet)
                     <div class="card info-card">
                         <h3>{{ $t('dashboard.table.networkDetails') }}</h3>
                         <div class="key-value-list">
-                            <div class="kv-item" v-if="subnet.vpc">
-                                <span class="label">{{ $t('dashboard.table.vpc') }}</span>
-                                <span class="value">
-                                    <router-link :to="{name: 'vpc-detail', params: {id: subnet.vpc.id}}" class="text-link">
-                                        {{ subnet.vpc.name }}
-                                    </router-link>
+                            <InfoRow v-if="subnet.vpc" :label="$t('dashboard.table.vpc')">
+                                <router-link
+                                    :to="{ name: 'vpc-detail', params: { id: subnet.vpc.id } }"
+                                    class="text-link"
+                                >
+                                    {{ subnet.vpc.name }}
+                                </router-link>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.subnetType')">
+                                <span
+                                    :class="['type-badge', getTypeBadgeClass(subnet.type || 'internal')]"
+                                    style="padding: 2px 10px; font-size: 11px"
+                                >
+                                    {{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}
                                 </span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.subnetType') }}</span>
-                                <span class="value">
-                                    <span :class="['type-badge', getTypeBadgeClass(subnet.type || 'internal')]" style="padding: 2px 10px; font-size: 11px;">
-                                        {{ $t('dashboard.subnetTypes.' + (subnet.type || 'internal')) }}
-                                    </span>
-                                </span>
-                            </div>
-                            <div class="kv-item">
-                                 <span class="label">{{ $t('dashboard.table.cidr') }}</span>
-                                 <span class="value mono">{{ subnet.network || subnet.network_cidr }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.networkRange') }}</span>
-                                <span class="value mono">{{ subnet.start }} - {{ subnet.end }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.gateway') }}</span>
-                                <span class="value mono">{{ subnet.gateway || '-' }}</span>
-                            </div>
-                            <div class="kv-item" v-if="subnet.vlan">
-                                <span class="label">{{ (subnet.vlan > 4094) ? $t('dashboard.table.vxlan') : $t('dashboard.table.vlan') }}</span>
-                                <span class="value mono">{{ subnet.vlan }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.dhcp') }}</span>
-                                <span class="value">{{ subnet.dhcp ? $t('dashboard.alarm.enabled') : $t('dashboard.alarm.disabled') }}</span>
-                            </div>
-                            <div class="kv-item">
-                                <span class="label">{{ $t('dashboard.table.dns') }}</span>
-                                <span class="value mono">{{ subnet.dns || '-' }}</span>
-                            </div>
+                            </InfoRow>
+                            <InfoRow :label="$t('dashboard.table.cidr')" mono>{{
+                                subnet.network || subnet.network_cidr
+                            }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.networkRange')" mono
+                                >{{ subnet.start }} - {{ subnet.end }}</InfoRow
+                            >
+                            <InfoRow :label="$t('dashboard.table.gateway')" mono>{{ subnet.gateway || '-' }}</InfoRow>
+                            <InfoRow
+                                v-if="subnet.vlan"
+                                :label="subnet.vlan > 4094 ? $t('dashboard.table.vxlan') : $t('dashboard.table.vlan')"
+                                mono
+                                >{{ subnet.vlan }}</InfoRow
+                            >
+                            <InfoRow :label="$t('dashboard.table.dhcp')">{{
+                                subnet.dhcp ? $t('dashboard.alarm.enabled') : $t('dashboard.alarm.disabled')
+                            }}</InfoRow>
+                            <InfoRow :label="$t('dashboard.table.dns')" mono>{{ subnet.dns || '-' }}</InfoRow>
                         </div>
                     </div>
                 </div>
@@ -256,16 +238,12 @@ onMounted(fetchSubnet)
 </template>
 
 <style scoped>
-.detail-page {
-    max-width: 1200px;
-    margin: 0 auto;
-}
-
 .detail-header {
     margin-bottom: var(--spacing-4);
 }
 
-.loading-container, .error-container {
+.loading-container,
+.error-container {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -274,79 +252,9 @@ onMounted(fetchSubnet)
 }
 
 /* Title Bar */
-.title-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--spacing-5);
-}
-
-.title-info {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-4);
-}
-
-.title-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
-  color: var(--primary-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.resource-title {
-  margin: 0 0 4px 0;
-  font-size: var(--font-size-xl);
-  font-weight: var(--font-weight-semibold);
-  color: var(--primary-color);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
-}
-
-.resource-id-row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-}
-
-.resource-id-text {
-  font-size: var(--font-size-xs);
-  color: var(--text-light);
-  font-family: var(--font-family-mono);
-}
-
-.copy-btn {
-  background: none;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 2px 5px;
-  cursor: pointer;
-  color: var(--text-light);
-  display: inline-flex;
-  align-items: center;
-  transition: all 0.15s;
-}
-
-.copy-btn:hover {
-  color: var(--primary-color);
-  border-color: var(--primary-200);
-  background: var(--primary-50);
-}
 
 .copied-icon {
-  color: var(--success-color);
-}
-
-.title-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
+    color: var(--success-color);
 }
 
 /* Action Dropdown */
@@ -357,7 +265,7 @@ onMounted(fetchSubnet)
 .dropdown-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 9;
+    z-index: var(--z-dropdown-backdrop);
 }
 
 .dropdown-menu {
@@ -365,12 +273,12 @@ onMounted(fetchSubnet)
     top: calc(100% + 6px);
     right: 0;
     min-width: 200px;
-    background: var(--bg-primary, #fff);
+    background: var(--bg-primary, var(--bg-primary));
     border: 1px solid var(--border-light);
     border-radius: var(--radius-md);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
     padding: 4px 0;
-    z-index: 10;
+    z-index: var(--z-dropdown);
 }
 
 .dropdown-item {
@@ -389,15 +297,15 @@ onMounted(fetchSubnet)
 }
 
 .dropdown-item:hover:not(:disabled) {
-    background: var(--bg-hover, #f3f4f6);
+    background: var(--bg-hover, var(--gray-100));
 }
 
 .dropdown-item-danger {
-    color: var(--error-color, #ef4444);
+    color: var(--error-color, var(--error-color));
 }
 
 .dropdown-item-danger:hover:not(:disabled) {
-    background: #fef2f2;
+    background: var(--error-light);
 }
 
 .dropdown-divider {
@@ -406,28 +314,32 @@ onMounted(fetchSubnet)
     margin: 4px 0;
 }
 
-.dropdown-enter-active, .dropdown-leave-active {
-    transition: opacity 0.15s, transform 0.15s;
+.dropdown-enter-active,
+.dropdown-leave-active {
+    transition:
+        opacity 0.15s,
+        transform 0.15s;
 }
 
-.dropdown-enter-from, .dropdown-leave-to {
+.dropdown-enter-from,
+.dropdown-leave-to {
     opacity: 0;
     transform: translateY(-4px);
 }
 
 /* Two-Column Layout */
 .two-col-layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--spacing-4);
-  margin-bottom: var(--spacing-6);
-  align-items: start;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-6);
+    align-items: start;
 }
 
 .col-stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
 }
 
 .info-card {
@@ -435,7 +347,7 @@ onMounted(fetchSubnet)
 }
 
 .info-card h3 {
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     font-weight: 600;
     margin: 0 0 var(--spacing-4) 0;
     color: var(--text-primary);
@@ -447,29 +359,6 @@ onMounted(fetchSubnet)
     display: flex;
     flex-direction: column;
     gap: var(--spacing-3);
-}
-
-.kv-item {
-    display: flex;
-    justify-content: space-between;
-    font-size: var(--font-size-sm);
-}
-
-.kv-item .label {
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.kv-item .value {
-    color: var(--text-primary);
-    font-weight: 500;
-    text-align: right;
-}
-
-.value.mono {
-    font-family: var(--font-family-mono);
 }
 
 .text-link {

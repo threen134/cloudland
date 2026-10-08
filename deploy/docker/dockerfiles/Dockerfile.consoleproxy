@@ -16,7 +16,7 @@ WORKDIR /build/libvirt-console-proxy
 RUN go build -o /out/virtconsoleproxyd cmd/virtconsoleproxyd/virtconsoleproxyd.go
 
 # ---- Stage 2: 运行时 ----
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \

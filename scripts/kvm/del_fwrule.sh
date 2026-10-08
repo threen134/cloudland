@@ -12,7 +12,9 @@ while [ $i -lt $len ]; do
     bridge fdb del $inner_mac dev v-$vni
     ip neighbor del ${inner_ip%%/*} dev v-$vni
     if [ "$outer_ip" = "$vtep_ip" ]; then
-        ./del_host.sh "$router" "$vni" "$inner_mac" "$inner_mac"
+        # The IP releases the in-memory DHCP lease: without it dnsmasq keeps the address for the old MAC for the
+        # lease time (2h) and hands a new instance reusing it a dynamic address clapi does not know
+        ./del_host.sh "$router" "$vni" "$inner_mac" "$inner_ip"
     fi
     let i=$i+1
 done

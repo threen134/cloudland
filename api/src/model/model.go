@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"api/src/utils/log"
 )
@@ -23,15 +24,15 @@ import (
 var logger = log.MustGetLogger("model")
 
 type Model struct {
-	ID        int64      `gorm:"primary_key"`
-	CreatedAt time.Time  `json:"created_at"`
+	ID        int64     `gorm:"primaryKey"`
+	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time
-	DeletedAt *time.Time `gorm:"index"`
-	UUID      string     `gorm:"type:varchar(64);index" json:"uuid"`
-	Creater   int64      `gorm:"default:0"` /* The user ID who created the resource (audit only) */
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+	UUID      string         `gorm:"type:varchar(64);index" json:"uuid"`
+	Creater   int64          `gorm:"default:0"` /* The user ID who created the resource (audit only) */
 }
 
-func (m *Model) BeforeCreate() (err error) {
+func (m *Model) BeforeCreate(tx *gorm.DB) (err error) {
 	if m.UUID == "" {
 		m.UUID = uuid.New().String()
 		logger.Debugf("Create a new model with uuid: %s", m.UUID)

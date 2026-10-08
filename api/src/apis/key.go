@@ -44,8 +44,6 @@ type KeyPayload struct {
 	UUID      string `json:"uuid,omitempty" binding:"omitempty"`
 }
 
-
-
 // @Summary get a key
 // @Description get a key
 // @tags Key
@@ -70,8 +68,6 @@ func (v *KeyAPI) Get(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, keyResp)
 }
-
-
 
 // @Summary delete a key
 // @Description delete a key
@@ -117,7 +113,7 @@ func (v *KeyAPI) Create(c *gin.Context) {
 		return
 	}
 	if payload.UUID != "" && !utils.IsUUID(payload.UUID) {
-		logger.Errorf("Invalid input UUID %s", payload.UUID)
+		logger.Ctx(ctx).Errorf("Invalid input UUID %s", payload.UUID)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input UUID", nil)
 		return
 	}
@@ -162,6 +158,8 @@ func (v *KeyAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
+	orderStr := c.DefaultQuery("order", "-created_at")
+	queryStr := c.DefaultQuery("query", "")
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
@@ -176,7 +174,7 @@ func (v *KeyAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, keys, err := keyAdmin.List(ctx, int64(offset), int64(limit), "-created_at", "")
+	total, keys, err := keyAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list vpcs", err)
 		return

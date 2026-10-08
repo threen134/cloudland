@@ -50,7 +50,7 @@ func IsValidUserDataType(userdataType string) bool {
 type Instance struct {
 	Model
 	Owner          int64          `gorm:"default:1"` /* The organization ID of the resource */
-	Hostname       string         `gorm:"unique_index:idx_router_instance;type:varchar(128)"`
+	Hostname       string         `gorm:"uniqueIndex:idx_router_instance;type:varchar(128)"`
 	Domain         string         `gorm:"type:varchar(128)"`
 	Status         InstanceStatus `gorm:"type:varchar(32)"`
 	Reason         string         `gorm:"type:text"`
@@ -74,12 +74,25 @@ type Instance struct {
 	Vendordata     string `gorm:"type:text"`
 	VendordataType string `gorm:"type:varchar(16);default:'plain'"`
 	LoginPort      int32
-	Hyper          int32 `gorm:"default:-1"`
-	ZoneID         int64
-	Zone           *Zone `gorm:"foreignkey:ZoneID"`
-	RouterID       int64         `gorm:"unique_index:idx_router_instance"`
-	Router         *Router
-	OwnerInfo      *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
+	// Nested virtualization asked for at creation: the definition is made again from the record when the instance is
+	// recovered on another host (shared-storage-design.md §11.3)
+	NestedEnable bool
+	Hyper        int32 `gorm:"default:-1"`
+	ZoneID       int64
+	Zone         *Zone `gorm:"foreignkey:ZoneID"`
+	RouterID     int64 `gorm:"uniqueIndex:idx_router_instance"`
+	Router       *Router
+	OwnerInfo    *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
+	// 0: not in a placement group
+	PlacementGroupID int64           `gorm:"index"`
+	PlacementGroup   *PlacementGroup `gorm:"foreignkey:PlacementGroupID"`
+	// Host clapi chose for a member of a placement group. Only read while hyper is -1 and the instance is
+	// provisioning or deleting: hyper is written by the launch_vm callback once the host created it. No default tag,
+	// 0 is a host id
+	PlacementHyper int32
+	// A root password sent to the guest and not confirmed yet: it replaces RootPasswd when the node reports
+	// success (services.SettleUserPassword) and is dropped when it reports a failure. Never returned
+	PendingRootPasswd string `gorm:"type:varchar(128)" json:"-"`
 }
 
 func init() {

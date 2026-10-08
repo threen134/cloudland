@@ -375,7 +375,7 @@ func serveSwaggerAsset(c *gin.Context, path, docJSON, title, view string) {
 		}
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		if err := swaggerTpl.Execute(c.Writer, swaggerPageConfig{Title: title, SpecURL: specURL}); err != nil {
-			logger.Errorf("Failed to render swagger template: %v", err)
+			logger.Ctx(c).Errorf("Failed to render swagger template: %v", err)
 		}
 
 	case path == "/doc.json":

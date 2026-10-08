@@ -13,7 +13,7 @@ import (
 type Subnet struct {
 	Model
 	Owner        int64  `gorm:"default:1"` /* The organization ID of the resource */
-	Name         string `gorm:"unique_index:idx_router_subnet;type:varchar(128)"`
+	Name         string `gorm:"uniqueIndex:idx_router_subnet;type:varchar(128)"`
 	Network      string `gorm:"type:varchar(64)"`
 	Netmask      string `gorm:"type:varchar(64)"`
 	Gateway      string `gorm:"type:varchar(64)"`
@@ -25,13 +25,13 @@ type Subnet struct {
 	IsSite       bool   `gorm:"default:false"`
 	Interface    int64
 	Vlan         int64
-	Type         string   `gorm:"type:varchar(20);default:'internal'"`
-	RouterID     int64    `gorm:"unique_index:idx_router_subnet"`
-	Router       *Router  `gorm:"foreignkey:RouterID"`
-	Routes       string   `gorm:"type:varchar(256)"`
-	Priority     int32    `gorm:"default:0"` /* Priority for subnet selection, lower value means higher priority */
-	GroupID      int64    `gorm:"index"`
-	Group        *IpGroup `gorm:"foreignkey:GroupID" json:"-"`
+	Type         string        `gorm:"type:varchar(20);default:'internal'"`
+	RouterID     int64         `gorm:"uniqueIndex:idx_router_subnet"`
+	Router       *Router       `gorm:"foreignkey:RouterID"`
+	Routes       string        `gorm:"type:varchar(256)"`
+	Priority     int32         `gorm:"default:0"` /* Priority for subnet selection, lower value means higher priority */
+	GroupID      int64         `gorm:"index"`
+	Group        *IpGroup      `gorm:"foreignkey:GroupID" json:"-"`
 	IdleCount    int64         `gorm:"-"`
 	OwnerInfo    *Organization `gorm:"-"` /* Transient: populated for SystemAdmin list view */
 }

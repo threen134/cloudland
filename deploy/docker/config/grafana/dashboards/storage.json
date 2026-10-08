@@ -1,0 +1,920 @@
+{
+  "uid": "cloudland-storage",
+  "title": "CloudLand 共享存储",
+  "description": "GPFS 与 Ceph 存储集群、共享池的曲线（shared-storage-design.md §14.3）。只用于查看，告警来自 clapi 的健康检查。集群按 UUID 选择，UUID 见控制台的存储集群详情。",
+  "tags": [
+    "cloudland",
+    "storage"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "cluster",
+        "label": "集群",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "qryType": 1,
+          "query": "label_values(cloudland_storage_cluster_info, cluster)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "definition": "label_values(cloudland_storage_cluster_info, cluster)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "共享池",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "共享池用量",
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "max": 100,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (cluster, pool) (cloudland_shared_pool_used_bytes{cluster=~\"$cluster\"}) / max by (cluster, pool) (cloudland_shared_pool_size_bytes{cluster=~\"$cluster\"} > 0) * 100",
+          "legendFormat": "{{pool}}"
+        }
+      ],
+      "description": "按共享池 UUID 显示，名称见控制台的存储池列表。数据来自各节点的池探测，所有能访问该池的节点写同样的数字，取最大值。"
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "能访问共享池的节点数",
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (cluster, pool) (cloudland_shared_pool_up{cluster=~\"$cluster\"})",
+          "legendFormat": "{{pool}}"
+        }
+      ],
+      "description": "各节点的池探测结果（挂载正常、能读写）相加；少于该池的节点数说明有节点访问不了。"
+    },
+    {
+      "id": 4,
+      "type": "row",
+      "title": "GPFS",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "文件系统容量",
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (cluster, fs) (cloudland_gpfs_filesystem_total_bytes{cluster=~\"$cluster\"} - cloudland_gpfs_filesystem_free_bytes{cluster=~\"$cluster\"})",
+          "legendFormat": "已用 · {{fs}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (cluster, fs) (cloudland_gpfs_filesystem_total_bytes{cluster=~\"$cluster\"})",
+          "legendFormat": "总量 · {{fs}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "吞吐",
+      "gridPos": {
+        "x": 8,
+        "y": 10,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (cluster) (rate(cloudland_gpfs_read_bytes_total{cluster=~\"$cluster\"}[$__rate_interval]))",
+          "legendFormat": "读"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (cluster) (rate(cloudland_gpfs_write_bytes_total{cluster=~\"$cluster\"}[$__rate_interval]))",
+          "legendFormat": "写"
+        }
+      ],
+      "description": "所有成员节点的 mmpmon 计数相加。"
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "IOPS",
+      "gridPos": {
+        "x": 16,
+        "y": 10,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "iops",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (cluster) (rate(cloudland_gpfs_reads_total{cluster=~\"$cluster\"}[$__rate_interval]))",
+          "legendFormat": "读"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (cluster) (rate(cloudland_gpfs_writes_total{cluster=~\"$cluster\"}[$__rate_interval]))",
+          "legendFormat": "写"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "节点",
+      "gridPos": {
+        "x": 0,
+        "y": 18,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (cluster) (cloudland_gpfs_node_active{cluster=~\"$cluster\"})",
+          "legendFormat": "GPFS 运行中"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (cluster, fs) (cloudland_gpfs_filesystem_mounted{cluster=~\"$cluster\"})",
+          "legendFormat": "已挂载 · {{fs}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "GPFS 存储池容量",
+      "gridPos": {
+        "x": 8,
+        "y": 18,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (cluster, fs, gpfs_pool) (cloudland_gpfs_pool_total_bytes{cluster=~\"$cluster\"} - cloudland_gpfs_pool_free_bytes{cluster=~\"$cluster\"})",
+          "legendFormat": "已用 · {{fs}}/{{gpfs_pool}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (cluster, fs, gpfs_pool) (cloudland_gpfs_pool_total_bytes{cluster=~\"$cluster\"})",
+          "legendFormat": "总量 · {{fs}}/{{gpfs_pool}}"
+        }
+      ],
+      "description": "mmdf 报告的每个文件系统里各 GPFS 存储池（system、数据池）的容量；按副本数计的原始容量。"
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "共享池 inode 用量",
+      "gridPos": {
+        "x": 16,
+        "y": 18,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "max": 100,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (cluster, pool) (cloudland_gpfs_fileset_inodes_used{cluster=~\"$cluster\"}) / max by (cluster, pool) (cloudland_gpfs_fileset_inodes_max{cluster=~\"$cluster\"} > 0) * 100",
+          "legendFormat": "{{pool}}"
+        }
+      ],
+      "description": "每个共享池对应的独立 fileset 已用 inode 占 inode 上限的比例；用满后池里不能再建文件。"
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "Ceph（平台部署）",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 26,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "容量",
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (storage_cluster) (ceph_cluster_total_used_bytes{storage_cluster=~\"$cluster\"})",
+          "legendFormat": "已用"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (storage_cluster) (ceph_cluster_total_bytes{storage_cluster=~\"$cluster\"})",
+          "legendFormat": "总量"
+        }
+      ],
+      "description": "来自活动 mgr 的 prometheus 模块（Prometheus 任务 storage_clusters）。"
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "吞吐",
+      "gridPos": {
+        "x": 8,
+        "y": 27,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (storage_cluster) (rate(ceph_pool_rd_bytes{storage_cluster=~\"$cluster\"}[$__rate_interval]))",
+          "legendFormat": "读"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (storage_cluster) (rate(ceph_pool_wr_bytes{storage_cluster=~\"$cluster\"}[$__rate_interval]))",
+          "legendFormat": "写"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "IOPS",
+      "gridPos": {
+        "x": 16,
+        "y": 27,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "iops",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (storage_cluster) (rate(ceph_pool_rd{storage_cluster=~\"$cluster\"}[$__rate_interval]))",
+          "legendFormat": "读"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (storage_cluster) (rate(ceph_pool_wr{storage_cluster=~\"$cluster\"}[$__rate_interval]))",
+          "legendFormat": "写"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "OSD",
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (storage_cluster) (ceph_osd_up{storage_cluster=~\"$cluster\"})",
+          "legendFormat": "运行"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (storage_cluster) (ceph_osd_in{storage_cluster=~\"$cluster\"})",
+          "legendFormat": "在集群内"
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "池用量",
+      "gridPos": {
+        "x": 8,
+        "y": 35,
+        "w": 16,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "max": 100,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (storage_cluster, name) (ceph_pool_percent_used{storage_cluster=~\"$cluster\"} * on (storage_cluster, pool_id) group_left (name) ceph_pool_metadata{storage_cluster=~\"$cluster\"}) * 100",
+          "legendFormat": "{{name}}"
+        }
+      ],
+      "description": "Ceph 自己的池用量（含 CloudLand 之外的池）。"
+    },
+    {
+      "id": 17,
+      "type": "row",
+      "title": "Ceph（导入）",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 43,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "容量",
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (cluster) (cloudland_ceph_used_bytes{cluster=~\"$cluster\"})",
+          "legendFormat": "已用"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (cluster) (cloudland_ceph_total_bytes{cluster=~\"$cluster\"})",
+          "legendFormat": "总量"
+        }
+      ],
+      "description": "导入的集群的 mgr 不由 CloudLand 采集，由能访问它的节点以客户端身份执行 ceph -s / ceph df 读取。"
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "吞吐",
+      "gridPos": {
+        "x": 8,
+        "y": 44,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (cluster) (rate(cloudland_ceph_read_bytes_total{cluster=~\"$cluster\"}[$__rate_interval]))",
+          "legendFormat": "读"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (cluster) (rate(cloudland_ceph_write_bytes_total{cluster=~\"$cluster\"}[$__rate_interval]))",
+          "legendFormat": "写"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "IOPS",
+      "gridPos": {
+        "x": 16,
+        "y": 44,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "iops",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (cluster) (rate(cloudland_ceph_reads_total{cluster=~\"$cluster\"}[$__rate_interval]))",
+          "legendFormat": "读"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (cluster) (rate(cloudland_ceph_writes_total{cluster=~\"$cluster\"}[$__rate_interval]))",
+          "legendFormat": "写"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "OSD",
+      "gridPos": {
+        "x": 0,
+        "y": 52,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (cluster) (cloudland_ceph_osds_up{cluster=~\"$cluster\"})",
+          "legendFormat": "运行"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (cluster) (cloudland_ceph_osds_in{cluster=~\"$cluster\"})",
+          "legendFormat": "在集群内"
+        }
+      ]
+    }
+  ]
+}

@@ -17,12 +17,12 @@ import (
 
 func init() {
 	Add("detach_volume_local", DetachVolume)
-	Add("detach_volume_wds_vhost", DetachVolume)
 }
 
+// DetachVolume handles the result of detach_volume_local.sh:
+//
+//	|:-COMMAND-:| detach_volume_local.sh '<instance ID>' '<volume ID>' 'available|attached'
 func DetachVolume(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| detach_volume.sh_local 5 7
-	//|:-COMMAND-:| detach_volume.sh_wds_vhost 5 7
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -32,38 +32,31 @@ func DetachVolume(ctx context.Context, args []string) (status string, err error)
 	argn := len(args)
 	if argn < 4 {
 		err = fmt.Errorf("Wrong params")
-		logger.Error("Invalid args", err)
-		return
-	}
-	_, err = strconv.Atoi(args[1])
-	if err != nil {
-		logger.Error("Invalid instance ID", err)
+		logger.Ctx(ctx).Error("Invalid args", err)
 		return
 	}
 	volID, err := strconv.ParseInt(args[2], 10, 64)
 	if err != nil {
-		logger.Error("Invalid volume ID", err)
+		logger.Ctx(ctx).Error("Invalid volume ID", err)
 		return
 	}
 	volume := &model.Volume{Model: model.Model{ID: volID}}
-	err = db.Where(volume).Take(volume).Error
-	if err != nil {
-		logger.Error("Failed to query volume", err)
+	if err = db.Take(volume).Error; err != nil {
+		logger.Ctx(ctx).Error("Failed to query volume", err)
 		return
 	}
-
-	volume.Status = model.VolumeStatus(args[3])
-	if volume.Status == model.VolumeStatusAvailable {
-		volume.InstanceID = 0
-		volume.Target = ""
+	if volume.Status != model.VolumeStatusDetaching {
+		logger.Ctx(ctx).Warningf("Volume %d is %s, not detaching, ignore the callback", volume.ID, volume.Status)
+		return
 	}
-	err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{
-		"instance_id": volume.InstanceID,
-		"target":      volume.Target,
-		"status":      volume.Status,
-	}).Error
+	updates := map[string]interface{}{"status": model.VolumeStatus(args[3])}
+	if args[3] == string(model.VolumeStatusAvailable) {
+		updates["instance_id"] = 0
+		updates["target"] = ""
+	}
+	err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(updates).Error
 	if err != nil {
-		logger.Error("Update volume status failed", err)
+		logger.Ctx(ctx).Error("Update volume status failed", err)
 		return
 	}
 	return

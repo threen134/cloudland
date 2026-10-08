@@ -2,7 +2,6 @@ package apis
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -63,67 +62,33 @@ func (v *DictionaryAPI) List(c *gin.Context) {
 	subtype1 := c.DefaultQuery("subtype1", "")
 	subtype2 := c.DefaultQuery("subtype2", "")
 	subtype3 := c.DefaultQuery("subtype3", "")
-	logger.Debugf("DictionaryAPI.List: offset=%s, limit=%s, query=%s, value=%s, category=%s, subtype1=%s, subtype2=%s, subtype3=%s", offsetStr, limitStr, queryStr, valueStr, category, subtype1, subtype2, subtype3)
+	logger.Ctx(ctx).Debugf("DictionaryAPI.List: offset=%s, limit=%s, query=%s, value=%s, category=%s, subtype1=%s, subtype2=%s, subtype3=%s", offsetStr, limitStr, queryStr, valueStr, category, subtype1, subtype2, subtype3)
 	if err != nil {
-		logger.Errorf("DictionaryAPI.List: invalid offset, offsetStr=%s, err=%v", offsetStr, err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.List: invalid offset, offsetStr=%s, err=%v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
 		return
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("DictionaryAPI.List: invalid limit, limitStr=%s, err=%v", limitStr, err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.List: invalid limit, limitStr=%s, err=%v", limitStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
 	if offset < 0 || limit < 0 {
-		logger.Errorf("DictionaryAPI.List: invalid offset or limit, offset=%d, limit=%d", offset, limit)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.List: invalid offset or limit, offset=%d, limit=%d", offset, limit)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	if queryStr != "" {
-		logger.Debugf("DictionaryAPI.List: filter by name like %%s%%", queryStr)
-		queryStr = fmt.Sprintf("name like '%%%s%%'", queryStr)
-	}
-	if valueStr != "" {
-		logger.Debugf("DictionaryAPI.List: filter by value = %s", valueStr)
-		queryStr = fmt.Sprintf("value = '%s'", valueStr)
-	}
-	if category != "" {
-		logger.Debugf("DictionaryAPI.List: filter by category = %s", category)
-		if queryStr != "" {
-			queryStr = fmt.Sprintf("%s AND category = '%s'", queryStr, category)
-		} else {
-			queryStr = fmt.Sprintf("category = '%s'", category)
-		}
-	}
-	if subtype1 != "" {
-		logger.Debugf("DictionaryAPI.List: filter by subtype1 = %s", subtype1)
-		if queryStr != "" {
-			queryStr = fmt.Sprintf("%s AND subtype1 = '%s'", queryStr, subtype1)
-		} else {
-			queryStr = fmt.Sprintf("subtype1 = '%s'", subtype1)
-		}
-	}
-	if subtype2 != "" {
-		logger.Debugf("DictionaryAPI.List: filter by subtype2 = %s", subtype2)
-		if queryStr != "" {
-			queryStr = fmt.Sprintf("%s AND subtype2 = '%s'", queryStr, subtype2)
-		} else {
-			queryStr = fmt.Sprintf("subtype2 = '%s'", subtype2)
-		}
-	}
-	if subtype3 != "" {
-		logger.Debugf("DictionaryAPI.List: filter by subtype3 = %s", subtype3)
-		if queryStr != "" {
-			queryStr = fmt.Sprintf("%s AND subtype3 = '%s'", queryStr, subtype3)
-		} else {
-			queryStr = fmt.Sprintf("subtype3 = '%s'", subtype3)
-		}
-	}
-	logger.Debugf("DictionaryAPI.List: final query string: %s", queryStr)
-	total, dictionaries, err := dictionaryAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	total, dictionaries, err := dictionaryAdmin.List(ctx, int64(offset), int64(limit), "-created_at", services.DictionaryFilter{
+		Name:     queryStr,
+		Value:    valueStr,
+		Category: category,
+		Subtype1: subtype1,
+		Subtype2: subtype2,
+		Subtype3: subtype3,
+	})
 	if err != nil {
-		logger.Errorf("DictionaryAPI.List: list error, err=%v", err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.List: list error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list dictionaries", err)
 		return
 	}
@@ -136,13 +101,13 @@ func (v *DictionaryAPI) List(c *gin.Context) {
 	for i, dictionary := range dictionaries {
 		dictionaryList[i], err = v.getDictionaryResponse(ctx, dictionary)
 		if err != nil {
-			logger.Errorf("DictionaryAPI.List: getDictionaryResponse error, err=%v", err)
+			logger.Ctx(ctx).Errorf("DictionaryAPI.List: getDictionaryResponse error, err=%v", err)
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}
 	}
 	dictionaryListResp.Dictionaries = dictionaryList
-	logger.Debugf("DictionaryAPI.List: success, resp=%+v", dictionaryListResp)
+	logger.Ctx(ctx).Debugf("DictionaryAPI.List: success, resp=%+v", dictionaryListResp)
 	c.JSON(http.StatusOK, dictionaryListResp)
 }
 
@@ -157,29 +122,29 @@ func (v *DictionaryAPI) List(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /dictionaries [post]
 func (v *DictionaryAPI) Create(c *gin.Context) {
-	logger.Debugf("Enter DictionaryAPI.Create")
+	logger.Ctx(c).Debugf("Enter DictionaryAPI.Create")
 	ctx := c.Request.Context()
 	payload := &DictionaryPayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("DictionaryAPI.Create: bind json error, err=%v", err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.Create: bind json error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
 	var dictionary *model.Dictionary
 	dictionary, err = dictionaryAdmin.Create(ctx, payload.Category, payload.Name, payload.Value, payload.ShortName, payload.SubType1, payload.SubType2, payload.SubType3)
 	if err != nil {
-		logger.Errorf("DictionaryAPI.Create: create error, err=%v", err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.Create: create error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create dictionary", err)
 		return
 	}
 	dictionaryResp, err := v.getDictionaryResponse(ctx, dictionary)
 	if err != nil {
-		logger.Errorf("DictionaryAPI.Create: getDictionaryResponse error, err=%v", err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.Create: getDictionaryResponse error, err=%v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("DictionaryAPI.Create: success, resp=%+v", dictionaryResp)
+	logger.Ctx(ctx).Debugf("DictionaryAPI.Create: success, resp=%+v", dictionaryResp)
 	c.JSON(http.StatusOK, dictionaryResp)
 }
 
@@ -216,20 +181,20 @@ func (v *DictionaryAPI) getDictionaryResponse(ctx context.Context, dictionary *m
 func (v *DictionaryAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Enter DictionaryAPI.Get uuID=%s", uuID)
+	logger.Ctx(ctx).Debugf("Enter DictionaryAPI.Get uuID=%s", uuID)
 	dictinary, err := dictionaryAdmin.GetDictionaryByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("DictionaryAPI.Get: invalid dictinary query, uuID=%s, err=%v", uuID, err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.Get: invalid dictinary query, uuID=%s, err=%v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid dictinary query", err)
 		return
 	}
 	dictinaryResp, err := v.getDictionaryResponse(ctx, dictinary)
 	if err != nil {
-		logger.Errorf("DictionaryAPI.Get: getDictionaryResponse error, err=%v", err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.Get: getDictionaryResponse error, err=%v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("DictionaryAPI.Get: success, uuID=%s, resp=%+v", uuID, dictinaryResp)
+	logger.Ctx(ctx).Debugf("DictionaryAPI.Get: success, uuID=%s, resp=%+v", uuID, dictinaryResp)
 	c.JSON(http.StatusOK, dictinaryResp)
 }
 
@@ -246,20 +211,20 @@ func (v *DictionaryAPI) Get(c *gin.Context) {
 func (v *DictionaryAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("DictionaryAPI.Delete: delete dictionary uuID=%s", uuID)
+	logger.Ctx(ctx).Debugf("DictionaryAPI.Delete: delete dictionary uuID=%s", uuID)
 	dictinary, err := dictionaryAdmin.GetDictionaryByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("DictionaryAPI.Delete: getDictionaryByUUID error, uuID=%s, err=%v", uuID, err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.Delete: getDictionaryByUUID error, uuID=%s, err=%v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
 	err = dictionaryAdmin.Delete(ctx, dictinary)
 	if err != nil {
-		logger.Errorf("DictionaryAPI.Delete: delete error, uuID=%s, err=%v", uuID, err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.Delete: delete error, uuID=%s, err=%v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to delete", err)
 		return
 	}
-	logger.Debugf("DictionaryAPI.Delete: success, uuID=%s", uuID)
+	logger.Ctx(ctx).Debugf("DictionaryAPI.Delete: success, uuID=%s", uuID)
 	c.JSON(http.StatusNoContent, nil)
 }
 
@@ -276,33 +241,33 @@ func (v *DictionaryAPI) Delete(c *gin.Context) {
 func (v *DictionaryAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Enter DictionaryAPI.Patch uuID=%s", uuID)
+	logger.Ctx(ctx).Debugf("Enter DictionaryAPI.Patch uuID=%s", uuID)
 	payload := &DictionaryPayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("DictionaryAPI.Patch: bind json error, err=%v", err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.Patch: bind json error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
 	dictionaries, err := dictionaryAdmin.GetDictionaryByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("DictionaryAPI.Patch: invalid dictionary query, uuID=%s, err=%v", uuID, err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.Patch: invalid dictionary query, uuID=%s, err=%v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid dictionary query", err)
 		return
 	}
 	var dictionary *model.Dictionary
 	dictionary, err = dictionaryAdmin.Update(ctx, dictionaries, payload.Category, payload.Name, payload.Value, payload.ShortName, payload.SubType1, payload.SubType2, payload.SubType3)
 	if err != nil {
-		logger.Errorf("DictionaryAPI.Patch: update error, uuID=%s, err=%v", uuID, err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.Patch: update error, uuID=%s, err=%v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update dictionary", err)
 		return
 	}
 	dictionaryResp, err := v.getDictionaryResponse(ctx, dictionary)
 	if err != nil {
-		logger.Errorf("DictionaryAPI.Patch: getDictionaryResponse error, err=%v", err)
+		logger.Ctx(ctx).Errorf("DictionaryAPI.Patch: getDictionaryResponse error, err=%v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("DictionaryAPI.Patch: success, uuID=%s, resp=%+v", uuID, dictionaryResp)
+	logger.Ctx(ctx).Debugf("DictionaryAPI.Patch: success, uuID=%s, resp=%+v", uuID, dictionaryResp)
 	c.JSON(http.StatusOK, dictionaryResp)
 }

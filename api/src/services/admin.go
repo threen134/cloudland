@@ -21,9 +21,20 @@ import (
 	"api/src/dbs"
 	"api/src/model"
 
-	"github.com/jinzhu/gorm"
 	"github.com/spf13/viper"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
+
+// hashPassword 仅用于引导管理员账号。本服务不再做用户认证（已交由 cpgateway），
+// 原先整套 UserAdmin（创建用户、签发 JWT、校验密码等）已随之删除，只留下这一处
+func hashPassword(password string) (string, error) {
+	b, err := bcrypt.GenerateFromPassword([]byte(password), 8)
+	if err != nil {
+		return "", NewCLError(ErrPasswordHashFailed, "Failed to generate password hash", err)
+	}
+	return string(b), nil
+}
 
 func adminPassword() (password string) {
 	logger.Infof("ENTER adminPassword")
@@ -81,7 +92,7 @@ func AdminInit() {
 
 			password := adminPassword()
 			email := adminEmail()
-			hash, hashErr := (&UserAdmin{}).GenerateFromPassword(password)
+			hash, hashErr := hashPassword(password)
 			if hashErr != nil {
 				return hashErr
 			}
@@ -94,7 +105,7 @@ func AdminInit() {
 			if err = db.Create(adminUser).Error; err != nil {
 				return
 			}
-			logger.Infof("Created admin user with ID: %d, Email: %s", adminUser.ID, adminUser.Email)
+			logger.Ctx(ctx).Infof("Created admin user with ID: %d, Email: %s", adminUser.ID, adminUser.Email)
 		}
 
 		// Step 2: Check if system org exists (inside migration for idempotency)
@@ -109,10 +120,10 @@ func AdminInit() {
 			}
 			if err = db.Where(model.Organization{Name: "admin", OrgType: model.OrgTypeSystem}).
 				FirstOrCreate(adminOrg).Error; err != nil {
-				logger.Error("Failed to create admin org", err)
+				logger.Ctx(ctx).Error("Failed to create admin org", err)
 				return err
 			}
-			logger.Infof("Created admin org with ID: %d", adminOrg.ID)
+			logger.Ctx(ctx).Infof("Created admin org with ID: %d", adminOrg.ID)
 		}
 
 		// Step 3: Check if admin member exists (idempotent via FirstOrCreate)
@@ -125,10 +136,10 @@ func AdminInit() {
 			}
 			if err = db.Where(model.Member{UserID: adminUser.ID, OrgID: adminOrg.ID}).
 				FirstOrCreate(member).Error; err != nil {
-				logger.Error("Failed to create admin member", err)
+				logger.Ctx(ctx).Error("Failed to create admin member", err)
 				return err
 			}
-			logger.Infof("Created admin member for user %d in org %d", adminUser.ID, adminOrg.ID)
+			logger.Ctx(ctx).Infof("Created admin member for user %d in org %d", adminUser.ID, adminOrg.ID)
 		}
 		return nil
 	})
@@ -138,14 +149,14 @@ func AdminInit() {
 	if adminUser == nil || adminUser.ID == 0 {
 		adminUser = &model.User{}
 		if err := db.Where("system_role = ?", model.SystemAdmin).First(adminUser).Error; err != nil {
-			logger.Error("Failed to query admin user after init", err)
+			logger.Ctx(ctx).Error("Failed to query admin user after init", err)
 			return
 		}
 	}
 	if adminOrg == nil || adminOrg.ID == 0 {
 		adminOrg = &model.Organization{}
 		if err := db.Where("org_type = ?", model.OrgTypeSystem).First(adminOrg).Error; err != nil {
-			logger.Error("Failed to query admin org after init", err)
+			logger.Ctx(ctx).Error("Failed to query admin org after init", err)
 			return
 		}
 	}
@@ -155,7 +166,6 @@ func AdminInit() {
 	if err != nil {
 		memberShip := &MemberShip{
 			UserID:     adminUser.ID,
-			UserEmail:  adminUser.Email,
 			SystemRole: model.SystemAdmin,
 			OrgID:      adminOrg.ID,
 			OrgName:    adminOrg.Name,
@@ -165,6 +175,6 @@ func AdminInit() {
 		ctx = memberShip.SetContext(ctx)
 		sgName := fmt.Sprintf("%s-%d", SystemDefaultSGName, adminOrg.ID)
 		_ = sgName // unused for now, use the constant name
-		_, _ = (&SecgroupAdmin{}).Create(ctx, SystemDefaultSGName, "System default security group", true, nil)
+		_, _ = (&SecgroupAdmin{}).Create(ctx, SystemDefaultSGName, "System default security group", true, true, nil)
 	}
 }

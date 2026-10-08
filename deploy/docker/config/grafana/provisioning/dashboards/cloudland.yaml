@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: cloudland
+    orgId: 1
+    folder: CloudLand
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards

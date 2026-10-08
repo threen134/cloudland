@@ -44,11 +44,11 @@ export COMPOSE_PROFILES=full,dev,region
 
 ### 2. 执行一键部署
 ```bash
-curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-control-node.sh | sudo -E bash
+curl -sSL https://raw.githubusercontent.com/threen134/cloudland/staging/deploy/docker/scripts/deploy-control-node.sh | bash
 ```
 
 > [!IMPORTANT]
-> - 请确保使用 `sudo -E`，以保证环境变量能够传递到脚本中。
+> - 请以 root 身份执行（例如先 `sudo -i`，再 export 环境变量并执行命令）；Ubuntu 26.04 默认的 sudo-rs 会忽略 `sudo -E`，导出的环境变量不会传入脚本。
 > - 脚本会自动将代码克隆到 `/opt/cloudland`（如已存在则跳过）。
 > - 部署过程中会生成自签名 SSL 证书（`volumes/certs`）及 SSH 密钥（`/opt/cloudland/deploy/.ssh`）。
 > - 部署日志保存在 `/var/log/cloudland-control-deploy-*.log`。

@@ -13,10 +13,10 @@ History:
 package model
 
 import (
-	"encoding/gob"
 	"api/src/dbs"
+	"encoding/gob"
 
-	"github.com/jinzhu/gorm"
+	"gorm.io/gorm"
 )
 
 type SystemRole int

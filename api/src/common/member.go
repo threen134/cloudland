@@ -10,11 +10,19 @@ import (
 	"context"
 
 	"api/src/model"
+
+	"gorm.io/gorm"
 )
 
 type MemberShip struct {
-	UserID     int64
-	UserEmail  string
+	UserID int64
+	// UserName 由 cpgateway 经 X-User-Name 传入。用户名不可更改、不可复用，
+	// 适合作为审计记录里的操作者标识；本服务没有用户表，无法由 UserID 反查。
+	// 不再接收邮箱：它可改、注销后可复用，作为标识不可靠，本服务也无处使用
+	UserName string
+	// UserUUID 由 cpgateway 经 X-User-UUID 传入，是账号的全局唯一标识。UserID 是控制面的
+	// 自增主键，在本服务无法解析；需要持久引用某个用户时存 UUID + 用户名快照
+	UserUUID   string
 	SystemRole model.SystemRole
 	OrgID      int64
 	OrgName    string
@@ -92,7 +100,12 @@ func (m *MemberShip) CheckResourceOrgByID(reqRole model.OrgRole, table string, i
 	}
 	var result Result
 	db := DB()
-	err := db.Table(table).Select("owner").Where("id = ?", id).Scan(&result).Error
+	res := db.Table(table).Select("owner").Where("id = ?", id).Scan(&result)
+	err := res.Error
+	if err == nil && res.RowsAffected == 0 {
+		// GORM v2 的 Scan 查不到记录时不返回 ErrRecordNotFound，这里保持“未找到即报错”
+		err = gorm.ErrRecordNotFound
+	}
 	if err != nil {
 		logger.Error("Failed to query resource owner", err)
 		return false, NewCLError(ErrOwnerNotFound, "Failed to query resource owner", err)

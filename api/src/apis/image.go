@@ -23,7 +23,6 @@ import (
 
 var imageAPI = &ImageAPI{}
 var imageAdmin = services.ImageAdmin
-var imageStorageAdmin = &services.ImageStorageAdmin{}
 
 type ImageAPI struct{}
 
@@ -63,28 +62,13 @@ type ImagePayload struct {
 }
 
 type ImagePatchPayload struct {
-	Name      string   `json:"name" binding:"omitempty,min=2,max=32"`
-	OSCode    string   `json:"os_code" binding:"omitempty,oneof=linux windows other"`
-	OSVersion string   `json:"os_version" binding:"omitempty,min=2,max=32"`
-	User      string   `json:"user" binding:"omitempty,min=2,max=32"`
-	Pools     []string `json:"pools" binding:"omitempty"`
-	OsFamily  string   `json:"os_family" binding:"omitempty"`
-	UUID      string   `json:"uuid,omitempty" binding:"omitempty"`
-	Public    *bool    `json:"public" binding:"omitempty"`
-}
-
-type ImageStorageResponse struct {
-	*ResourceReference
-	VolumeID string `json:"volume_id"`
-	PoolID   string `json:"pool_id"`
-	Status   string `json:"status"`
-}
-
-type ImageStorageListResponse struct {
-	Offset   int                     `json:"offset"`
-	Total    int                     `json:"total"`
-	Limit    int                     `json:"limit"`
-	Storages []*ImageStorageResponse `json:"storages"`
+	Name      string `json:"name" binding:"omitempty,min=2,max=32"`
+	OSCode    string `json:"os_code" binding:"omitempty,oneof=linux windows other"`
+	OSVersion string `json:"os_version" binding:"omitempty,min=2,max=32"`
+	User      string `json:"user" binding:"omitempty,min=2,max=32"`
+	OsFamily  string `json:"os_family" binding:"omitempty"`
+	UUID      string `json:"uuid,omitempty" binding:"omitempty"`
+	Public    *bool  `json:"public" binding:"omitempty"`
 }
 
 // @Summary get a image
@@ -99,20 +83,20 @@ type ImageStorageListResponse struct {
 func (v *ImageAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Get image %s", uuID)
+	logger.Ctx(ctx).Debugf("Get image %s", uuID)
 	image, err := imageAdmin.GetImageByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get image %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get image %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid image query", err)
 		return
 	}
 	imageResp, err := v.getImageResponse(ctx, image)
 	if err != nil {
-		logger.Errorf("Failed to create image response %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to create image response %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Get image %s success, response: %+v", uuID, imageResp)
+	logger.Ctx(ctx).Debugf("Get image %s success, response: %+v", uuID, imageResp)
 	c.JSON(http.StatusOK, imageResp)
 }
 
@@ -129,33 +113,33 @@ func (v *ImageAPI) Get(c *gin.Context) {
 func (v *ImageAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Patch image %s", uuID)
+	logger.Ctx(ctx).Debugf("Patch image %s", uuID)
 	image, err := imageAdmin.GetImageByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get image %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get image %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid image query", err)
 		return
 	}
 	payload := &ImagePatchPayload{}
 	err = c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Failed to bind JSON, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to bind JSON, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	err = imageAdmin.Update(ctx, image, payload.OSCode, payload.Name, payload.OSVersion, payload.User, payload.Pools, payload.OsFamily, payload.UUID, payload.Public)
+	err = imageAdmin.Update(ctx, image, payload.OSCode, payload.Name, payload.OSVersion, payload.User, payload.OsFamily, payload.UUID, payload.Public)
 	if err != nil {
-		logger.Errorf("Patch image failed, %+v", err)
+		logger.Ctx(ctx).Errorf("Patch image failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch image failed", err)
 		return
 	}
 	imageResp, err := v.getImageResponse(ctx, image)
 	if err != nil {
-		logger.Errorf("Failed to create image response, %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to create image response, %+v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Patch image %s success, response: %+v", uuID, imageResp)
+	logger.Ctx(ctx).Debugf("Patch image %s success, response: %+v", uuID, imageResp)
 	c.JSON(http.StatusOK, imageResp)
 }
 
@@ -171,16 +155,16 @@ func (v *ImageAPI) Patch(c *gin.Context) {
 func (v *ImageAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Delete image %s", uuID)
+	logger.Ctx(ctx).Debugf("Delete image %s", uuID)
 	image, err := imageAdmin.GetImageByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get image %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to get image %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
 	err = imageAdmin.Delete(ctx, image)
 	if err != nil {
-		logger.Errorf("Failed to delete image %s, %+v", uuID, err)
+		logger.Ctx(ctx).Errorf("Failed to delete image %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to delete", err)
 		return
 	}
@@ -198,13 +182,17 @@ func (v *ImageAPI) Delete(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /images [post]
 func (v *ImageAPI) Create(c *gin.Context) {
-	logger.Debugf("Create image")
+	logger.Ctx(c).Debugf("Create image")
 	ctx := c.Request.Context()
 	payload := &ImagePayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
-		logger.Errorf("Invalid input JSON %+v", err)
+		logger.Ctx(ctx).Errorf("Invalid input JSON %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	if err = validateDownloadURL(payload.DownloadURL); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid download_url", NewCLError(ErrInvalidParameter, err.Error(), nil))
 		return
 	}
 	instanceID := int64(0)
@@ -212,14 +200,14 @@ func (v *ImageAPI) Create(c *gin.Context) {
 		instance := &model.Instance{}
 		instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.InstanceUUID)
 		if err != nil {
-			logger.Errorf("Failed to get instance %s, %+v", payload.InstanceUUID, err)
+			logger.Ctx(ctx).Errorf("Failed to get instance %s, %+v", payload.InstanceUUID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid input, specified instance does not exist", err)
 			return
 		}
 		instanceID = instance.ID
 	}
 	if payload.UUID != "" && !utils.IsUUID(payload.UUID) {
-		logger.Errorf("Invalid input UUID %s", payload.UUID)
+		logger.Ctx(ctx).Errorf("Invalid input UUID %s", payload.UUID)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input UUID", nil)
 		return
 	}
@@ -227,25 +215,25 @@ func (v *ImageAPI) Create(c *gin.Context) {
 	if payload.RescueImage != nil {
 		rescueImage, err = imageAdmin.GetImage(ctx, payload.RescueImage)
 		if err != nil {
-			logger.Errorf("Failed to get rescue image %+v, %+v", payload.RescueImage, err)
+			logger.Ctx(ctx).Errorf("Failed to get rescue image %+v, %+v", payload.RescueImage, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid rescue image", err)
 			return
 		}
 	}
-	logger.Debugf("Creating image with payload %+v", payload)
+	logger.Ctx(ctx).Debugf("Creating image with payload %+v", payload)
 	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, payload.IsRescue, instanceID, payload.UUID, rescueImage, payload.OsFamily)
 	if err != nil {
-		logger.Errorf("Not able to create image %+v", err)
+		logger.Ctx(ctx).Errorf("Not able to create image %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
 		return
 	}
 	imageResp, err := v.getImageResponse(ctx, image)
 	if err != nil {
-		logger.Errorf("Failed to create image response %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to create image response %+v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Create image success, response: %+v", imageResp)
+	logger.Ctx(ctx).Debugf("Create image success, response: %+v", imageResp)
 	c.JSON(http.StatusOK, imageResp)
 }
 
@@ -263,6 +251,7 @@ func (v *ImageAPI) getImageResponse(ctx context.Context, image *model.Image) (im
 			ID:        image.UUID,
 			Name:      image.Name,
 			Owner:     ownerName,
+			OwnerUUID: orgAdmin.GetOrgUUID(ctx, image.Owner),
 			CreatedAt: image.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: image.UpdatedAt.Format(TimeStringForMat),
 		},
@@ -285,6 +274,8 @@ func (v *ImageAPI) getImageResponse(ctx context.Context, image *model.Image) (im
 // @tags Image
 // @Accept  json
 // @Produce json
+// @Param   owned       query  bool    false  "true: only images owned by the current org, regardless of system role"
+// @Param   visibility  query  string  false  "public or private"
 // @Success 200 {object} ImageListResponse
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /images [get]
@@ -292,29 +283,33 @@ func (v *ImageAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
+	orderStr := c.DefaultQuery("order", "-created_at")
 	queryStr := c.DefaultQuery("query", "")
-	logger.Debugf("List images with offset %s, limit %s, query %s", offsetStr, limitStr, queryStr)
+	logger.Ctx(ctx).Debugf("List images with offset %s, limit %s, query %s", offsetStr, limitStr, queryStr)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		logger.Errorf("Invalid query offset %s, %+v", offsetStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query offset %s, %+v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
 		return
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("Invalid query limit %s, %+v", limitStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query limit %s, %+v", limitStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
 	if offset < 0 || limit < 0 {
-		logger.Errorf("Invalid query offset or limit %d, %d", offset, limit)
+		logger.Ctx(ctx).Errorf("Invalid query offset or limit %d, %d", offset, limit)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
 	visibilityStr := c.DefaultQuery("visibility", "")
-	total, images, err := imageAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, visibilityStr)
+	// owned=true lists only images owned by the current org regardless of system role (combine with visibility);
+	// cpgateway counts these against the org image quota
+	owned := c.Query("owned") == "true"
+	total, images, err := imageAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr, visibilityStr, owned)
 	if err != nil {
-		logger.Errorf("Failed to list images %+v", err)
+		logger.Ctx(ctx).Errorf("Failed to list images %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list images", err)
 		return
 	}
@@ -327,92 +322,11 @@ func (v *ImageAPI) List(c *gin.Context) {
 	for i, image := range images {
 		imageListResp.Images[i], err = v.getImageResponse(ctx, image)
 		if err != nil {
-			logger.Errorf("Failed to create image response %+v", err)
+			logger.Ctx(ctx).Errorf("Failed to create image response %+v", err)
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}
 	}
-	logger.Debugf("List images success, response: %+v", imageListResp)
+	logger.Ctx(ctx).Debugf("List images success, response: %+v", imageListResp)
 	c.JSON(http.StatusOK, imageListResp)
-}
-
-// @Summary list image storages
-// @Description list image storages
-// @tags Image
-// @Accept  json
-// @Produce json
-// @Success 200 {object} ImageStorageResponse
-// @Failure 401 {object} common.APIError "Not authorized"
-// @Router /images/{id}/storages [get]
-func (v *ImageAPI) ListStorages(c *gin.Context) {
-	ctx := c.Request.Context()
-	offsetStr := c.DefaultQuery("offset", "0")
-	limitStr := c.DefaultQuery("limit", "50")
-	queryStr := c.DefaultQuery("query", "")
-	imageUUID := c.Param("id")
-	if imageUUID == "" {
-		logger.Error("Missing image ID")
-		ErrorResponse(c, http.StatusBadRequest, "Missing image ID", nil)
-		return
-	}
-	logger.Debugf("List images with offset %s, limit %s, query %s", offsetStr, limitStr, queryStr)
-	offset, err := strconv.Atoi(offsetStr)
-	if err != nil {
-		logger.Errorf("Invalid query offset %s, %+v", offsetStr, err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
-		return
-	}
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil {
-		logger.Errorf("Invalid query limit %s, %+v", limitStr, err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
-		return
-	}
-	if offset < 0 || limit < 0 {
-		logger.Errorf("Invalid query offset or limit %d, %d", offset, limit)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
-		return
-	}
-	image, err := imageAdmin.GetImageByUUID(ctx, imageUUID)
-	if err != nil {
-		logger.Errorf("Failed to get image %s, %+v", imageUUID, err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid image query", err)
-		return
-	}
-	total, storages, err := imageStorageAdmin.List(int64(offset), int64(limit), "-created_at", image, queryStr)
-	if err != nil {
-		logger.Errorf("Failed to list storages %+v", err)
-		ErrorResponse(c, http.StatusBadRequest, "Failed to list storages", err)
-		return
-	}
-	storageListResp := &ImageStorageListResponse{
-		Total:  int(total),
-		Offset: offset,
-		Limit:  len(storages),
-	}
-	storageListResp.Storages = make([]*ImageStorageResponse, storageListResp.Limit)
-	for i, storage := range storages {
-		storageListResp.Storages[i], err = v.getImageStorageResponse(ctx, storage)
-		if err != nil {
-			logger.Errorf("Failed to create storage response %+v", err)
-			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
-			return
-		}
-	}
-	logger.Debugf("List storage success, response: %+v", storageListResp)
-	c.JSON(http.StatusOK, storageListResp)
-}
-
-func (v *ImageAPI) getImageStorageResponse(_ context.Context, storage *model.ImageStorage) (storageResp *ImageStorageResponse, err error) {
-	storageResp = &ImageStorageResponse{
-		ResourceReference: &ResourceReference{
-			ID:        storage.UUID,
-			CreatedAt: storage.CreatedAt.Format(TimeStringForMat),
-			UpdatedAt: storage.UpdatedAt.Format(TimeStringForMat),
-		},
-		Status:   string(storage.Status),
-		PoolID:   storage.PoolID,
-		VolumeID: storage.VolumeID,
-	}
-	return
 }

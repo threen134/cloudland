@@ -1,42 +1,45 @@
 # =============================================================================
-# CloudLand Control Plane Gateway 控制平面网关 (FastAPI)
+# CloudLand Control Plane Gateway 控制平面网关 (Go 版)
+# 表结构由启动时 GORM AutoMigrate 创建
 # 构建: docker build -f dockerfiles/Dockerfile.cpgateway -t cloudland-cpgateway ../../
 # =============================================================================
 
-FROM python:3.12-slim
+# ---- Stage 1: 编译 cpgateway ----
+FROM golang:1.26-bookworm AS builder
+
+WORKDIR /build
+COPY cpgateway/go.mod cpgateway/go.sum ./
+RUN go mod download
+COPY cpgateway/ ./
+
+# 生产只使用 PostgreSQL；CGO_ENABLED=0 下 SQLite 驱动不可用，不影响运行
+RUN CGO_ENABLED=0 go build -o /cpgateway \
+    -ldflags "-s -w -X main.Version=$(cat .version 2>/dev/null || echo dev)"
+
+# ---- Stage 2: 运行时镜像 ----
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    GIN_MODE=release
+
+# openssl: 生成 JWT 密钥对; postgresql-client: pg_isready 等待数据库; curl: 健康检查
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates openssl postgresql-client curl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
-
-# 安装系统依赖
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-# 安装 Python 依赖
-COPY cpgateway/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# 复制应用代码
-COPY cpgateway/app ./app
-COPY cpgateway/cland_bankend_swager.json ./
-
-# 复制 Alembic 迁移配置
-COPY cpgateway/alembic.ini ./
-COPY cpgateway/alembic ./alembic
-
-# 创建必要的目录
-RUN mkdir -p /app/data /app/keys
-
-EXPOSE 8000
-
-HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=90s \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/').read()" || exit 1
+COPY --from=builder /cpgateway /app/cpgateway
+COPY cpgateway/conf/config.toml /app/conf/config.toml
+RUN mkdir -p /app/keys
 
 COPY deploy/docker/scripts/cpgateway-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+EXPOSE 8000
+
+HEALTHCHECK --interval=15s --timeout=5s --retries=5 --start-period=30s \
+    CMD curl -fsS http://localhost:8000/health || exit 1
+
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["python", "-m", "app.main"]
+CMD ["/app/cpgateway"]

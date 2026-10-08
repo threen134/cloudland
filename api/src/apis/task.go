@@ -57,7 +57,7 @@ func (a *TaskAPI) Get(c *gin.Context) {
 	taskUUID := c.Param("id")
 	task, err := taskAdmin.GetTaskByUUID(ctx, taskUUID)
 	if err != nil {
-		logger.Errorf("Failed to get task by uuid: %s, %+v", taskUUID, err)
+		logger.Ctx(ctx).Errorf("Failed to get task by uuid: %s, %+v", taskUUID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid task query", err)
 		return
 	}
@@ -87,22 +87,22 @@ func (a *TaskAPI) List(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "50")
 	nameStr := c.DefaultQuery("name", "")
 	sourceStr := c.DefaultQuery("source", "")
-	logger.Debugf("List volumes, offset:%s, limit:%s, name:%s, source:%s", offsetStr, limitStr, nameStr, sourceStr)
+	logger.Ctx(ctx).Debugf("List volumes, offset:%s, limit:%s, name:%s, source:%s", offsetStr, limitStr, nameStr, sourceStr)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		logger.Errorf("Invalid query offset: %s, %+v", offsetStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query offset: %s, %+v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
 		return
 	}
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		logger.Errorf("Invalid query limit: %s, %+v", limitStr, err)
+		logger.Ctx(ctx).Errorf("Invalid query limit: %s, %+v", limitStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
 	if offset < 0 || limit < 0 {
 		errStr := "Invalid query offset or limit, cannot be negative"
-		logger.Errorf(errStr)
+		logger.Ctx(ctx).Errorf(errStr)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
 		return
 	}

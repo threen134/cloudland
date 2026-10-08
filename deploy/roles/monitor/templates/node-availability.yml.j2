@@ -8,6 +8,8 @@ groups:
       severity: critical
       node_type: compute
       alert_type: "node-unavailable"
+      owner: "{{ owner }}"
+      rule_group: "{{ rule_group }}"
     annotations:
       summary: "hyper node {{ $labels.instance }} offline"
       description: "Compute node {{ $labels.instance }} It has been unreachable for more than {{ node_down_duration | default("5m") }} minutes."
@@ -18,6 +20,8 @@ groups:
       severity: critical
       node_type: management
       alert_type: "node-unavailable"
+      owner: "{{ owner }}"
+      rule_group: "{{ rule_group }}"
     annotations:
       summary: "Management node {{ $labels.instance }} offline"
       description: "Management node {{ $labels.instance }} has been unreachable for more than {{ node_down_duration | default("5m") }} minutes"
