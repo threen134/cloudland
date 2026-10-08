@@ -37,6 +37,24 @@ type StorageClusterExpand struct {
 	Nodes            []*StorageNodePlan
 	Disks            []*StorageDiskPlan
 	AllowUnsupported bool
+	// The file system the disks go into (add_disks); the first one of the cluster when empty
+	Filesystem string
+	// The disks make a new file system (create_fs)
+	NewFilesystem *StorageFilesystemPlan
+}
+
+// StorageFilesystemPlan is a new file system of a cluster made on new disks (gpfs, §7.3)
+type StorageFilesystemPlan struct {
+	Name         string `json:"name"`
+	BlockSize    string `json:"block_size,omitempty"`
+	DataReplicas int    `json:"data_replicas,omitempty"`
+}
+
+// storageFilesystemMaker is a backend whose clusters can have more file systems than the one they were made with: it
+// checks a new one on the disks given and gives its record and the attrs of the disks
+type storageFilesystemMaker interface {
+	NewFilesystem(cluster *model.StorageCluster, nodes []*model.StorageClusterNode, plan *StorageFilesystemPlan, disks []*StorageDiskPlan,
+		params interface{}) (*model.StorageFilesystem, map[string]map[string]interface{}, error)
 }
 
 // storageClusterForChange loads a managed, ready cluster with its hosts and disks for an operation of the kind
@@ -130,8 +148,11 @@ func (a *StorageClusterAdmin) expand(ctx context.Context, uuid string, task stri
 		return nil, err
 	}
 	cluster, nodes, disks, backend, err := storageClusterForChange(ctx, uuid, func(c *StorageCapabilities) bool {
-		if task == StorageTaskAddNodes {
+		switch task {
+		case StorageTaskAddNodes:
 			return c.AddNodes
+		case StorageTaskCreateFs:
+			return c.CreateFilesystem
 		}
 		return c.AddDisks
 	})
@@ -141,6 +162,21 @@ func (a *StorageClusterAdmin) expand(ctx context.Context, uuid string, task stri
 	params, err := backend.ParseParams([]byte(cluster.Params))
 	if err != nil {
 		return nil, err
+	}
+	// The file system the disks go into: its disks decide the layout of the new ones (the data pool of GPFS)
+	var targetFs *model.StorageFilesystem
+	fsDisks := disks
+	if task == StorageTaskAddDisks && req.Filesystem != "" {
+		targetFs = &model.StorageFilesystem{}
+		if err = dbs.DBContext(ctx).Where("cluster_id = ? AND name = ? AND status = ?", cluster.ID, req.Filesystem, "ready").Take(targetFs).Error; err != nil {
+			return nil, planError("Storage cluster %s has no ready file system %s", cluster.Name, req.Filesystem)
+		}
+		fsDisks = []*model.StorageClusterDisk{}
+		for _, d := range disks {
+			if d.FsID == targetFs.ID {
+				fsDisks = append(fsDisks, d)
+			}
+		}
 	}
 	members := map[int32]*model.StorageClusterNode{}
 	for _, n := range nodes {
@@ -168,7 +204,7 @@ func (a *StorageClusterAdmin) expand(ctx context.Context, uuid string, task stri
 				return nil, planError("Disk %s is not on a host being added", d.DiskID)
 			}
 		}
-	case StorageTaskAddDisks:
+	case StorageTaskAddDisks, StorageTaskCreateFs:
 		if len(req.Disks) == 0 {
 			return nil, planError("No disk to add")
 		}
@@ -210,7 +246,18 @@ func (a *StorageClusterAdmin) expand(ctx context.Context, uuid string, task stri
 	if err = backend.CheckLayout(afterNodes, afterDisks, params); err != nil {
 		return nil, err
 	}
-	nodeAttrs, diskAttrs := backend.InitialAttrs(nodes, disks, planNodes, req.Disks)
+	nodeAttrs, diskAttrs := backend.InitialAttrs(nodes, fsDisks, planNodes, req.Disks)
+	// A new file system: its record, made with the task, and the layout of its own disks
+	var newFs *model.StorageFilesystem
+	if task == StorageTaskCreateFs {
+		maker, ok := backend.(storageFilesystemMaker)
+		if !ok || req.NewFilesystem == nil {
+			return nil, planError("%s clusters have no file systems to make", cluster.Kind)
+		}
+		if newFs, diskAttrs, err = maker.NewFilesystem(cluster, nodes, req.NewFilesystem, req.Disks, params); err != nil {
+			return nil, err
+		}
+	}
 	disksOn := map[int32]int{}
 	for _, d := range disks {
 		disksOn[d.Hostid]++
@@ -249,9 +296,29 @@ func (a *StorageClusterAdmin) expand(ctx context.Context, uuid string, task stri
 	if err != nil {
 		return nil, err
 	}
+	taskParams := map[string]interface{}{"wipe": wipeList(req.Disks)}
+	if targetFs != nil {
+		taskParams["filesystem_id"] = targetFs.ID
+	}
 	return startStorageTask(ctx, &storageTaskSpec{ClusterID: cluster.ID, Backend: cluster.Kind, Kind: task, Plan: steps,
-		Params: map[string]interface{}{"wipe": wipeList(req.Disks)},
+		Params: taskParams,
 		Prepare: func(tx *gorm.DB) (int64, error) {
+			if newFs != nil {
+				var taken int64
+				tx.Model(&model.StorageFilesystem{}).Where("cluster_id = ? AND name = ?", cluster.ID, newFs.Name).Count(&taken)
+				if taken > 0 {
+					return 0, planError("Storage cluster %s has a file system %s already", cluster.Name, newFs.Name)
+				}
+				newFs.ClusterID = cluster.ID
+				if err := tx.Create(newFs).Error; err != nil {
+					return 0, err
+				}
+				// The task knows its file system, the disks are in it from the start
+				taskParams["filesystem_id"] = newFs.ID
+				for _, d := range newDisks {
+					d.FsID = newFs.ID
+				}
+			}
 			for _, n := range newNodes {
 				if err := tx.Create(n).Error; err != nil {
 					return 0, NewCLError(ErrStorageInvalidPlan, fmt.Sprintf("Host %d joins the cluster already", n.Hostid), err)
@@ -260,6 +327,26 @@ func (a *StorageClusterAdmin) expand(ctx context.Context, uuid string, task stri
 			for h, roles := range changedRoles {
 				if err := tx.Model(&model.StorageClusterNode{}).Where("cluster_id = ? AND hostid = ?", cluster.ID, h).Update("roles", roles).Error; err != nil {
 					return 0, err
+				}
+			}
+			// A member getting its first disks gets what the kind gives a host with disks (the failure group of GPFS)
+			for h, attrs := range nodeAttrs {
+				m := members[h]
+				if m == nil || len(attrs) == 0 {
+					continue
+				}
+				merged := map[string]interface{}{}
+				_ = json.Unmarshal([]byte(m.Attrs), &merged)
+				changed := false
+				for k, v := range attrs {
+					if _, has := merged[k]; !has {
+						merged[k], changed = v, true
+					}
+				}
+				if changed {
+					if err := tx.Model(&model.StorageClusterNode{}).Where("id = ?", m.ID).Update("attrs", jsonAttrs(merged)).Error; err != nil {
+						return 0, err
+					}
 				}
 			}
 			for _, d := range newDisks {
@@ -308,12 +395,33 @@ func (a *StorageClusterAdmin) RemoveDisk(ctx context.Context, uuid, diskUUID str
 	if err != nil {
 		return nil, err
 	}
-	afterNodes, afterDisks := layoutAfter(nodes, disks, nil, nil, -1, disk.ID)
+	// The same device seen by other hosts (a shared LUN) leaves with it
+	var siblings []*model.StorageClusterDisk
+	if s, ok := backend.(storageDiskSiblingsOf); ok {
+		siblings = s.DiskSiblings(cluster, disk, disks)
+	}
+	leaving := map[int64]bool{disk.ID: true}
+	for _, s := range siblings {
+		leaving[s.ID] = true
+	}
+	remaining := []*model.StorageClusterDisk{}
+	for _, d := range disks {
+		if !leaving[d.ID] {
+			remaining = append(remaining, d)
+		}
+	}
+	afterNodes, afterDisks := layoutAfter(nodes, remaining, nil, nil, -1, disk.ID)
 	withDiskRole(afterNodes, afterDisks, backend.DiskRole())
 	if err = backend.CheckLayout(afterNodes, afterDisks, params); err != nil {
 		return nil, planError("Without this disk: %s", planMessage(err))
 	}
-	disk.Status = model.StorageDiskRemoving
+	ids := []int64{}
+	for _, d := range disks {
+		if leaving[d.ID] {
+			d.Status = model.StorageDiskRemoving
+			ids = append(ids, d.ID)
+		}
+	}
 	steps, err := backend.TaskPlan(StorageTaskRemoveDisk, cluster, &StorageTaskScope{Nodes: nodes, Disks: disks})
 	if err != nil {
 		return nil, err
@@ -321,7 +429,7 @@ func (a *StorageClusterAdmin) RemoveDisk(ctx context.Context, uuid, diskUUID str
 	return startStorageTask(ctx, &storageTaskSpec{ClusterID: cluster.ID, Backend: cluster.Kind, Kind: StorageTaskRemoveDisk, Plan: steps,
 		Params: map[string]interface{}{"disk_id": disk.ID},
 		Prepare: func(tx *gorm.DB) (int64, error) {
-			if err := tx.Model(&model.StorageClusterDisk{}).Where("id = ?", disk.ID).Update("status", model.StorageDiskRemoving).Error; err != nil {
+			if err := tx.Model(&model.StorageClusterDisk{}).Where("id IN ?", ids).Update("status", model.StorageDiskRemoving).Error; err != nil {
 				return 0, err
 			}
 			return cluster.ID, storageRefreshReserve(tx, cluster)

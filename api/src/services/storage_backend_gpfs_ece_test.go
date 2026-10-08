@@ -60,6 +60,20 @@ func TestGPFSECEParams(t *testing.T) {
 		{`{"layout":"raid"}`, false},
 		{`{"ece_code":"4+2p"}`, false}, // an erasure code parameter without the layout
 		{`{"no_slot_map":true}`, false},
+		{`{"layout":"ece","slot_mode":"lmr","slot_range":[0,23]}`, true},
+		{`{"layout":"ece","slot_mode":"nvme","slot_range":[1,24]}`, true},
+		{`{"layout":"ece","slot_mode":"lmr"}`, false},                                       // ecedrivemapping prompts without a range
+		{`{"layout":"ece","slot_mode":"lmr","slot_range":[5,2]}`, false},                    // min after max
+		{`{"layout":"ece","slot_mode":"sas","slot_range":[0,1]}`, false},                    // lmr or nvme
+		{`{"layout":"ece","slot_range":[0,1]}`, false},                                      // a range without a mode
+		{`{"layout":"ece","no_slot_map":true,"slot_mode":"lmr","slot_range":[0,1]}`, false}, // no slots to map
+		{`{"layout":"ece","ece_meta_code":"4WayReplication","ece_meta_block_size":"2M","ece_meta_set_size":50}`, true},
+		{`{"layout":"ece","ece_meta_code":"5+1p"}`, false},
+		{`{"layout":"ece","ece_meta_block_size":"8M"}`, false}, // 3WayReplication takes up to 2M
+		{`{"layout":"ece","ece_meta_set_size":120}`, false},
+		{`{"layout":"ece","ece_strict":true}`, true},
+		{`{"ece_strict":true}`, false},
+		{`{"slot_mode":"lmr","slot_range":[0,1]}`, false},
 		{`{"layout":"replica"}`, true},
 	} {
 		_, err := gpfs.ParseParams(json.RawMessage(c.params))
@@ -126,6 +140,11 @@ func TestGPFSECELayout(t *testing.T) {
 		{"11 disks", three, disks("1:4", "2:4", "3:3"), false},
 		{"different counts", three, disks("1:5", "2:4", "3:4"), false},
 		{"two media", three, disks("1:4", "2:4", "3:4:ssd"), false},
+		{"mixed media: HDDs and SSDs on every server", three, disks("1:4", "2:4", "3:4", "1:2:ssd", "2:2:ssd", "3:2:ssd"), true},
+		{"mixed media: too few SSDs for the metadata code", three, disks("1:4", "2:4", "3:4", "1:1:ssd", "2:1:ssd", "3:1:ssd"), false},
+		{"mixed media: SSDs on one server only", three, disks("1:4", "2:4", "3:4", "1:6:ssd"), false},
+		{"SSD and NVMe beside HDDs", three, disks("1:4", "2:4", "3:4", "1:2:ssd", "2:2:ssd", "3:2:nvme"), false},
+		{"all NVMe", three, disks("1:4:nvme", "2:4:nvme", "3:4:nvme"), true},
 		{"too few in all", three, disks("1:3", "2:3", "3:3"), false},
 		{"a client with disks", nodes("admin,quorum,nsd", "quorum,nsd", "quorum,nsd", "client"), disks("1:4", "2:4", "3:4", "4:1"), false},
 		{"quorum still odd", nodes("admin,quorum,nsd", "quorum,nsd", "nsd"), disks("1:4", "2:4", "3:4"), false},
@@ -158,8 +177,11 @@ func TestGPFSECEPlan(t *testing.T) {
 	if !caps.Managed || !caps.Pools || !caps.Filesystems || !caps.RotateKeys {
 		t.Errorf("ece capabilities %+v", caps)
 	}
-	if caps.AddDisks || caps.RemoveDisk || caps.ReplaceDisk || caps.AddNodes || caps.RemoveNode || caps.Rebalance || caps.Upgrade || caps.ChangeRoles {
-		t.Errorf("the first version changes no hosts or disks of a recovery group: %+v", caps)
+	if !caps.AddDisks || !caps.ReplaceDisk || !caps.AddNodes || !caps.RemoveNode || !caps.Upgrade || !caps.Finalize || !caps.ChangeRoles {
+		t.Errorf("servers, disks, replacements, roles and upgrades of a recovery group: %+v", caps)
+	}
+	if caps.RemoveDisk || caps.Rebalance || caps.CreateFilesystem || caps.External {
+		t.Errorf("no single disk removal, no rebalance (GNR balances), no second file system: %+v", caps)
 	}
 	replica := &model.StorageCluster{Kind: model.StorageKindGPFS, Mode: model.StorageModeManaged, Layout: model.StorageLayoutReplica}
 	if !storageClusterCapabilities(gpfs, replica).AddDisks {
@@ -197,6 +219,139 @@ func TestGPFSECEPlan(t *testing.T) {
 	}
 	if teardown := gpfsECETeardown(&model.StorageCluster{Model: model.Model{ID: 12}}); teardown["recovery_group"] != "cl12_rg" {
 		t.Errorf("teardown %v", teardown)
+	}
+}
+
+// The change plans of an erasure code cluster (§7.9): servers join with every server resolving its disks for the disk
+// list, disks go in on every server at once, a server leaves the group before the cluster, a pdisk is replaced by a disk
+// of its own server; clients, roles and keys as in the replica layout
+func TestGPFSECEChangePlans(t *testing.T) {
+	gpfs := storageBackends[model.StorageKindGPFS]
+	ece := &model.StorageCluster{Kind: model.StorageKindGPFS, Mode: model.StorageModeManaged, Layout: model.StorageLayoutECE}
+	member := func(h int32, roles, status string) *model.StorageClusterNode {
+		return &model.StorageClusterNode{Hostid: h, Roles: roles, Status: status}
+	}
+	base := func() []*model.StorageClusterNode {
+		return []*model.StorageClusterNode{member(1, "admin,quorum,nsd", "active"), member(2, "quorum,nsd", "active"), member(3, "quorum,nsd", "active")}
+	}
+	plan := func(task string, scope *StorageTaskScope) (string, map[string][]int32) {
+		steps, err := gpfs.TaskPlan(task, ece, scope)
+		if err != nil {
+			return "error: " + err.Error(), nil
+		}
+		names, hosts := []string{}, map[string][]int32{}
+		for _, s := range steps {
+			names = append(names, s.Name)
+			hosts[s.Name] = s.Hostids
+			if storageTaskKinds["gpfs:"+task].Steps[s.Name] == nil {
+				t.Errorf("step %s is not registered with gpfs:%s", s.Name, task)
+			}
+		}
+		return strings.Join(names, " "), hosts
+	}
+	disk := func(h int32, status string) *model.StorageClusterDisk {
+		return &model.StorageClusterDisk{Hostid: h, Status: status}
+	}
+	// A server joins: every server resolves its disks, the group takes it
+	nodes := append(base(), member(4, "nsd", model.StorageNodeJoining))
+	got, hosts := plan(StorageTaskAddNodes, &StorageTaskScope{Nodes: nodes, Disks: []*model.StorageClusterDisk{disk(4, "claiming")}})
+	if got != "precheck join fetch_package install build_gpl ssh_trust add_node resolve_disks ece_add_servers finish" || len(hosts["resolve_disks"]) != 4 ||
+		len(hosts["precheck"]) != 1 {
+		t.Errorf("add a server: %s %v", got, hosts)
+	}
+	// A client joins: nothing of the recovery group
+	got, _ = plan(StorageTaskAddNodes, &StorageTaskScope{Nodes: append(base(), member(4, "client", model.StorageNodeJoining))})
+	if got != "precheck join fetch_package install build_gpl ssh_trust add_node finish" {
+		t.Errorf("add a client: %s", got)
+	}
+	got, hosts = plan(StorageTaskAddDisks, &StorageTaskScope{Nodes: base(), Disks: []*model.StorageClusterDisk{disk(1, "claiming"), disk(2, "claiming"), disk(3, "claiming")}})
+	if got != "resolve_disks ece_resize" || len(hosts["resolve_disks"]) != 3 {
+		t.Errorf("add disks: %s %v", got, hosts)
+	}
+	nodes = base()
+	nodes[2].Status = model.StorageNodeLeaving
+	got, _ = plan(StorageTaskRemoveNode, &StorageTaskScope{Nodes: nodes})
+	if got != "ece_remove_server remove_node leave" {
+		t.Errorf("remove a server: %s", got)
+	}
+	nodes = append(base(), member(4, "client", model.StorageNodeLeaving))
+	if got, _ = plan(StorageTaskRemoveNode, &StorageTaskScope{Nodes: nodes, Offline: true}); got != "remove_node" {
+		t.Errorf("remove a client that is gone: %s", got)
+	}
+	got, hosts = plan(StorageTaskReplaceDisk, &StorageTaskScope{Nodes: base(), Disks: []*model.StorageClusterDisk{disk(2, "removing"), disk(2, "claiming")}})
+	if got != "resolve_disks ece_replace release_disks" || hosts["resolve_disks"][0] != 2 {
+		t.Errorf("replace: %s %v", got, hosts)
+	}
+	got, _ = plan(StorageTaskReplaceDisk, &StorageTaskScope{Nodes: base(), Disks: []*model.StorageClusterDisk{disk(2, "removing"), disk(3, "claiming")}})
+	if !strings.Contains(got, "A pdisk is replaced by a disk of its own server") {
+		t.Errorf("replace across servers: %s", got)
+	}
+	if got, _ = plan(StorageTaskRemoveDisk, &StorageTaskScope{Nodes: base()}); !strings.HasPrefix(got, "error:") {
+		t.Errorf("remove a disk: %s", got)
+	}
+	if got, _ = plan(StorageTaskRebalance, &StorageTaskScope{Nodes: base()}); !strings.HasPrefix(got, "error:") {
+		t.Errorf("rebalance: %s", got)
+	}
+	if got, _ = plan(StorageTaskChangeRoles, &StorageTaskScope{Nodes: base(), Changed: 2}); got != "ssh_trust change_roles finish" {
+		t.Errorf("change roles: %s", got)
+	}
+}
+
+// The memory of the recovery group servers may differ by 10% at most; what the precheck asks of a server
+func TestGPFSECEReadiness(t *testing.T) {
+	for _, c := range []struct {
+		mem map[int32]int64
+		ok  bool
+	}{
+		{map[int32]int64{1: 32000, 2: 32000, 3: 31000}, true},
+		{map[int32]int64{1: 32000, 2: 35200}, true},
+		{map[int32]int64{1: 32000, 2: 35300}, false},
+		{map[int32]int64{1: 32000, 2: 0}, true}, // not reported
+		{map[int32]int64{}, true},
+	} {
+		if err := gpfsECEMemorySpread(c.mem); (err == nil) != c.ok {
+			t.Errorf("%v: err %v", c.mem, err)
+		}
+	}
+	gpfs := storageBackends[model.StorageKindGPFS].(gpfsBackend)
+	params, _ := gpfs.ParseParams(json.RawMessage(`{"layout":"ece","pagepool_mib":16384,"ece_strict":true}`))
+	in := gpfs.ReadinessInput([]string{"quorum", "nsd"}, params)
+	if in["min_mem_mib"] != 20480 || in["min_cores"] != gpfsECESupportCores || in["min_link_mbps"] != gpfsECESupportLinkMbps || in["strict"] != true {
+		t.Errorf("server readiness %v", in)
+	}
+	if in := gpfs.ReadinessInput([]string{"client"}, params); in != nil {
+		t.Errorf("a client has no readiness of a server: %v", in)
+	}
+	replica, _ := gpfs.ParseParams(json.RawMessage(`{}`))
+	if in := gpfs.ReadinessInput([]string{"nsd"}, replica); in != nil {
+		t.Errorf("the replica layout has none: %v", in)
+	}
+}
+
+// The vdisk sets of a deployment: the data set alone, or with the metadata set on the solid state disks
+func TestGPFSECEDeploySets(t *testing.T) {
+	cluster := &model.StorageCluster{Model: model.Model{ID: 9}, Layout: model.StorageLayoutECE,
+		Params: `{"layout":"ece","ece_code":"8+2p","block_size":"16M","ece_set_size":70,"ece_meta_code":"4WayReplication","ece_meta_block_size":"2M"}`}
+	hdd := []*model.StorageClusterDisk{{Media: "hdd"}, {Media: "hdd"}}
+	sets, err := gpfsECEDeploySets(cluster, hdd)
+	if err != nil || len(sets) != 1 || sets[0]["vdisk_set"] != "cl9_vs" || sets[0]["code"] != "8+2p" || sets[0]["da_type"] != nil {
+		t.Errorf("one media: %v %v", sets, err)
+	}
+	sets, err = gpfsECEDeploySets(cluster, append(hdd, &model.StorageClusterDisk{Media: "nvme"}))
+	if err != nil || len(sets) != 2 {
+		t.Fatalf("mixed: %v %v", sets, err)
+	}
+	if sets[0]["vdisk_set"] != "cl9_vs" || sets[0]["da_type"] != "hdd" || sets[0]["nsd_usage"] != "dataOnly" || sets[0]["storage_pool"] != "data" ||
+		sets[0]["set_size_pct"] != 70 {
+		t.Errorf("data set %v", sets[0])
+	}
+	if sets[1]["vdisk_set"] != "cl9_vsm" || sets[1]["da_type"] != "nvme" || sets[1]["code"] != "4WayReplication" || sets[1]["block_size"] != "2M" ||
+		sets[1]["nsd_usage"] != "metadataOnly" || sets[1]["storage_pool"] != "system" || sets[1]["set_size_pct"] != 80 {
+		t.Errorf("metadata set %v", sets[1])
+	}
+	cluster.Attrs = `{"vdisk_sets":["cl9_vs","cl9_vsm"]}`
+	if next := gpfsECENextSet(cluster); next != "cl9_vs3" {
+		t.Errorf("next set %s", next)
 	}
 }
 
@@ -244,11 +399,24 @@ func TestGPFSECEPdiskNames(t *testing.T) {
 func TestGPFSECELayoutInfo(t *testing.T) {
 	ece := &model.StorageCluster{Kind: model.StorageKindGPFS, Layout: model.StorageLayoutECE,
 		Params: `{"layout":"ece","ece_code":"8+3p","no_slot_map":true}`, Attrs: `{"recovery_group":"cl7_rg","vdisk_set":"cl7_vs","node_class":"cl7_nc"}`}
+	ece.ID = 7
 	info := StorageClusterLayoutInfo(ece)
 	if info["code"] != "8+3p" || info["no_slot_map"] != true || info["recovery_group"] != "cl7_rg" || info["vdisk_set"] != "cl7_vs" ||
 		info["node_class"] != "cl7_nc" {
 		t.Errorf("ece layout info %v", info)
 	}
+	ece.Params = `{"layout":"ece","ece_code":"8+3p","slot_mode":"lmr","slot_range":[0,11],"ece_meta_code":"4WayReplication"}`
+	ece.Attrs = `{"recovery_group":"cl7_rg","vdisk_set":"cl7_vs","vdisk_sets":["cl7_vs","cl7_vsm","cl7_vs3"]}`
+	if info := StorageClusterLayoutInfo(ece); info["slot_mode"] != "lmr" || info["meta_code"] != "4WayReplication" ||
+		info["vdisk_set"] != "cl7_vs, cl7_vsm, cl7_vs3" {
+		t.Errorf("slot mode, metadata code and every vdisk set: %v", info)
+	}
+	// One media: the wizard sent the metadata parameters, but there is no metadata set to show (review 2026-10-07)
+	ece.Attrs = `{"recovery_group":"cl7_rg","vdisk_set":"cl7_vs"}`
+	if info := StorageClusterLayoutInfo(ece); info["meta_code"] != nil || info["meta_block_size"] != nil {
+		t.Errorf("no metadata set, no metadata code: %v", info)
+	}
+	ece.Params = `{"layout":"ece","ece_code":"8+3p","no_slot_map":true}`
 	ece.Attrs = ""
 	if info := StorageClusterLayoutInfo(ece); info["code"] != "8+3p" || info["recovery_group"] != nil {
 		t.Errorf("before the deployment finished only the parameters: %v", info)

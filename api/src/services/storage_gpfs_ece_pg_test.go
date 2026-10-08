@@ -6,9 +6,11 @@ SPDX-License-Identifier: Apache-2.0
 
 package services
 
-// A GPFS deployment in the erasure code layout and its deletion against PostgreSQL with the fake cland standing in for
-// three hosts (shared-storage-design.md §7.9): the steps after the resolved disks, what each sends, how the disks get
-// the names of their pdisks and what the deletion sends. The node script was run against mmvdisk in the validation VMs.
+// A GPFS deployment in the erasure code layout, its changes and its deletion against PostgreSQL with the fake cland
+// standing in for the hosts (shared-storage-design.md §7.9): the steps after the resolved disks, what each sends, how
+// the disks get the names of their pdisks; a failed pdisk replaced, a server added, a disk added on every server, the
+// server removed again; what the upgrade and the deletion send. The node script was run against mmvdisk in the
+// validation VMs (the deployment); the changes only against stubs (WSL stc-test15.sh).
 
 import (
 	"encoding/json"
@@ -42,6 +44,18 @@ func TestStorageGPFSECEDeployPG(t *testing.T) {
 	h := stcHosts[:3]
 	letters := "bcde"
 	wwn := func(host int32, i int) string { return fmt.Sprintf("0x5000eee%d%d", host, i) }
+	// The fourth host joins later as a server; one more disk on every server for the resize, one on the second for the
+	// replacement
+	for i := 0; i < 4; i++ {
+		must(t, f.db.Create(&model.HyperDisk{Hostid: stcHosts[3], DiskID: "wwn-" + wwn(stcHosts[3], i), Name: "sd" + string(letters[i]),
+			Serial: fmt.Sprintf("SN%d%d", stcHosts[3], i), SizeBytes: 2 << 40, Media: "hdd", State: model.DiskFree, ScannedAt: time.Now()}).Error)
+	}
+	for _, host := range stcHosts {
+		must(t, f.db.Create(&model.HyperDisk{Hostid: host, DiskID: "wwn-" + wwn(host, 5), Name: "sdf", Serial: fmt.Sprintf("SN%d5", host),
+			SizeBytes: 2 << 40, Media: "hdd", State: model.DiskFree, ScannedAt: time.Now()}).Error)
+	}
+	must(t, f.db.Create(&model.HyperDisk{Hostid: h[1], DiskID: "wwn-" + wwn(h[1], 8), Name: "sdj", Serial: "SNR", SizeBytes: 2 << 40,
+		Media: "hdd", State: model.DiskFree, ScannedAt: time.Now()}).Error)
 	for _, host := range h {
 		for i := 0; i < 4; i++ {
 			// The WWN of a claimed disk comes from its stable id (wwn-0x...)
@@ -104,7 +118,7 @@ func TestStorageGPFSECEDeployPG(t *testing.T) {
 		}
 	}
 	caps := StorageClusterCapabilities(cluster)
-	if caps == nil || caps.AddDisks || !caps.Pools {
+	if caps == nil || !caps.AddDisks || !caps.AddNodes || !caps.ReplaceDisk || caps.RemoveDisk || !caps.Pools {
 		t.Fatalf("capabilities %+v", caps)
 	}
 
@@ -115,7 +129,7 @@ func TestStorageGPFSECEDeployPG(t *testing.T) {
 	}
 	none := func(*stcSent) string { return "{}" }
 	succeed(f.expect("precheck", "stc_precheck.sh", h...), func(s *stcSent) string {
-		return fmt.Sprintf(`{"items":[],"facts":{"hostname":"h%d","os":"ubuntu 24.04","host_key":"ssh-ed25519 KEY%d"}}`, s.hostid, s.hostid)
+		return fmt.Sprintf(`{"items":[],"facts":{"hostname":"h%d","os":"ubuntu 24.04","host_key":"ssh-ed25519 KEY%d","mem_mib":32000}}`, s.hostid, s.hostid)
 	})
 	succeed(f.expect("join", "stc_join.sh", h...), none)
 	succeed(f.expect("fetch", "stc_fetch.sh", h...), none)
@@ -180,12 +194,18 @@ func TestStorageGPFSECEDeployPG(t *testing.T) {
 		return `{"pdisks":[` + strings.Join(list, ",") + `]}`
 	})
 	sent = f.expect("ece create vs", "gpfs_ece.sh", h[0])
-	if sent[0].input["vdisk_set"] != vs || sent[0].input["code"] != "4+2p" || sent[0].input["block_size"] != "4M" || sent[0].input["set_size_pct"] != float64(80) {
+	sets, _ := sent[0].input["sets"].([]interface{})
+	if len(sets) != 1 {
 		t.Fatalf("create_vs input %v", sent[0].input)
+	}
+	set := sets[0].(map[string]interface{})
+	if set["vdisk_set"] != vs || set["code"] != "4+2p" || set["block_size"] != "4M" || set["set_size_pct"] != float64(80) || set["da_type"] != nil {
+		t.Fatalf("create_vs input: one data set on the only array %v", set)
 	}
 	succeed(sent, none)
 	sent = f.expect("ece create fs", "gpfs_ece.sh", h[0])
-	if sent[0].input["fs_name"] != "fs1" || sent[0].input["mount_point"] != "/gpfs/fs1" || sent[0].input["vdisk_set"] != vs {
+	if sent[0].input["fs_name"] != "fs1" || sent[0].input["mount_point"] != "/gpfs/fs1" || fmt.Sprint(sent[0].input["vdisk_sets"]) != "["+vs+"]" ||
+		sent[0].input["data_pool"] != "" {
 		t.Fatalf("create_fs input %v", sent[0].input)
 	}
 	succeed(sent, func(*stcSent) string { return `{"capacity_bytes":9000,"free_bytes":8000}` })
@@ -220,9 +240,193 @@ func TestStorageGPFSECEDeployPG(t *testing.T) {
 	if len(names) != 12 {
 		t.Fatalf("12 disks, 12 pdisk names: %v", names)
 	}
-	_, _, _, _, err = storageClusterForChange(ctx, cluster.UUID, func(c *StorageCapabilities) bool { return c.AddDisks })
-	if err == nil || !strings.Contains(err.Error(), "do not support") {
-		t.Fatalf("adding disks to a recovery group comes later: %v", err)
+	var server *model.StorageClusterNode
+	_, nodes, _, _ = StorageClusters.Get(ctx, cluster.UUID)
+	for _, n := range nodes {
+		if n.Hostid == h[1] {
+			server = n
+		}
+	}
+	if !strings.Contains(server.Attrs, `"mem_mib":32000`) {
+		t.Fatalf("the memory a server reported is kept with it: %s", server.Attrs)
+	}
+	if !strings.Contains(c.Attrs, `"vdisk_sets":["`+vs+`"]`) {
+		t.Fatalf("the vdisk sets are recorded: %s", c.Attrs)
+	}
+
+	// The resolve step of a change: every disk asked for by the kernel name of its scan
+	resolveByScan := func(s *stcSent) string {
+		list := []string{}
+		for _, d := range s.input["disks"].([]interface{}) {
+			id := d.(map[string]interface{})["id"].(string)
+			hd := &model.HyperDisk{}
+			must(t, f.db.Where("hostid = ? AND disk_id = ?", s.hostid, id).Take(hd).Error)
+			list = append(list, fmt.Sprintf(`{"id":%q,"path":"/dev/%s","name":"%s"}`, id, hd.Name, hd.Name))
+		}
+		return `{"disks":[` + strings.Join(list, ",") + `]}`
+	}
+	naa := func(w string) string { return "naa." + strings.ToUpper(strings.TrimPrefix(w, "0x")) }
+	pdisk := func(name string, host int32, dev, w string) string {
+		return fmt.Sprintf(`{"name":"%s","ip":"10.93.0.%d","device":"%s","wwn":"%s","state":"ok"}`, name, host-stcHosts[0]+1, dev, naa(w))
+	}
+	diskNamed := func(name string) *model.StorageClusterDisk {
+		_, _, list, _ := StorageClusters.Get(ctx, cluster.UUID)
+		for _, d := range list {
+			if d.Name == name {
+				return d
+			}
+		}
+		return nil
+	}
+
+	// ---- a failed pdisk replaced by a new disk of its server: the new disk takes the name ----
+	failed := diskNamed("n002p002")
+	must(t, f.db.Model(&model.StorageClusterDisk{}).Where("id = ?", failed.ID).Updates(map[string]interface{}{"state": "missing", "checked_at": time.Now()}).Error)
+	newWWN := wwn(h[1], 8)
+	rep, err := StorageClusters.ReplaceDisk(ctx, cluster.UUID, failed.UUID, &StorageDiskPlan{DiskID: "wwn-" + newWWN})
+	must(t, err)
+	sent = f.expect("replace resolve", "stc_resolve_disks.sh", h[1])
+	inUse := 0
+	for _, d := range sent[0].input["disks"].([]interface{}) {
+		if d.(map[string]interface{})["in_use"] == true {
+			inUse++
+		}
+	}
+	if len(sent[0].input["disks"].([]interface{})) != 4 || inUse != 3 {
+		t.Fatalf("the server resolves its disks in use (identity only) and the new one: %v", sent[0].input)
+	}
+	succeed(sent, resolveByScan)
+	sent = f.expect("ece replace", "gpfs_ece.sh", h[0])
+	in = sent[0].input
+	if in["action"] != "replace" || in["pdisk"] != "n002p002" || in["device"] != "sdj" || in["ip"] != "10.93.0.2" || in["wwn"] != newWWN ||
+		in["slot_map"] != false || in["recovery_group"] != rg {
+		t.Fatalf("replace input %v", in)
+	}
+	// The old pdisk drains under a temporary name: never taken for the new disk
+	succeed(sent, func(*stcSent) string {
+		return `{"pdisks":[` + pdisk("n002p002#0010", h[1], "sdc", failed.WWN) + "," + pdisk("n002p002", h[1], "sdj", newWWN) + `]}`
+	})
+	sent = f.expect("replace release", "stc_release_disks.sh", h[1])
+	if sent[0].input["no_wipe"] != true {
+		t.Fatalf("the failed disk is given back unwiped: %v", sent[0].input)
+	}
+	succeed(sent, none)
+	f.wantTask(rep.ID, model.StorageTaskSucceeded, "")
+	if d := diskNamed("n002p002"); d == nil || d.WWN != newWWN || d.Status != model.StorageDiskActive || d.FsID != fs.ID {
+		t.Fatalf("the new disk under the old pdisk name: %+v", d)
+	}
+	var left int64
+	f.db.Model(&model.StorageClusterDisk{}).Where("id = ?", failed.ID).Count(&left)
+	if left != 0 {
+		t.Fatal("the failed disk's claim goes")
+	}
+
+	// ---- a fourth server: every server resolves its disks for the disk list, the group takes it ----
+	h4 := stcHosts[3]
+	addDisks := []*StorageDiskPlan{}
+	for i := 0; i < 4; i++ {
+		addDisks = append(addDisks, &StorageDiskPlan{Hostid: h4, DiskID: "wwn-" + wwn(h4, i)})
+	}
+	add, err := StorageClusters.AddNodes(ctx, cluster.UUID, &StorageClusterExpand{Nodes: []*StorageNodePlan{{Hostid: h4, Roles: []string{"nsd"}}}, Disks: addDisks})
+	must(t, err)
+	sent = f.expect("add precheck", "stc_precheck.sh", h4)
+	if r, _ := sent[0].input["readiness"].(map[string]interface{}); r["min_mem_mib"] != float64(10240) {
+		t.Fatalf("a server joining is checked for its readiness: %v", sent[0].input["readiness"])
+	}
+	succeed(sent, func(s *stcSent) string {
+		return fmt.Sprintf(`{"items":[],"facts":{"hostname":"h%d","os":"ubuntu 24.04","host_key":"ssh-ed25519 KEY%d","mem_mib":33000}}`, s.hostid, s.hostid)
+	})
+	succeed(f.expect("add join", "stc_join.sh", h4), none)
+	succeed(f.expect("add fetch", "stc_fetch.sh", h4), none)
+	succeed(f.expect("add install", "gpfs_install.sh", h4), none)
+	succeed(f.expect("add build", "gpfs_build_gpl.sh", h4), none)
+	succeed(f.expect("add trust", "stc_ssh_trust.sh", stcHosts...), none)
+	succeed(f.expect("add node", "gpfs_cluster.sh", h[0]), none)
+	succeed(f.expect("add resolve", "stc_resolve_disks.sh", stcHosts...), resolveByScan)
+	sent = f.expect("ece add servers", "gpfs_ece.sh", h[0])
+	in = sent[0].input
+	full, _ := in["full_expr"].(string)
+	if in["action"] != "add_servers" || fmt.Sprint(in["servers"]) != "[10.93.0.4]" || in["disk_expr"] != "10.93.0.4:sdb,sdc,sdd,sde" ||
+		len(strings.Split(full, ";")) != 4 || !strings.Contains(full, "10.93.0.2:sdb,sdd,sde,sdj") || in["total_servers"] != float64(4) ||
+		in["node_class"] != nc || in["recovery_group"] != rg || in["no_slot_map"] != true {
+		t.Fatalf("add_servers input %v", in)
+	}
+	succeed(sent, func(*stcSent) string {
+		list := []string{}
+		for i := 0; i < 4; i++ {
+			list = append(list, pdisk(fmt.Sprintf("n004p%03d", i+1), h4, "sd"+string(letters[i]), wwn(h4, i)))
+		}
+		return `{"pdisks":[` + strings.Join(list, ",") + `]}`
+	})
+	succeed(f.expect("add finish", "stc_finish.sh", h4), none)
+	f.wantTask(add.ID, model.StorageTaskSucceeded, "")
+	for i := 0; i < 4; i++ {
+		if d := diskNamed(fmt.Sprintf("n004p%03d", i+1)); d == nil || d.Status != model.StorageDiskActive || d.FsID != fs.ID || d.Hostid != h4 {
+			t.Fatalf("a disk of the new server: %+v", d)
+		}
+	}
+
+	// ---- a disk more on every server: the group resizes, a new vdisk set takes the capacity ----
+	more := []*StorageDiskPlan{}
+	for _, host := range stcHosts {
+		more = append(more, &StorageDiskPlan{Hostid: host, DiskID: "wwn-" + wwn(host, 5)})
+	}
+	_, err = StorageClusters.AddDisks(ctx, cluster.UUID, &StorageClusterExpand{Disks: more[:3]})
+	wantCode(t, err, ErrStorageInvalidPlan, "a disk on 3 of the 4 servers")
+	grow, err := StorageClusters.AddDisks(ctx, cluster.UUID, &StorageClusterExpand{Disks: more})
+	must(t, err)
+	succeed(f.expect("resize resolve", "stc_resolve_disks.sh", stcHosts...), resolveByScan)
+	sent = f.expect("ece resize", "gpfs_ece.sh", h[0])
+	in = sent[0].input
+	if in["action"] != "resize" || in["vdisk_set"] != fmt.Sprintf("cl%d_vs2", cluster.ID) || in["fs_name"] != "fs1" || in["code"] != "4+2p" ||
+		in["set_size_pct"] != float64(80) || in["da_type"] != nil || !strings.Contains(in["disk_expr"].(string), "10.93.0.4:sdb,sdc,sdd,sde,sdf") {
+		t.Fatalf("resize input %v", in)
+	}
+	succeed(sent, func(*stcSent) string {
+		list := []string{}
+		for k, host := range stcHosts {
+			list = append(list, pdisk(fmt.Sprintf("n%03dp005", k+1), host, "sdf", wwn(host, 5)))
+		}
+		return `{"pdisks":[` + strings.Join(list, ",") + `]}`
+	})
+	f.wantTask(grow.ID, model.StorageTaskSucceeded, "")
+	if d := diskNamed("n003p005"); d == nil || d.Status != model.StorageDiskActive {
+		t.Fatalf("a new disk of the resize: %+v", d)
+	}
+	must(t, f.db.Take(c, cluster.ID).Error)
+	if !strings.Contains(c.Attrs, fmt.Sprintf(`"vdisk_sets":["%s","cl%d_vs2"]`, vs, cluster.ID)) {
+		t.Fatalf("the new vdisk set is recorded: %s", c.Attrs)
+	}
+
+	// ---- the fourth server leaves: the file system and the group give up its share first ----
+	rm, err := StorageClusters.RemoveNode(ctx, cluster.UUID, &StorageNodeRemove{Hostid: h4})
+	must(t, err)
+	sent = f.expect("ece remove server", "gpfs_ece.sh", h[0])
+	if sent[0].input["action"] != "remove_server" || sent[0].input["ip"] != "10.93.0.4" || sent[0].input["recovery_group"] != rg {
+		t.Fatalf("remove_server input %v", sent[0].input)
+	}
+	succeed(sent, none)
+	succeed(f.expect("remove node", "gpfs_cluster.sh", h[0]), none)
+	succeed(f.expect("remove leave", "stc_leave.sh", h4), none)
+	f.wantTask(rm.ID, model.StorageTaskSucceeded, "")
+	var h4disks int64
+	f.db.Model(&model.StorageClusterDisk{}).Where("cluster_id = ? AND hostid = ?", cluster.ID, h4).Count(&h4disks)
+	if h4disks != 0 {
+		t.Fatal("the disks of the server that left go with it")
+	}
+	_, err = StorageClusters.RemoveNode(ctx, cluster.UUID, &StorageNodeRemove{Hostid: h[2]})
+	wantCode(t, err, ErrStorageInvalidPlan, "a recovery group needs 3 servers")
+
+	// ---- the upgrade suspends a server in the group; finalize raises the group's version ----
+	up, err := gpfsUpgradeInput(ctx, f.db, &model.StorageTask{ClusterID: cluster.ID}, nil, h[0])
+	must(t, err)
+	if e, _ := up.(map[string]interface{})["ece"].(map[string]interface{}); e["recovery_group"] != rg {
+		t.Fatalf("upgrade input of a server %v", up)
+	}
+	fin, err := gpfsFinalizeInput(ctx, f.db, &model.StorageTask{ClusterID: cluster.ID}, nil, h[0])
+	must(t, err)
+	if fin.(map[string]interface{})["recovery_group"] != rg {
+		t.Fatalf("finalize input %v", fin)
 	}
 
 	del, err := StorageClusters.Delete(ctx, cluster.UUID, &StorageClusterDelete{ConfirmName: name})
@@ -235,8 +439,8 @@ func TestStorageGPFSECEDeployPG(t *testing.T) {
 	}
 	succeed(sent, none)
 	sent = f.expect("leave", "stc_leave.sh", h...)
-	if len(sent[0].input["wipe"].([]interface{})) != 4 {
-		t.Fatalf("leave input %v", sent[0].input)
+	if len(sent[0].input["wipe"].([]interface{})) != 5 {
+		t.Fatalf("leave input: the 4 disks of the deployment and the one of the resize %v", sent[0].input)
 	}
 	succeed(sent, none)
 	f.wantTask(del.ID, model.StorageTaskSucceeded, "")

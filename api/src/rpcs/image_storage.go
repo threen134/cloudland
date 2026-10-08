@@ -19,7 +19,34 @@ import (
 
 func init() {
 	Add("image_storage_status", ImageStorageStatus)
+	Add("image_storage_progress", ImageStorageProgress)
 	Add("create_boot_shared", CreateBootShared)
+}
+
+// ImageStorageProgress takes the progress of an import the heartbeat of its host reports (image_import_report):
+//
+//	|:-COMMAND-:| image_storage_progress '<image storage ID>' 'wait|download|write' '<percent>'
+func ImageStorageProgress(ctx context.Context, args []string) (status string, err error) {
+	if len(args) < 4 {
+		err = fmt.Errorf("Wrong params")
+		logger.Ctx(ctx).Error("Invalid args", err)
+		return
+	}
+	id, err := strconv.ParseInt(args[1], 10, 64)
+	if err != nil {
+		logger.Ctx(ctx).Error("Invalid image storage ID", err)
+		return
+	}
+	percent, err := strconv.Atoi(args[3])
+	if err != nil {
+		logger.Ctx(ctx).Error("Invalid percent", err)
+		return
+	}
+	hostid, _ := ctx.Value("hostid").(int32)
+	if err = services.HandleImageStorageProgress(ctx, hostid, id, args[2], percent); err != nil {
+		logger.Ctx(ctx).Errorf("Failed to take the progress of image copy %d: %v", id, err)
+	}
+	return
 }
 
 // ImageStorageStatus takes the end of an import (import_image_shared.sh) or a removal (delete_image_shared.sh):

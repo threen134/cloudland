@@ -83,7 +83,7 @@ func TestStorageReplaceDiskPG(t *testing.T) {
 	ok(sent, "{}")
 	sent = f.expect("remove", "gpfs_fs.sh", h[0])
 	if sent[0].input["action"] != "remove" || sent[0].input["damaged"] != true || sent[0].input["require_down"] != true ||
-		fmt.Sprint(sent[0].input["nsds"]) != "["+oldName+"]" {
+		removedNSDs(sent[0].input) != "["+oldName+"]" {
 		t.Fatalf("remove input %v", sent[0].input)
 	}
 	ok(sent, "{}")

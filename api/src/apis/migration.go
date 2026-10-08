@@ -82,10 +82,13 @@ type MigrationListResponse struct {
 }
 
 type MigrationPayload struct {
-	Name        string    `json:"name" binding:"required,min=2,max=32"`
-	Instances   []*BaseID `json:"instances" binding:"required,gte=1"`
-	Force       bool      `json:"force" binding:"omitempty"`
-	TargetHyper *int32    `json:"target_hyper" binding:"omitempty,gte=0,lte=65535"`
+	Name      string    `json:"name" binding:"required,min=2,max=32"`
+	Instances []*BaseID `json:"instances" binding:"required,gte=1"`
+	// Evacuate instances whose source host is down; every disk must be in a shared pool (shared-storage-design.md §11.3)
+	Force bool `json:"force" binding:"omitempty"`
+	// With force: the source host is confirmed powered off, so the grace period is not waited for
+	ConfirmFenced bool   `json:"confirm_fenced"`
+	TargetHyper   *int32 `json:"target_hyper" binding:"omitempty,gte=0,lte=65535"`
 	// Target pool per disk; needs target_hyper and a single instance
 	Disks []*MigrationDiskPayload `json:"disks" binding:"omitempty,max=32,dive"`
 	// Replace a pool the target lacks by one of the same fallback group (default true)
@@ -171,7 +174,8 @@ func (v *MigrationAPI) Create(c *gin.Context) {
 	if payload.TargetHyper != nil {
 		targetHyper = *payload.TargetHyper
 	}
-	opts := &services.MigrationOptions{AllowPoolFallback: true, IgnoreCapacity: payload.IgnoreCapacity, IgnorePlacement: payload.IgnorePlacement, Disks: map[int64]int64{}}
+	opts := &services.MigrationOptions{AllowPoolFallback: true, IgnoreCapacity: payload.IgnoreCapacity, IgnorePlacement: payload.IgnorePlacement,
+		ConfirmFenced: payload.ConfirmFenced, Disks: map[int64]int64{}}
 	if payload.AllowPoolFallback != nil {
 		opts.AllowPoolFallback = *payload.AllowPoolFallback
 	}

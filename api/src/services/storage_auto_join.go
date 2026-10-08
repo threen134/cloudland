@@ -73,6 +73,8 @@ type StorageClusterUpdate struct {
 	Description *string
 	// Zone UUIDs whose hosts join as clients; an empty list turns it off
 	AutoJoinZones *[]string
+	// Only hosts registered from now on join (true), or every host of the zones (false); nil leaves it
+	AutoJoinNewOnly *bool
 	// Forget the hosts that failed to join automatically, so they are tried again
 	RetryAutoJoin bool
 }
@@ -114,6 +116,7 @@ func (a *StorageClusterAdmin) Update(ctx context.Context, uuid string, req *Stor
 			raw, _ := json.Marshal(ids)
 			update["auto_join_zones"] = string(raw)
 			if len(ids) == 0 {
+				update["auto_join_since"] = nil
 				// Nothing waits any more; a host already joining finishes its task
 				list := []*StoragePendingClient{}
 				for _, p := range ParseStoragePendingClients(cluster.PendingClients) {
@@ -122,6 +125,21 @@ func (a *StorageClusterAdmin) Update(ctx context.Context, uuid string, req *Stor
 					}
 				}
 				update["pending_clients"] = storagePendingJSON(list)
+			}
+		}
+		if req.AutoJoinNewOnly != nil {
+			zones := cluster.AutoJoinZones
+			if z, ok := update["auto_join_zones"]; ok {
+				zones = z.(string)
+			}
+			switch {
+			case !*req.AutoJoinNewOnly:
+				update["auto_join_since"] = nil
+			case len(ParseStorageZones(zones)) == 0:
+				return planError("Choose the zones whose hosts join on their own first")
+			case cluster.AutoJoinSince == nil:
+				// From now on: the hosts there already are left as they are, one waiting is no longer queued
+				update["auto_join_since"] = time.Now()
 			}
 		}
 		if req.RetryAutoJoin {
@@ -224,12 +242,17 @@ func maintainAutoJoin(ctx context.Context, cluster *model.StorageCluster) {
 			queued[p.Hostid] = true
 		}
 		inZones := map[int32]bool{}
+		// With new only, a host registered before the setting is not one of the zones' hosts to join
+		isNew := func(h *model.Hyper) bool { return c.AutoJoinSince == nil || h.CreatedAt.After(*c.AutoJoinSince) }
 		if len(zones) > 0 {
 			hypers := []*model.Hyper{}
 			if err := tx.Where("zone_id IN ? AND hostid >= 0", zones).Order("hostid").Find(&hypers).Error; err != nil {
 				return err
 			}
 			for _, h := range hypers {
+				if !isNew(h) {
+					continue
+				}
 				inZones[h.Hostid] = true
 				if members[h.Hostid] != nil || queued[h.Hostid] {
 					continue
@@ -244,7 +267,8 @@ func maintainAutoJoin(ctx context.Context, cluster *model.StorageCluster) {
 				list = append(list, &StoragePendingClient{Hostid: h.Hostid, Status: StoragePendingWaiting, Since: time.Now()})
 			}
 		}
-		// A waiting host that left the zones, or got into the cluster another way, waits no more
+		// A waiting host that left the zones (or is older than the new only setting), or got into the cluster another
+		// way, waits no more
 		kept = []*StoragePendingClient{}
 		for _, p := range list {
 			if p.Status == StoragePendingWaiting && (!inZones[p.Hostid] || members[p.Hostid] != nil) {

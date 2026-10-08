@@ -404,8 +404,11 @@ func HandleSharedPoolStatus(ctx context.Context, hostid int32, reports []*Shared
 		var member int64
 		db.Model(&model.StorageClusterNode{}).Where("cluster_id = ? AND hostid = ?", pool.ClusterID, hostid).Count(&member)
 		if member == 0 {
-			logger.Ctx(ctx).Warningf("Host %d reported shared pool %s of a cluster it is not in", hostid, pool.Name)
-			continue
+			// A host of a cluster that mounts the pool's file system remotely has its say too (§7.11)
+			if _, remote := sharedPoolRemoteHost(db, pool, hostid); !remote {
+				logger.Ctx(ctx).Warningf("Host %d reported shared pool %s of a cluster it is not in", hostid, pool.Name)
+				continue
+			}
 		}
 		err := db.Transaction(func(tx *gorm.DB) error {
 			if err := upsertSharedPoolRow(tx, hostid, pool, r, now); err != nil {
@@ -549,6 +552,22 @@ func SyncSharedPools(ctx context.Context) {
 			command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_shared_pools.sh '%s' <<'EOF'\n%s\nEOF", ShellEscape(c.UUID), body)
 			if err := HyperExecute(ctx, fmt.Sprintf("inter=%d", n.Hostid), command); err != nil {
 				logger.Ctx(ctx).Warningf("Failed to send the pool list of cluster %s to host %d: %v", c.Name, n.Hostid, err)
+			}
+		}
+		// The hosts of the clusters that mount its file systems get its pools on them (§7.11)
+		mounts, err := remoteMountsOfOwner(db, c.ID)
+		if err != nil {
+			continue
+		}
+		done := map[int64]bool{}
+		for _, m := range mounts {
+			if done[m.AccessClusterID] {
+				continue
+			}
+			done[m.AccessClusterID] = true
+			access := &model.StorageCluster{}
+			if db.Take(access, m.AccessClusterID).Error == nil {
+				syncRemotePoolLists(ctx, c, access)
 			}
 		}
 	}

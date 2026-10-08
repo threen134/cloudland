@@ -106,6 +106,17 @@ func gpfsUpgradeInput(ctx context.Context, db *gorm.DB, task *model.StorageTask,
 	}
 	m := in.(map[string]interface{})
 	m["cluster_uuid"], m["filesystems"] = cluster.UUID, fss
+	// A recovery group server is suspended in its group instead of stopped (§7.9)
+	if cluster.Layout == model.StorageLayoutECE {
+		nodes := []*model.StorageClusterNode{}
+		if err := db.Where("cluster_id = ? AND hostid = ?", cluster.ID, hostid).Find(&nodes).Error; err != nil {
+			return nil, err
+		}
+		if len(nodes) > 0 && nodes[0].HasRole(model.StorageRoleNSD) {
+			_, rg, _ := gpfsECENames(cluster)
+			m["ece"] = map[string]interface{}{"recovery_group": rg}
+		}
+	}
 	return m, nil
 }
 
@@ -118,7 +129,12 @@ func gpfsFinalizeInput(ctx context.Context, db *gorm.DB, task *model.StorageTask
 	if err != nil {
 		return nil, err
 	}
-	return map[string]interface{}{"action": "finalize", "cluster_uuid": cluster.UUID, "filesystems": fss}, nil
+	in := map[string]interface{}{"action": "finalize", "cluster_uuid": cluster.UUID, "filesystems": fss}
+	if cluster.Layout == model.StorageLayoutECE {
+		_, rg, _ := gpfsECENames(cluster)
+		in["recovery_group"] = rg
+	}
+	return in, nil
 }
 
 // gpfsUpgradeFinish: the cluster runs the package of the new release, which hosts joining later install. An aborted

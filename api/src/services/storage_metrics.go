@@ -31,6 +31,8 @@ const (
 	StorageChartPools      = "pools"      // percent
 	StorageChartNodes      = "nodes"      // count of hosts
 	StorageChartOSDs       = "osds"       // count of OSDs
+	StorageChartGpfsPools  = "gpfs_pools" // bytes, per GPFS storage pool of each file system
+	StorageChartInodes     = "inodes"     // percent of the inodes of the fileset of each pool
 )
 
 var storageChartUnits = map[string]string{
@@ -40,6 +42,8 @@ var storageChartUnits = map[string]string{
 	StorageChartPools:      "percent",
 	StorageChartNodes:      "count",
 	StorageChartOSDs:       "count",
+	StorageChartGpfsPools:  "bytes",
+	StorageChartInodes:     "percent",
 }
 
 // StorageChartUnit is the unit of the values of a chart

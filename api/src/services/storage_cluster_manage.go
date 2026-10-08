@@ -79,7 +79,18 @@ func (a *StorageClusterAdmin) Create(ctx context.Context, req *StorageClusterCre
 	if err != nil {
 		return
 	}
-	normalized, _ := json.Marshal(params)
+	// Credentials in the parameters (the password of a private registry) are kept encrypted with the cluster
+	public, plainSecrets, err := storageSplitParamSecrets(backend, params)
+	if err != nil {
+		return nil, nil, err
+	}
+	secrets := ""
+	if len(plainSecrets) > 0 {
+		if secrets, err = encryptStorageSecrets(plainSecrets); err != nil {
+			return nil, nil, NewCLError(ErrSecretUnavailable, "Failed to encrypt the credentials of the cluster", err)
+		}
+	}
+	normalized, _ := json.Marshal(public)
 	db := dbs.DBContext(ctx)
 	plan.ClusterID = 0
 	_, scanned, err := checkStoragePlan(db, plan)
@@ -119,7 +130,7 @@ func (a *StorageClusterAdmin) Create(ctx context.Context, req *StorageClusterCre
 		disksOn[d.Hostid]++
 	}
 	cluster = &model.StorageCluster{Name: req.Name, Kind: plan.Kind, Mode: model.StorageModeManaged, Layout: storageLayoutFor(backend, params),
-		Status: model.StorageClusterDeploying, Health: model.StorageHealthUnknown, Params: string(normalized),
+		Status: model.StorageClusterDeploying, Health: model.StorageHealthUnknown, Params: string(normalized), Secrets: secrets,
 		Unsupported: plan.AllowUnsupported, SSHPubKey: pubKey, SSHPrivKey: privKey, Description: req.Description}
 	if pkg != nil {
 		cluster.PackageID, cluster.Version = pkg.ID, pkg.Version
@@ -237,6 +248,9 @@ func (a *StorageClusterAdmin) Delete(ctx context.Context, uuid string, req *Stor
 			}
 			if pools > 0 {
 				return 0, NewCLError(ErrStoragePoolInUse, fmt.Sprintf("Delete the %d storage pool(s) of the cluster first", pools), nil)
+			}
+			if n := storageRemoteMountsOf(tx, c.ID); n > 0 {
+				return 0, NewCLError(ErrStoragePoolInUse, fmt.Sprintf("Delete the %d remote mount(s) the cluster has a part in first", n), nil)
 			}
 			// An import holds no slot. Its check may still run on the hosts, or run again on a retry, and would write
 			// back the client configuration the deletion removes

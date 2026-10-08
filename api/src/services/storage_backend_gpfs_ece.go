@@ -27,9 +27,38 @@ import (
 // ones the validation installed with them (§7.9)
 const gpfsECEDebPrefixes = "gpfs.gnr gpfs.adv_ gpfs.crypto_ gpfs.compression_"
 
-// gpfsECENames are the mmvdisk objects of a cluster: node class, recovery group, vdisk set
+// gpfsECENames are the mmvdisk objects of a cluster: node class, recovery group, the first data vdisk set
 func gpfsECENames(cluster *model.StorageCluster) (nodeClass, rg, vs string) {
 	return fmt.Sprintf("cl%d_nc", cluster.ID), fmt.Sprintf("cl%d_rg", cluster.ID), fmt.Sprintf("cl%d_vs", cluster.ID)
+}
+
+// gpfsECEMetaSet is the metadata vdisk set of a mixed media cluster
+func gpfsECEMetaSet(cluster *model.StorageCluster) string {
+	return fmt.Sprintf("cl%d_vsm", cluster.ID)
+}
+
+// gpfsECEDeploySets are the vdisk sets a deployment makes: the data set on the only array, or on the HDDs with the
+// metadata set on the solid state disks beside them (mixed media)
+func gpfsECEDeploySets(cluster *model.StorageCluster, disks []*model.StorageClusterDisk) ([]map[string]interface{}, error) {
+	media := []string{}
+	for _, d := range disks {
+		media = append(media, d.Media)
+	}
+	data, meta, err := gpfsECEArrays(media)
+	if err != nil {
+		return nil, err
+	}
+	p := gpfsParamsOf(cluster)
+	_, _, vs := gpfsECENames(cluster)
+	set := gpfsECESetFor(p, data, data, meta)
+	set["vdisk_set"] = vs
+	sets := []map[string]interface{}{set}
+	if meta != "" {
+		m := gpfsECESetFor(p, meta, data, meta)
+		m["vdisk_set"] = gpfsECEMetaSet(cluster)
+		sets = append(sets, m)
+	}
+	return sets, nil
 }
 
 func gpfsParamsOf(cluster *model.StorageCluster) *gpfsParams {
@@ -152,7 +181,7 @@ func gpfsECESlotsInput(ctx context.Context, db *gorm.DB, task *model.StorageTask
 		return nil, err
 	}
 	nc, _, _ := gpfsECENames(cluster)
-	return map[string]interface{}{"action": "slots", "cluster_uuid": cluster.UUID, "node_class": nc, "no_slot_map": gpfsParamsOf(cluster).NoSlotMap}, nil
+	return gpfsECESlotInput(gpfsParamsOf(cluster), map[string]interface{}{"action": "slots", "cluster_uuid": cluster.UUID, "node_class": nc}), nil
 }
 
 func gpfsECECreateRGInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
@@ -169,14 +198,16 @@ func gpfsECECreateRGInput(ctx context.Context, db *gorm.DB, task *model.StorageT
 }
 
 func gpfsECECreateVSInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
-	cluster, _, _, err := storageClusterOfTask(db, task)
+	cluster, _, disks, err := storageClusterOfTask(db, task)
 	if err != nil {
 		return nil, err
 	}
-	_, rg, vs := gpfsECENames(cluster)
-	p := gpfsParamsOf(cluster)
-	return map[string]interface{}{"action": "create_vs", "cluster_uuid": cluster.UUID, "recovery_group": rg, "vdisk_set": vs,
-		"code": p.ECECode, "block_size": p.BlockSize, "set_size_pct": p.ECESetSize}, nil
+	_, rg, _ := gpfsECENames(cluster)
+	sets, err := gpfsECEDeploySets(cluster, disks)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"action": "create_vs", "cluster_uuid": cluster.UUID, "recovery_group": rg, "sets": sets}, nil
 }
 
 // gpfsECEFsName is the file system of an erasure code cluster
@@ -188,14 +219,24 @@ func gpfsECEFsName(cluster *model.StorageCluster) string {
 }
 
 func gpfsECECreateFSInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
-	cluster, _, _, err := storageClusterOfTask(db, task)
+	cluster, _, disks, err := storageClusterOfTask(db, task)
 	if err != nil {
 		return nil, err
 	}
-	_, _, vs := gpfsECENames(cluster)
+	sets, err := gpfsECEDeploySets(cluster, disks)
+	if err != nil {
+		return nil, err
+	}
+	names, dataPool := []string{}, ""
+	for _, s := range sets {
+		names = append(names, s["vdisk_set"].(string))
+		if s["storage_pool"] == "data" {
+			dataPool = "data"
+		}
+	}
 	name := gpfsECEFsName(cluster)
-	return map[string]interface{}{"action": "create_fs", "cluster_uuid": cluster.UUID, "fs_name": name, "vdisk_set": vs,
-		"mount_point": gpfsMountRoot + "/" + name}, nil
+	return map[string]interface{}{"action": "create_fs", "cluster_uuid": cluster.UUID, "fs_name": name, "vdisk_sets": names,
+		"data_pool": dataPool, "mount_point": gpfsMountRoot + "/" + name}, nil
 }
 
 // gpfsECEPdisk is a pdisk of the recovery group as ece_create_rg reports it
@@ -248,8 +289,16 @@ func gpfsECEDeployFinish(ctx context.Context, tx *gorm.DB, task *model.StorageTa
 		return err
 	}
 	nc, rg, vs := gpfsECENames(cluster)
+	sets, err := gpfsECEDeploySets(cluster, disks)
+	if err != nil {
+		return err
+	}
+	setNames := []string{}
+	for _, s := range sets {
+		setNames = append(setNames, s["vdisk_set"].(string))
+	}
 	return gpfsDeployDone(ctx, tx, task, cluster, nodes, disks, &gpfsDeployLayout{fs: fs, fsStep: "ece_create_fs", diskNames: pdiskOf,
-		attrs: map[string]interface{}{"node_class": nc, "recovery_group": rg, "vdisk_set": vs, "ece_code": p.ECECode}})
+		attrs: map[string]interface{}{"node_class": nc, "recovery_group": rg, "vdisk_set": vs, "vdisk_sets": setNames, "ece_code": p.ECECode}})
 }
 
 // gpfsECEPdiskNames names every disk of the cluster by its pdisk: by WWN (recorded when the disk was claimed), else by

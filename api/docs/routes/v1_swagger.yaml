@@ -1126,6 +1126,17 @@ definitions:
     - os_version
     - user
     type: object
+  apis.ImagePreheatPayload:
+    properties:
+      storage_pools:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        maxItems: 16
+        minItems: 1
+        type: array
+    required:
+    - storage_pools
+    type: object
   apis.ImageResponse:
     properties:
       architecture:
@@ -1162,6 +1173,37 @@ definitions:
       updated_at:
         type: string
       user:
+        type: string
+    type: object
+  apis.ImageStorageCopiesResponse:
+    properties:
+      copies:
+        items:
+          $ref: '#/definitions/apis.ImageStorageCopyResponse'
+        type: array
+    type: object
+  apis.ImageStorageCopyResponse:
+    properties:
+      boot_disks:
+        description: Boot disks cloned from it; a copy with some can not be removed
+        type: integer
+      host:
+        description: The host running the import or the removal
+        type: string
+      phase:
+        description: 'Of an import running: wait (for an import slot of the host),
+          download, write; percent of that phase'
+        type: string
+      progress:
+        type: integer
+      reason:
+        type: string
+      status:
+        description: syncing | synced | error | deleting
+        type: string
+      storage_pool:
+        $ref: '#/definitions/common.ResourceReference'
+      updated_at:
         type: string
     type: object
   apis.InstanceInfo:
@@ -1904,6 +1946,10 @@ definitions:
         description: Replace a pool the target lacks by one of the same fallback group
           (default true)
         type: boolean
+      confirm_fenced:
+        description: 'With force: the source host is confirmed powered off, so the
+          grace period is not waited for'
+        type: boolean
       disks:
         description: Target pool per disk; needs target_hyper and a single instance
         items:
@@ -1911,6 +1957,8 @@ definitions:
         maxItems: 32
         type: array
       force:
+        description: Evacuate instances whose source host is down; every disk must
+          be in a shared pool (shared-storage-design.md §11.3)
         type: boolean
       ignore_capacity:
         description: Skip the capacity checks of the target, to evacuate a host when
@@ -2384,10 +2432,16 @@ definitions:
     type: object
   apis.StorageAutoJoinResponse:
     properties:
+      new_only:
+        description: Only the hosts registered after since join; those of the zones
+          registered before are left as they are
+        type: boolean
       pending:
         items:
           $ref: '#/definitions/apis.StoragePendingClientResponse'
         type: array
+      since:
+        type: string
       zones:
         items:
           $ref: '#/definitions/common.ResourceReference'
@@ -2637,6 +2691,10 @@ definitions:
     type: object
   apis.StorageClusterPatchPayload:
     properties:
+      auto_join_new_only:
+        description: Only the hosts registered from now on join on their own (true),
+          or every host of the zones (false)
+        type: boolean
       auto_join_zones:
         description: Zones whose hosts join the cluster as clients on their own; []
           turns it off (managed clusters only)
@@ -2816,11 +2874,46 @@ definitions:
           $ref: '#/definitions/apis.StorageDiskPayload'
         maxItems: 512
         type: array
+      filesystem:
+        description: The file system the disks go into (POST .../disks); the first
+          one of the cluster when empty
+        maxLength: 32
+        type: string
       nodes:
         items:
           $ref: '#/definitions/apis.StorageNodePayload'
         maxItems: 64
         type: array
+    type: object
+  apis.StorageFilesystemPayload:
+    properties:
+      allow_unsupported:
+        type: boolean
+      block_size:
+        description: 1M, 2M, 4M (default), 8M or 16M
+        maxLength: 4
+        type: string
+      data_replicas:
+        description: Copies of the data, 2 by default (1 in the test layout); the
+          metadata gets 3 once there are 3 failure groups
+        maximum: 3
+        minimum: 1
+        type: integer
+      disks:
+        description: New disks of member hosts, on at least 3 hosts (one failure group
+          each) outside the test layout
+        items:
+          $ref: '#/definitions/apis.StorageDiskPayload'
+        maxItems: 512
+        minItems: 1
+        type: array
+      name:
+        description: Name of the new file system, mounted at /gpfs/<name>
+        maxLength: 32
+        type: string
+    required:
+    - disks
+    - name
     type: object
   apis.StorageFilesystemResponse:
     properties:
@@ -3213,6 +3306,55 @@ definitions:
       filesystem:
         description: Name of the file system; the first one of the cluster when empty
         maxLength: 32
+        type: string
+    type: object
+  apis.StorageRemoteMountListResponse:
+    properties:
+      remote_mounts:
+        items:
+          $ref: '#/definitions/apis.StorageRemoteMountResponse'
+        type: array
+    type: object
+  apis.StorageRemoteMountPayload:
+    properties:
+      cluster:
+        description: The cluster whose hosts mount it (UUID)
+        type: string
+      filesystem:
+        description: File system of this cluster
+        maxLength: 32
+        type: string
+    required:
+    - cluster
+    - filesystem
+    type: object
+  apis.StorageRemoteMountResponse:
+    properties:
+      access:
+        $ref: '#/definitions/common.ResourceReference'
+      created_at:
+        type: string
+      filesystem:
+        type: string
+      id:
+        type: string
+      mount_point:
+        type: string
+      name:
+        type: string
+      owner:
+        $ref: '#/definitions/common.ResourceReference'
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      reason:
+        type: string
+      status:
+        description: mounting | ready | unmounting | error
+        type: string
+      updated_at:
         type: string
     type: object
   apis.StorageReplaceDiskPayload:
@@ -5201,11 +5343,14 @@ definitions:
         type: boolean
       client_key:
         type: boolean
+      create_filesystem:
+        type: boolean
       external:
         type: boolean
       filesystems:
-        description: 'Filesystems: the kind has file systems between the cluster and
-          the pools (gpfs)'
+        description: |-
+          Filesystems: the kind has file systems between the cluster and the pools (gpfs); CreateFilesystem: a managed
+          cluster can have more than the one it was made with, made and deleted with their disks
         type: boolean
       finalize:
         type: boolean
@@ -5217,6 +5362,11 @@ definitions:
         description: 'Pools: CloudLand pools can be made on clusters of the kind'
         type: boolean
       rebalance:
+        type: boolean
+      remote_mount:
+        description: |-
+          RemoteMount: the hosts of another managed cluster of the kind mount a file system of this one (gpfs
+          multi-cluster)
         type: boolean
       remove_disk:
         type: boolean
@@ -6925,6 +7075,80 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a image
+      tags:
+      - Image
+  /images/{id}/storage_copies:
+    get:
+      description: the copy of the image in each shared pool it was imported into,
+        with how far a running import got (shared-storage-design.md §9.6); system
+        admins
+      parameters:
+      - description: Image UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ImageStorageCopiesResponse'
+      summary: list the copies of an image in the shared pools
+      tags:
+      - Image
+    post:
+      consumes:
+      - application/json
+      description: 'preheat: import the image into the shared pools given, so the
+        first boot disk made there does not wait for the copy (shared-storage-design.md
+        §9.6). A pool with a copy synced or being imported is left as it is, a failed
+        one is imported again; system admins'
+      parameters:
+      - description: Image UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Pools
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ImagePreheatPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ImageStorageCopiesResponse'
+      summary: import an image into shared pools ahead of time
+      tags:
+      - Image
+  /images/{id}/storage_copies/{pool}:
+    delete:
+      description: removes the copy of the image in the pool when no boot disk is
+        cloned from it (shared-storage-design.md §9.6); 409 while boot disks use it
+        or its import runs. The copy goes once its host removed it; system admins
+      parameters:
+      - description: Image UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Storage pool UUID
+        in: path
+        name: pool
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+      summary: remove the copy of an image in a shared pool
       tags:
       - Image
   /instance/{id}/interfaces:
@@ -9926,7 +10150,8 @@ paths:
       description: 'the description, and the zones whose hosts join the cluster as
         clients on their own (shared-storage-design.md §6.3): every online host of
         those zones not in the cluster is queued and joins with a task of its own
-        once the cluster is free; one that fails is left alone and listed until retry_auto_join'
+        once the cluster is free; one that fails is left alone and listed until retry_auto_join.
+        With auto_join_new_only only the hosts registered from then on join'
       parameters:
       - description: Cluster UUID
         in: path
@@ -10037,6 +10262,62 @@ paths:
           schema:
             $ref: '#/definitions/apis.StorageTaskResponse'
       summary: replace a failed disk of a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/filesystems:
+    post:
+      consumes:
+      - application/json
+      description: 'a new file system on new disks of the members: NSDs made, the
+        file system made and mounted on every member (shared-storage-design.md §7.3).
+        Pools pick it by name (filesystem); system admins'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: The file system and its disks
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageFilesystemPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: make a file system on a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/filesystems/{name}:
+    delete:
+      description: unmounts and deletes a file system no storage pool is on, with
+        its NSDs; its disks are wiped and given back to their hosts. The only file
+        system of a cluster goes with the cluster (shared-storage-design.md §7.3);
+        system admins
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: File system name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: delete a file system of a storage cluster
       tags:
       - StorageCluster
   /storage_clusters/{id}/metrics:
@@ -10211,6 +10492,83 @@ paths:
           schema:
             $ref: '#/definitions/apis.StorageTaskResponse'
       summary: rebalance a file system of a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/remote_mounts:
+    get:
+      description: the file systems of this cluster other clusters mount, and the
+        file systems of others it mounts (shared-storage-design.md §7.11); system
+        admins
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StorageRemoteMountListResponse'
+      summary: list the remote mounts of a storage cluster
+      tags:
+      - StorageCluster
+    post:
+      consumes:
+      - application/json
+      description: 'the hosts of another managed cluster of the kind mount a file
+        system of this one under its name and mount point (GPFS multi-cluster: keys
+        exchanged, the file system granted, mounted on every host there); the pools
+        on it become usable on those hosts. A task of the cluster that mounts (shared-storage-design.md
+        §7.11); system admins'
+      parameters:
+      - description: Cluster UUID (whose file system it is)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: The file system and the cluster that mounts it
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageRemoteMountPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: let another storage cluster mount a file system
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/remote_mounts/{mount_id}:
+    delete:
+      description: the hosts of the other cluster unmount the file system and its
+        grant goes; refused while instances on those hosts use volumes of the pools
+        on it (shared-storage-design.md §7.11); system admins
+      parameters:
+      - description: Cluster UUID (whose file system it is)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Remote mount UUID
+        in: path
+        name: mount_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: stop another storage cluster mounting a file system
       tags:
       - StorageCluster
   /storage_clusters/{id}/rotate_keys:

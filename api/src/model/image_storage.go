@@ -33,9 +33,14 @@ type ImageStorage struct {
 	Path   string `gorm:"type:varchar(256)"`
 	Status string `gorm:"type:varchar(16)"`
 	Reason string `gorm:"type:varchar(512)"`
-	// The host running the import or the removal, the only one whose report is taken, and when it was sent
+	// The host running the import or the removal, the only one whose report is taken, and when it was sent (an import:
+	// or when its host last reported its progress)
 	Hostid int32
 	SentAt *time.Time
+	// How far the import got as its host reports it: wait (for an import slot of the host), download, write; and the
+	// percent of that phase
+	Phase    string `gorm:"type:varchar(16)"`
+	Progress int
 }
 
 // Kinds of commands waiting for a base copy

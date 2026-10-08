@@ -444,6 +444,10 @@ definitions:
         type: string
       reason:
         type: string
+      shared:
+        description: 'A disk of a shared pool: not copied, the target opens it where
+          it is'
+        type: boolean
       size_gb:
         type: integer
       source_pool:
@@ -840,6 +844,10 @@ definitions:
         type: string
       reserved_bytes:
         type: integer
+      shared:
+        description: 'A shared pool: the row only tells whether the host reaches it;
+          it is managed on its storage cluster'
+        type: boolean
       status:
         type: string
       storage_full_paused:
@@ -884,6 +892,33 @@ definitions:
     required:
     - hostname
     - ip
+    type: object
+  apis.HyperEvacuatePayload:
+    properties:
+      confirm_fenced:
+        description: |-
+          The host is powered off (through IPMI, the provider): stands in for a fence CloudLand can not run, and the grace
+          period (5 minutes offline) is not waited for. Recorded in the audit log
+        type: boolean
+      instances:
+        description: UUIDs of the instances to recover; every instance of the host
+          when empty
+        items:
+          type: string
+        type: array
+      target_hyper:
+        description: 'Host (hostid) to start the instances on; nil or -1: any active
+          host of their zone that reaches their pools'
+        maximum: 65535
+        minimum: -1
+        type: integer
+    type: object
+  apis.HyperEvacuateResponse:
+    properties:
+      instances:
+        items:
+          $ref: '#/definitions/services.EvacuateResult'
+        type: array
     type: object
   apis.HyperListResponse:
     properties:
@@ -943,6 +978,14 @@ definitions:
         type: integer
       disk_used:
         type: integer
+      evacuate_grace_seconds:
+        type: integer
+      fences:
+        description: Storage clusters keeping the host off their disks while its instances
+          run elsewhere (detail only)
+        items:
+          $ref: '#/definitions/services.HostFence'
+        type: array
       host_ip:
         type: string
       hostid:
@@ -958,6 +1001,18 @@ definitions:
         type: integer
       memory_total:
         type: integer
+      offline_at:
+        description: Since when cland has the host offline (status 10); its instances
+          may be evacuated after a grace period
+        type: string
+      offline_seconds:
+        description: 'How long it has been offline and the grace period, in seconds,
+          counted by clapi: the times carry no time zone'
+        type: integer
+      reconciled_at:
+        description: When the host last reconciled its instances with the database
+          after a boot or a reconnect
+        type: string
       remark:
         type: string
       route_ip:
@@ -976,6 +1031,14 @@ definitions:
         type: string
       zone_name:
         type: string
+    type: object
+  apis.HyperUnfencePayload:
+    properties:
+      forget:
+        description: |-
+          Forget the fences instead of lifting them: after an admin lifted them by hand (the blocklist entry of an
+          imported Ceph cluster, which the CloudLand client can not remove)
+        type: boolean
     type: object
   apis.ImageListResponse:
     properties:
@@ -1063,6 +1126,17 @@ definitions:
     - os_version
     - user
     type: object
+  apis.ImagePreheatPayload:
+    properties:
+      storage_pools:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        maxItems: 16
+        minItems: 1
+        type: array
+    required:
+    - storage_pools
+    type: object
   apis.ImageResponse:
     properties:
       architecture:
@@ -1099,6 +1173,37 @@ definitions:
       updated_at:
         type: string
       user:
+        type: string
+    type: object
+  apis.ImageStorageCopiesResponse:
+    properties:
+      copies:
+        items:
+          $ref: '#/definitions/apis.ImageStorageCopyResponse'
+        type: array
+    type: object
+  apis.ImageStorageCopyResponse:
+    properties:
+      boot_disks:
+        description: Boot disks cloned from it; a copy with some can not be removed
+        type: integer
+      host:
+        description: The host running the import or the removal
+        type: string
+      phase:
+        description: 'Of an import running: wait (for an import slot of the host),
+          download, write; percent of that phase'
+        type: string
+      progress:
+        type: integer
+      reason:
+        type: string
+      status:
+        description: syncing | synced | error | deleting
+        type: string
+      storage_pool:
+        $ref: '#/definitions/common.ResourceReference'
+      updated_at:
         type: string
     type: object
   apis.InstanceInfo:
@@ -1841,6 +1946,10 @@ definitions:
         description: Replace a pool the target lacks by one of the same fallback group
           (default true)
         type: boolean
+      confirm_fenced:
+        description: 'With force: the source host is confirmed powered off, so the
+          grace period is not waited for'
+        type: boolean
       disks:
         description: Target pool per disk; needs target_hyper and a single instance
         items:
@@ -1848,6 +1957,8 @@ definitions:
         maxItems: 32
         type: array
       force:
+        description: Evacuate instances whose source host is down; every disk must
+          be in a shared pool (shared-storage-design.md §11.3)
         type: boolean
       ignore_capacity:
         description: Skip the capacity checks of the target, to evacuate a host when
@@ -2319,6 +2430,673 @@ definitions:
       vlan:
         type: integer
     type: object
+  apis.StorageAutoJoinResponse:
+    properties:
+      new_only:
+        description: Only the hosts registered after since join; those of the zones
+          registered before are left as they are
+        type: boolean
+      pending:
+        items:
+          $ref: '#/definitions/apis.StoragePendingClientResponse'
+        type: array
+      since:
+        type: string
+      zones:
+        items:
+          $ref: '#/definitions/common.ResourceReference'
+        type: array
+    type: object
+  apis.StorageBackendListResponse:
+    properties:
+      storage_backends:
+        items:
+          $ref: '#/definitions/apis.StorageBackendResponse'
+        type: array
+    type: object
+  apis.StorageBackendResponse:
+    properties:
+      capabilities:
+        allOf:
+        - $ref: '#/definitions/services.StorageCapabilities'
+        description: Operations of the kind; the interface offers only these
+      containers:
+        type: boolean
+      default_once_roles:
+        items:
+          type: string
+        type: array
+      default_roles:
+        description: 'Suggested roles of one more host: default_roles always, plus
+          each of default_once_roles while no host has it'
+        items:
+          type: string
+        type: array
+      disk_role:
+        description: Role of the hosts that give disks; empty when the kind takes
+          no disks
+        type: string
+      kernel_module:
+        type: boolean
+      kind:
+        type: string
+      package:
+        description: Installs from an uploaded package (GET /storage_packages) rather
+          than from the distribution
+        type: boolean
+      pool_driver:
+        description: Driver of the CloudLand pools on clusters of the kind
+        type: string
+      roles:
+        description: Roles a host may have, in the order forms show them
+        items:
+          type: string
+        type: array
+      systems:
+        items:
+          $ref: '#/definitions/services.StorageOSRule'
+        type: array
+    type: object
+  apis.StorageChangeRolesPayload:
+    properties:
+      roles:
+        description: The roles as they will be; the disk role follows the disks of
+          the host
+        items:
+          type: string
+        maxItems: 8
+        minItems: 1
+        type: array
+    required:
+    - roles
+    type: object
+  apis.StorageClusterAlarmResponse:
+    properties:
+      name:
+        type: string
+      severity:
+        type: string
+      since:
+        type: string
+      summary:
+        type: string
+    type: object
+  apis.StorageClusterCreatePayload:
+    properties:
+      allow_unsupported:
+        type: boolean
+      description:
+        maxLength: 256
+        type: string
+      disks:
+        items:
+          $ref: '#/definitions/apis.StorageDiskPayload'
+        maxItems: 512
+        type: array
+      kind:
+        description: A kind from GET /storage_backends
+        maxLength: 16
+        type: string
+      name:
+        maxLength: 63
+        type: string
+      nodes:
+        items:
+          $ref: '#/definitions/apis.StorageNodePayload'
+        maxItems: 64
+        minItems: 1
+        type: array
+      package_id:
+        description: UUID of a verified package whose license is accepted, for kinds
+          that install from one (gpfs)
+        type: string
+      params:
+        description: Parameters of the kind, checked by its backend; every kind takes
+          "test" (the single host test layout)
+        type: object
+    required:
+    - kind
+    - name
+    - nodes
+    type: object
+  apis.StorageClusterDiskResponse:
+    properties:
+      attrs:
+        description: Kind specific attributes, e.g. the usage and storage pool of
+          a GPFS NSD
+        type: object
+      checked_at:
+        type: string
+      disk_id:
+        type: string
+      hypervisor:
+        $ref: '#/definitions/common.ResourceReference'
+      id:
+        description: UUID of the disk in the cluster, for removing it
+        type: string
+      media:
+        type: string
+      name:
+        type: string
+      reason:
+        type: string
+      role:
+        type: string
+      serial:
+        type: string
+      size_bytes:
+        type: integer
+      state:
+        description: What the storage software reports for the disk (gpfs availability,
+          ceph up/down) and when it was seen
+        type: string
+      status:
+        type: string
+    type: object
+  apis.StorageClusterHealthResponse:
+    properties:
+      alarms:
+        items:
+          $ref: '#/definitions/apis.StorageClusterAlarmResponse'
+        type: array
+      capacity_bytes:
+        description: Capacity of the whole cluster as its software reports it (ceph
+          df)
+        type: integer
+      checked_at:
+        type: string
+      error:
+        type: string
+      flags:
+        items:
+          type: string
+        type: array
+      free_bytes:
+        type: integer
+      hypervisor:
+        allOf:
+        - $ref: '#/definitions/common.ResourceReference'
+        description: The host that checked
+      messages:
+        items:
+          type: string
+        type: array
+      summary:
+        type: string
+    type: object
+  apis.StorageClusterImportPayload:
+    properties:
+      description:
+        maxLength: 256
+        type: string
+      hypervisors:
+        description: 'The hosts that use the cluster: members of it already'
+        items:
+          type: string
+        maxItems: 64
+        minItems: 1
+        type: array
+      kind:
+        description: A kind from GET /storage_backends whose capabilities include
+          external
+        maxLength: 16
+        type: string
+      name:
+        maxLength: 63
+        type: string
+      params:
+        description: 'What the kind must know to use the cluster (gpfs: fs_name, mount_point)'
+        type: object
+    required:
+    - hypervisors
+    - kind
+    - name
+    type: object
+  apis.StorageClusterListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      storage_clusters:
+        items:
+          $ref: '#/definitions/apis.StorageClusterResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.StorageClusterNodeResponse:
+    properties:
+      attrs:
+        description: Kind specific attributes, e.g. the failure group of a GPFS host
+        type: object
+      checked_at:
+        description: When the health watchdog last saw the host in the storage software's
+          report
+        type: string
+      hypervisor:
+        $ref: '#/definitions/common.ResourceReference'
+      reason:
+        type: string
+      reserved_mem_mb:
+        type: integer
+      roles:
+        items:
+          type: string
+        type: array
+      state:
+        type: string
+      status:
+        type: string
+    type: object
+  apis.StorageClusterPatchPayload:
+    properties:
+      auto_join_new_only:
+        description: Only the hosts registered from now on join on their own (true),
+          or every host of the zones (false)
+        type: boolean
+      auto_join_zones:
+        description: Zones whose hosts join the cluster as clients on their own; []
+          turns it off (managed clusters only)
+        items:
+          type: string
+        maxItems: 32
+        type: array
+      description:
+        maxLength: 256
+        type: string
+      retry_auto_join:
+        description: Forget the hosts that failed to join on their own, so they are
+          tried again
+        type: boolean
+    type: object
+  apis.StorageClusterPoolResponse:
+    properties:
+      allocated_bytes:
+        description: Sum of the volumes of the pool
+        type: integer
+      capacity_bytes:
+        type: integer
+      created_at:
+        type: string
+      driver:
+        type: string
+      driver_params:
+        description: 'json read by the driver: the gpfs fileset, file system and storage
+          pool'
+        type: object
+      id:
+        type: string
+      media:
+        type: string
+      mount_path:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      quota_bytes:
+        type: integer
+      status:
+        type: string
+      updated_at:
+        type: string
+      used_bytes:
+        type: integer
+    type: object
+  apis.StorageClusterResponse:
+    properties:
+      active_pool_task:
+        type: string
+      active_task:
+        description: 'Tasks holding the slots of the cluster (§6.2.1): structural
+          changes, pool changes'
+        type: string
+      allocated_bytes:
+        description: Sum of the volumes in the pools of the cluster
+        type: integer
+      auto_join:
+        allOf:
+        - $ref: '#/definitions/apis.StorageAutoJoinResponse'
+        description: 'Detail only: the zones whose hosts join as clients on their
+          own and the hosts on their way in'
+      capabilities:
+        allOf:
+        - $ref: '#/definitions/services.StorageCapabilities'
+        description: |-
+          What the cluster supports: the operations of its kind, fewer in some layouts (gpfs erasure code); the
+          interface offers only these
+      capacity_bytes:
+        type: integer
+      cluster_ref:
+        description: 'The storage software''s own id of the cluster: GPFS cluster
+          name and id, Ceph fsid'
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      disk_count:
+        type: integer
+      disks:
+        items:
+          $ref: '#/definitions/apis.StorageClusterDiskResponse'
+        type: array
+      filesystems:
+        description: 'Detail only: the file systems (kinds with that layer) and the
+          CloudLand pools of the cluster'
+        items:
+          $ref: '#/definitions/apis.StorageFilesystemResponse'
+        type: array
+      free_bytes:
+        type: integer
+      health:
+        type: string
+      health_info:
+        allOf:
+        - $ref: '#/definitions/apis.StorageClusterHealthResponse'
+        description: 'Detail only: the last health report and the alarms it raised'
+      id:
+        type: string
+      kind:
+        type: string
+      layout:
+        type: string
+      layout_info:
+        additionalProperties: true
+        description: |-
+          What the layout is made of, the keys the kind's own (gpfs ece: code, no_slot_map, recovery_group, vdisk_set,
+          node_class; shared-storage-design.md §7.9); absent when the layout has nothing to show
+        type: object
+      mode:
+        type: string
+      name:
+        type: string
+      node_count:
+        description: Counts and capacity, in the list and the detail
+        type: integer
+      nodes:
+        items:
+          $ref: '#/definitions/apis.StorageClusterNodeResponse'
+        type: array
+      owner:
+        type: string
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      pool_count:
+        type: integer
+      pools:
+        items:
+          $ref: '#/definitions/apis.StorageClusterPoolResponse'
+        type: array
+      status:
+        type: string
+      unsupported:
+        type: boolean
+      updated_at:
+        type: string
+      version:
+        type: string
+    type: object
+  apis.StorageDiskPayload:
+    properties:
+      disk_id:
+        maxLength: 256
+        type: string
+      hypervisor:
+        type: string
+      media:
+        enum:
+        - ssd
+        - hdd
+        - nvme
+        type: string
+      wipe:
+        type: boolean
+    required:
+    - disk_id
+    - hypervisor
+    type: object
+  apis.StorageExpandPayload:
+    properties:
+      allow_unsupported:
+        type: boolean
+      disks:
+        items:
+          $ref: '#/definitions/apis.StorageDiskPayload'
+        maxItems: 512
+        type: array
+      filesystem:
+        description: The file system the disks go into (POST .../disks); the first
+          one of the cluster when empty
+        maxLength: 32
+        type: string
+      nodes:
+        items:
+          $ref: '#/definitions/apis.StorageNodePayload'
+        maxItems: 64
+        type: array
+    type: object
+  apis.StorageFilesystemPayload:
+    properties:
+      allow_unsupported:
+        type: boolean
+      block_size:
+        description: 1M, 2M, 4M (default), 8M or 16M
+        maxLength: 4
+        type: string
+      data_replicas:
+        description: Copies of the data, 2 by default (1 in the test layout); the
+          metadata gets 3 once there are 3 failure groups
+        maximum: 3
+        minimum: 1
+        type: integer
+      disks:
+        description: New disks of member hosts, on at least 3 hosts (one failure group
+          each) outside the test layout
+        items:
+          $ref: '#/definitions/apis.StorageDiskPayload'
+        maxItems: 512
+        minItems: 1
+        type: array
+      name:
+        description: Name of the new file system, mounted at /gpfs/<name>
+        maxLength: 32
+        type: string
+    required:
+    - disks
+    - name
+    type: object
+  apis.StorageFilesystemResponse:
+    properties:
+      block_size:
+        type: string
+      capacity_at:
+        type: string
+      capacity_bytes:
+        type: integer
+      data_replicas:
+        type: integer
+      free_bytes:
+        type: integer
+      id:
+        type: string
+      meta_replicas:
+        type: integer
+      mount_point:
+        type: string
+      name:
+        type: string
+      status:
+        type: string
+    type: object
+  apis.StorageMetricChart:
+    properties:
+      key:
+        description: 'capacity, throughput, iops, pools, nodes (GPFS: hosts running
+          GPFS and mounting each file system), osds'
+        type: string
+      series:
+        items:
+          $ref: '#/definitions/apis.StorageMetricSeries'
+        type: array
+      unit:
+        description: bytes, bytes_per_second, ops_per_second, percent, count
+        type: string
+    type: object
+  apis.StorageMetricSeries:
+    properties:
+      key:
+        description: 'What the curve is: read, write, used, total, active, mounted,
+          up, in, pool'
+        type: string
+      label:
+        description: The file system or the pool (its name) when the chart has one
+          curve of Key per file system or pool
+        type: string
+      values:
+        items:
+          type: number
+        type: array
+    type: object
+  apis.StorageMetricsResponse:
+    properties:
+      charts:
+        items:
+          $ref: '#/definitions/apis.StorageMetricChart'
+        type: array
+      end:
+        type: integer
+      start:
+        type: integer
+      step:
+        type: string
+      timestamps:
+        items:
+          type: integer
+        type: array
+    type: object
+  apis.StorageNodePayload:
+    properties:
+      hypervisor:
+        type: string
+      roles:
+        description: Roles of the kind (GET /storage_backends); the backend refuses
+          ones it does not have
+        items:
+          type: string
+        maxItems: 8
+        type: array
+    required:
+    - hypervisor
+    type: object
+  apis.StoragePackageListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      storage_packages:
+        items:
+          $ref: '#/definitions/apis.StoragePackageResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.StoragePackagePayload:
+    properties:
+      file_name:
+        description: 'Upload in parts: the file name and size; or have clapi download
+          it: url'
+        maxLength: 200
+        type: string
+      kind:
+        description: 'A kind whose backend installs from a package (GET /storage_backends):
+          gpfs'
+        maxLength: 16
+        type: string
+      size_bytes:
+        minimum: 1
+        type: integer
+      url:
+        maxLength: 1024
+        type: string
+    required:
+    - kind
+    type: object
+  apis.StoragePackageResponse:
+    properties:
+      accepted_at:
+        type: string
+      accepted_by:
+        type: string
+      created_at:
+        type: string
+      distros:
+        items:
+          type: string
+        type: array
+      edition:
+        type: string
+      file_name:
+        type: string
+      id:
+        type: string
+      kind:
+        type: string
+      license:
+        additionalProperties:
+          type: string
+        description: 'Detail only: the license text by language (en, zh, zh_TW) and
+          how many packages the manifest lists'
+        type: object
+      manifest_count:
+        type: integer
+      part_size:
+        description: 'Upload progress: parts are part_size bytes, the last one less;
+          upload part parts_done+1 next'
+        type: integer
+      parts_done:
+        type: integer
+      reason:
+        type: string
+      sha256:
+        type: string
+      size_bytes:
+        type: integer
+      source_url:
+        type: string
+      status:
+        description: uploading | verifying | ready | error
+        type: string
+      total_parts:
+        type: integer
+      version:
+        type: string
+    type: object
+  apis.StoragePendingClientResponse:
+    properties:
+      hypervisor:
+        $ref: '#/definitions/common.ResourceReference'
+      reason:
+        type: string
+      since:
+        type: string
+      status:
+        description: 'pending: waits for the cluster to be free; joining: its task
+          runs; failed: left alone, see reason'
+        type: string
+      task:
+        type: string
+    type: object
   apis.StoragePoolListResponse:
     properties:
       limit:
@@ -2352,6 +3130,11 @@ definitions:
         maximum: 20
         minimum: 0
         type: number
+      quota_gb:
+        description: 'Shared pools: a new quota in GB (0 = none), set on the cluster
+          by a task'
+        minimum: 0
+        type: integer
       status:
         enum:
         - active
@@ -2360,6 +3143,11 @@ definitions:
     type: object
   apis.StoragePoolPayload:
     properties:
+      cluster:
+        allOf:
+        - $ref: '#/definitions/common.BaseReference'
+        description: A shared pool on this storage cluster (shared-storage-design.md
+          §7.4); without it a local pool
       description:
         maxLength: 256
         type: string
@@ -2382,8 +3170,42 @@ definitions:
         maximum: 20
         minimum: 0
         type: number
+      params:
+        description: 'Shared pools: parameters of the kind of the cluster (gpfs: filesystem,
+          inode_limit)'
+        type: object
+      quota_gb:
+        description: 'Shared pools: quota of the pool in GB, 0 = none'
+        minimum: 0
+        type: integer
     required:
     - name
+    type: object
+  apis.StoragePoolReconcileResponse:
+    properties:
+      checked_at:
+        type: string
+      error:
+        type: string
+      hypervisor:
+        $ref: '#/definitions/common.ResourceReference'
+      objects:
+        type: integer
+      orphans:
+        description: |-
+          What is in the pool with no record in CloudLand: kind volume, deleted_volume (its record is deleted), image,
+          nvram, temporary or other. Nothing is removed
+        items:
+          $ref: '#/definitions/services.StorageOrphan'
+        type: array
+      requested_at:
+        type: string
+      status:
+        description: 'running: a host lists the pool; done: orphans holds the result;
+          error: see error. Empty when never asked'
+        type: string
+      truncated:
+        type: boolean
     type: object
   apis.StoragePoolResponse:
     properties:
@@ -2393,14 +3215,24 @@ definitions:
         type: integer
       builtin:
         type: boolean
+      capacity_at:
+        type: string
       capacity_bytes:
         type: integer
+      cluster:
+        $ref: '#/definitions/common.ResourceReference'
+      cluster_kind:
+        description: 'Shared pools: the kind of storage behind them, for everybody;
+          the cluster and the rest for system admins'
+        type: string
       created_at:
         type: string
       description:
         type: string
       driver:
         type: string
+      driver_params:
+        type: object
       fallback_group:
         type: string
       hosts:
@@ -2424,6 +3256,8 @@ definitions:
           OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
           release quota only when the caller's org actually owns the deleted resource
         type: string
+      quota_bytes:
+        type: integer
       shared:
         type: boolean
       status:
@@ -2432,6 +3266,291 @@ definitions:
         type: string
       used_bytes:
         type: integer
+    type: object
+  apis.StoragePoolTaskResponse:
+    properties:
+      storage_pool:
+        $ref: '#/definitions/apis.StoragePoolResponse'
+      task:
+        $ref: '#/definitions/apis.StorageTaskResponse'
+    type: object
+  apis.StoragePrecheckPayload:
+    properties:
+      allow_unsupported:
+        type: boolean
+      disks:
+        items:
+          $ref: '#/definitions/apis.StorageDiskPayload'
+        maxItems: 512
+        type: array
+      kind:
+        description: A kind from GET /storage_backends
+        maxLength: 16
+        type: string
+      nodes:
+        items:
+          $ref: '#/definitions/apis.StorageNodePayload'
+        maxItems: 64
+        minItems: 1
+        type: array
+      params:
+        description: Parameters of the kind, checked by its backend; every kind takes
+          "test" (the single host test layout)
+        type: object
+    required:
+    - kind
+    - nodes
+    type: object
+  apis.StorageRebalancePayload:
+    properties:
+      filesystem:
+        description: Name of the file system; the first one of the cluster when empty
+        maxLength: 32
+        type: string
+    type: object
+  apis.StorageRemoteMountListResponse:
+    properties:
+      remote_mounts:
+        items:
+          $ref: '#/definitions/apis.StorageRemoteMountResponse'
+        type: array
+    type: object
+  apis.StorageRemoteMountPayload:
+    properties:
+      cluster:
+        description: The cluster whose hosts mount it (UUID)
+        type: string
+      filesystem:
+        description: File system of this cluster
+        maxLength: 32
+        type: string
+    required:
+    - cluster
+    - filesystem
+    type: object
+  apis.StorageRemoteMountResponse:
+    properties:
+      access:
+        $ref: '#/definitions/common.ResourceReference'
+      created_at:
+        type: string
+      filesystem:
+        type: string
+      id:
+        type: string
+      mount_point:
+        type: string
+      name:
+        type: string
+      owner:
+        $ref: '#/definitions/common.ResourceReference'
+      owner_uuid:
+        description: |-
+          OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to
+          release quota only when the caller's org actually owns the deleted resource
+        type: string
+      reason:
+        type: string
+      status:
+        description: mounting | ready | unmounting | error
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.StorageReplaceDiskPayload:
+    properties:
+      disk_id:
+        description: 'The new disk: a scanned disk of the same host (hyper_disks.disk_id)'
+        maxLength: 256
+        type: string
+      media:
+        enum:
+        - ssd
+        - hdd
+        - nvme
+        type: string
+      wipe:
+        type: boolean
+    required:
+    - disk_id
+    type: object
+  apis.StorageRotateKeysPayload:
+    properties:
+      client:
+        description: |-
+          Renew the key of the client user (ceph). Running instances keep their sessions with the old key and take the
+          new one when they start again or migrate
+        type: boolean
+      ssh:
+        description: Renew the SSH key the admin hosts log in to the members with
+        type: boolean
+    type: object
+  apis.StorageRunLogResponse:
+    properties:
+      content:
+        type: string
+      message:
+        type: string
+      size:
+        description: Size of the log on the host; when larger than the content, only
+          its end was kept
+        type: integer
+      status:
+        description: |-
+          requested: the host was asked for it, ask again in a moment; ready: content holds it (with a message: the host is
+          offline and this is the copy fetched at updated_at); error: see message
+        type: string
+      truncated:
+        type: boolean
+      updated_at:
+        type: string
+    type: object
+  apis.StorageRunResponse:
+    properties:
+      attempt:
+        type: integer
+      dispatches:
+        type: integer
+      hostid:
+        type: integer
+      hypervisor:
+        $ref: '#/definitions/common.ResourceReference'
+      id:
+        type: integer
+      log_tail:
+        type: string
+      message:
+        type: string
+      progress:
+        type: integer
+      result:
+        type: object
+      started_at:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.StorageSelftestPayload:
+    properties:
+      fail_attempts:
+        maximum: 10
+        minimum: 0
+        type: integer
+      fail_hypervisors:
+        items:
+          type: string
+        maxItems: 64
+        type: array
+      fail_step:
+        maximum: 10
+        minimum: 0
+        type: integer
+      hypervisors:
+        items:
+          type: string
+        maxItems: 64
+        minItems: 1
+        type: array
+      lock:
+        maxLength: 32
+        type: string
+      sleep_sec:
+        maximum: 3600
+        minimum: 0
+        type: integer
+      steps:
+        maximum: 10
+        minimum: 1
+        type: integer
+      timeout_sec:
+        maximum: 86400
+        minimum: 0
+        type: integer
+    required:
+    - hypervisors
+    - steps
+    type: object
+  apis.StorageStepResponse:
+    properties:
+      finished_at:
+        type: string
+      name:
+        type: string
+      runs:
+        items:
+          $ref: '#/definitions/apis.StorageRunResponse'
+        type: array
+      scope:
+        type: string
+      seq:
+        type: integer
+      started_at:
+        type: string
+      status:
+        type: string
+      timeout_sec:
+        type: integer
+    type: object
+  apis.StorageTaskListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      tasks:
+        items:
+          $ref: '#/definitions/apis.StorageTaskResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.StorageTaskResponse:
+    properties:
+      backend:
+        description: Kind of storage the task works on (gpfs, ceph); empty for the
+          tasks every kind shares
+        type: string
+      cluster:
+        $ref: '#/definitions/common.ResourceReference'
+      created_at:
+        type: string
+      creator:
+        type: string
+      current_step:
+        type: integer
+      finished_at:
+        type: string
+      id:
+        type: string
+      kind:
+        type: string
+      message:
+        type: string
+      status:
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/apis.StorageStepResponse'
+        type: array
+    type: object
+  apis.StorageUpgradePayload:
+    properties:
+      finalize:
+        description: |-
+          gpfs: once every host runs the new release, raise the cluster and its file systems to it. Irreversible: hosts
+          of an older release can not join afterwards
+        type: boolean
+      image:
+        description: 'ceph: the image of the daemons; empty: the one of the release
+          the hosts install from their distribution'
+        maxLength: 200
+        type: string
+      package:
+        description: 'gpfs: UUID of the package of the new release (verified, its
+          license accepted)'
+        type: string
     type: object
   apis.SubnetListResponse:
     properties:
@@ -4124,6 +5243,9 @@ definitions:
         type: array
       fallback:
         $ref: '#/definitions/services.PoolChoice'
+      shared:
+        description: 'In a shared pool: not copied, it stays where it is'
+        type: boolean
       size_gb:
         type: integer
       source_pool:
@@ -4131,6 +5253,41 @@ definitions:
       volume_name:
         type: string
       volume_uuid:
+        type: string
+    type: object
+  services.EvacuateResult:
+    properties:
+      hostname:
+        type: string
+      instance:
+        type: string
+      migration:
+        type: string
+      reason:
+        type: string
+      status:
+        description: fencing | in_progress | not_doing
+        type: string
+    type: object
+  services.HostFence:
+    properties:
+      cluster:
+        type: string
+      cluster_uuid:
+        type: string
+      confirmed_by:
+        type: string
+      fenced_at:
+        type: string
+      id:
+        type: integer
+      message:
+        type: string
+      method:
+        type: string
+      status:
+        type: string
+      target:
         type: string
     type: object
   services.HostPoolFigures:
@@ -4206,6 +5363,85 @@ definitions:
       serial:
         type: string
       size_bytes:
+        type: integer
+    type: object
+  services.StorageCapabilities:
+    properties:
+      add_disks:
+        type: boolean
+      add_nodes:
+        type: boolean
+      change_roles:
+        type: boolean
+      client_key:
+        type: boolean
+      create_filesystem:
+        type: boolean
+      external:
+        type: boolean
+      filesystems:
+        description: |-
+          Filesystems: the kind has file systems between the cluster and the pools (gpfs); CreateFilesystem: a managed
+          cluster can have more than the one it was made with, made and deleted with their disks
+        type: boolean
+      finalize:
+        type: boolean
+      managed:
+        description: 'Managed: CloudLand deploys and deletes clusters of the kind;
+          External: it imports clusters set up by others'
+        type: boolean
+      pools:
+        description: 'Pools: CloudLand pools can be made on clusters of the kind'
+        type: boolean
+      rebalance:
+        type: boolean
+      remote_mount:
+        description: |-
+          RemoteMount: the hosts of another managed cluster of the kind mount a file system of this one (gpfs
+          multi-cluster)
+        type: boolean
+      remove_disk:
+        type: boolean
+      remove_node:
+        type: boolean
+      replace_disk:
+        description: ReplaceDisk swaps a failed disk for a new disk of the same host;
+          ChangeRoles changes the roles of a member
+        type: boolean
+      rotate_keys:
+        description: 'RotateKeys renews the SSH key of a managed cluster; ClientKey:
+          the kind has a client key CloudLand renews too'
+        type: boolean
+      upgrade:
+        description: |-
+          Upgrade: a rolling upgrade of the software of a managed cluster; Finalize: the kind raises the cluster to a new
+          release in a separate, irreversible step afterwards (gpfs)
+        type: boolean
+    type: object
+  services.StorageOSRule:
+    properties:
+      id:
+        description: ID of /etc/os-release
+        type: string
+      kernel_prefix:
+        type: string
+      kernel_suffix:
+        type: string
+      version:
+        description: VERSION_ID of /etc/os-release
+        type: string
+    type: object
+  services.StorageOrphan:
+    properties:
+      kind:
+        description: volume, deleted_volume (the record of the volume is deleted),
+          image, nvram, temporary, other
+        type: string
+      mtime:
+        type: integer
+      name:
+        type: string
+      size:
         type: integer
     type: object
   services.UsageEntry:
@@ -5397,6 +6633,53 @@ paths:
       summary: scan the disks of a host
       tags:
       - HostStorage
+  /hypers/{uuid}/evacuate:
+    post:
+      consumes:
+      - application/json
+      description: Recover the instances of a host that cland has had offline for
+        at least 5 minutes on other hosts. Only instances whose disks are all in shared
+        storage pools can be recovered; the others are listed as not_doing with the
+        reason. The host is first fenced on every storage cluster their disks are
+        on (GPFS expels it, Ceph blocklists its address), then each instance is defined
+        again from its record on a host that reaches its pools and started when it
+        was running. A host that can not be fenced (no other admin host online, an
+        imported GPFS cluster) needs confirm_fenced. The copies left on the host are
+        removed when it comes back, and the fences lifted after that.
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Evacuation options
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/apis.HyperEvacuatePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.HyperEvacuateResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "404":
+          description: Hypervisor not found
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "409":
+          description: The host is not offline long enough, or can not be fenced
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: evacuate a hypervisor that is down
+      tags:
+      - Administration
+      - Hypervisor
   /hypers/{uuid}/maintain:
     post:
       consumes:
@@ -5704,6 +6987,41 @@ paths:
       summary: adopt a storage pool found on the disks of a host
       tags:
       - HostStorage
+  /hypers/{uuid}/unfence:
+    post:
+      consumes:
+      - application/json
+      description: Lift the fences of a host now, once it came back and removed the
+        instances recovered elsewhere (this also happens by itself); or forget them
+        after lifting them by hand.
+      parameters:
+      - description: Hypervisor UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      - description: Options
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/apis.HyperUnfencePayload'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No content
+        "404":
+          description: Hypervisor not found
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "409":
+          description: The host is not fenced, or can not be let back in yet
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: let a hypervisor back into its storage clusters
+      tags:
+      - Administration
+      - Hypervisor
   /images:
     get:
       consumes:
@@ -5832,6 +7150,80 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a image
+      tags:
+      - Image
+  /images/{id}/storage_copies:
+    get:
+      description: the copy of the image in each shared pool it was imported into,
+        with how far a running import got (shared-storage-design.md §9.6); system
+        admins
+      parameters:
+      - description: Image UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ImageStorageCopiesResponse'
+      summary: list the copies of an image in the shared pools
+      tags:
+      - Image
+    post:
+      consumes:
+      - application/json
+      description: 'preheat: import the image into the shared pools given, so the
+        first boot disk made there does not wait for the copy (shared-storage-design.md
+        §9.6). A pool with a copy synced or being imported is left as it is, a failed
+        one is imported again; system admins'
+      parameters:
+      - description: Image UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Pools
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ImagePreheatPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ImageStorageCopiesResponse'
+      summary: import an image into shared pools ahead of time
+      tags:
+      - Image
+  /images/{id}/storage_copies/{pool}:
+    delete:
+      description: removes the copy of the image in the pool when no boot disk is
+        cloned from it (shared-storage-design.md §9.6); 409 while boot disks use it
+        or its import runs. The copy goes once its host removed it; system admins
+      parameters:
+      - description: Image UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Storage pool UUID
+        in: path
+        name: pool
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+      summary: remove the copy of an image in a shared pool
       tags:
       - Image
   /instance/{id}/interfaces:
@@ -8730,6 +10122,781 @@ paths:
       summary: patch a secrule
       tags:
       - Security Group
+  /storage_backends:
+    get:
+      description: the kinds CloudLand can deploy or import, with the roles, disk
+        role, suggested roles and host requirements of each (shared-storage-design.md
+        §4.5)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StorageBackendListResponse'
+      summary: list the kinds of storage clusters
+      tags:
+      - StorageCluster
+  /storage_clusters:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StorageClusterListResponse'
+      summary: list storage clusters
+      tags:
+      - StorageCluster
+    post:
+      consumes:
+      - application/json
+      description: records the cluster with its hosts and disks and starts its deployment
+        (shared-storage-design.md §7.2); follow the task in active_task. The disks
+        are claimed at once
+      parameters:
+      - description: Cluster
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageClusterCreatePayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageClusterResponse'
+      summary: create a managed storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}:
+    delete:
+      description: tears the storage software down, wipes the disks of the cluster
+        and cleans every host, then removes the records (shared-storage-design.md
+        §7.6). Refused while the cluster has storage pools or a task holds it
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'The name of the cluster, typed to confirm: its disks are wiped'
+        in: query
+        name: confirm_name
+        required: true
+        type: string
+      - description: Remove the storage software from the hosts too
+        in: query
+        name: purge_packages
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: delete a storage cluster
+      tags:
+      - StorageCluster
+    get:
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StorageClusterResponse'
+      summary: get a storage cluster
+      tags:
+      - StorageCluster
+    patch:
+      consumes:
+      - application/json
+      description: 'the description, and the zones whose hosts join the cluster as
+        clients on their own (shared-storage-design.md §6.3): every online host of
+        those zones not in the cluster is queued and joins with a task of its own
+        once the cluster is free; one that fails is left alone and listed until retry_auto_join.
+        With auto_join_new_only only the hosts registered from then on join'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Changes
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageClusterPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StorageClusterResponse'
+      summary: change a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/disks:
+    post:
+      consumes:
+      - application/json
+      description: 'disks of member hosts join the cluster: they become NSDs of its
+        file system (shared-storage-design.md §7.5). Rebalancing is a separate task'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Disks (nodes must be empty)
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageExpandPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: add disks to a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/disks/{disk_id}:
+    delete:
+      description: the data of the disk moves to the other disks, then it is wiped
+        and given back to its host (shared-storage-design.md §7.5). Refused when the
+        cluster would have too few failure groups for its replicas
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Disk UUID (the id of a disk of the cluster)
+        in: path
+        name: disk_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: remove a disk from a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/disks/{disk_id}/replace:
+    post:
+      consumes:
+      - application/json
+      description: 'a disk the storage reports down is swapped for a new disk of the
+        same host (shared-storage-design.md §7.5, §8.5): GPFS drops the failed NSD
+        (mmdeldisk -p), adds the new one and restores the replication; Ceph destroys
+        the OSD keeping its id and makes the new disk take it. The failed disk is
+        not wiped. A disk that works is removed the normal way instead'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: UUID of the failed disk in the cluster
+        in: path
+        name: disk_id
+        required: true
+        type: string
+      - description: The new disk
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageReplaceDiskPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: replace a failed disk of a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/filesystems:
+    post:
+      consumes:
+      - application/json
+      description: 'a new file system on new disks of the members: NSDs made, the
+        file system made and mounted on every member (shared-storage-design.md §7.3).
+        Pools pick it by name (filesystem); system admins'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: The file system and its disks
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageFilesystemPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: make a file system on a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/filesystems/{name}:
+    delete:
+      description: unmounts and deletes a file system no storage pool is on, with
+        its NSDs; its disks are wiped and given back to their hosts. The only file
+        system of a cluster goes with the cluster (shared-storage-design.md §7.3);
+        system admins
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: File system name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: delete a file system of a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/metrics:
+    get:
+      description: 'Curves of a storage cluster from Prometheus (shared-storage-design.md
+        §14.3): the use of its pools, its capacity, throughput and IOPS, and its hosts
+        (GPFS) or OSDs (Ceph). Only for system admins. A chart with no data at all
+        is left out.'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Start, unix seconds
+        in: query
+        name: start
+        required: true
+        type: string
+      - description: End, unix seconds
+        in: query
+        name: end
+        required: true
+        type: string
+      - description: Resolution as a duration, e.g. 60s or 5m
+        in: query
+        name: step
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StorageMetricsResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: storage cluster metrics
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/nodes:
+    post:
+      consumes:
+      - application/json
+      description: 'hosts join a managed cluster with their disks, or none (shared-storage-design.md
+        §7.5): prechecked, installed and added; their disks go into the file system.
+        Rebalancing is a separate task'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Hosts and their disks
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageExpandPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: add hosts to a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/nodes/{hypervisor}:
+    delete:
+      description: 'the disks of the host leave first (their data moves to the other
+        disks), then the host leaves and is cleaned. offline=true removes a host that
+        is gone for good: nothing runs on it, its disks are dropped without moving
+        their data; confirm must be its name (shared-storage-design.md §7.5)'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Hypervisor UUID
+        in: path
+        name: hypervisor
+        required: true
+        type: string
+      - description: The host is gone for good
+        in: query
+        name: offline
+        type: boolean
+      - description: The host name, for an offline removal
+        in: query
+        name: confirm
+        type: string
+      - description: Remove the storage software from the host too
+        in: query
+        name: purge_packages
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: remove a host from a storage cluster
+      tags:
+      - StorageCluster
+    patch:
+      consumes:
+      - application/json
+      description: GPFS quorum (with manager) and admin hosts, Ceph mon, mgr and admin
+        placement (shared-storage-design.md §13.1), checked like a new cluster; the
+        disk role follows the disks of the host
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Hypervisor UUID
+        in: path
+        name: hypervisor
+        required: true
+        type: string
+      - description: Roles
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageChangeRolesPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: change the roles of a member of a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/rebalance:
+    post:
+      consumes:
+      - application/json
+      description: 'spread the data over all disks (gpfs mmrestripefs -b): long and
+        I/O heavy, best started at a quiet time'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: File system
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageRebalancePayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: rebalance a file system of a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/remote_mounts:
+    get:
+      description: the file systems of this cluster other clusters mount, and the
+        file systems of others it mounts (shared-storage-design.md §7.11); system
+        admins
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StorageRemoteMountListResponse'
+      summary: list the remote mounts of a storage cluster
+      tags:
+      - StorageCluster
+    post:
+      consumes:
+      - application/json
+      description: 'the hosts of another managed cluster of the kind mount a file
+        system of this one under its name and mount point (GPFS multi-cluster: keys
+        exchanged, the file system granted, mounted on every host there); the pools
+        on it become usable on those hosts. A task of the cluster that mounts (shared-storage-design.md
+        §7.11); system admins'
+      parameters:
+      - description: Cluster UUID (whose file system it is)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: The file system and the cluster that mounts it
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageRemoteMountPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: let another storage cluster mount a file system
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/remote_mounts/{mount_id}:
+    delete:
+      description: the hosts of the other cluster unmount the file system and its
+        grant goes; refused while instances on those hosts use volumes of the pools
+        on it (shared-storage-design.md §7.11); system admins
+      parameters:
+      - description: Cluster UUID (whose file system it is)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Remote mount UUID
+        in: path
+        name: mount_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: stop another storage cluster mounting a file system
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/rotate_keys:
+    post:
+      consumes:
+      - application/json
+      description: 'renew the SSH key of a managed cluster and, for Ceph, the key
+        of its client user, without a moment when a host or QEMU is left without a
+        valid key (shared-storage-design.md §6.6, §8.4). Every member must be online.
+        Nothing named: both. The new client key becomes the key of the user the first
+        time a host uses it, the old one is refused for new sessions from then on;
+        running instances keep their sessions and take the new key when they start
+        again or migrate'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: What to rotate
+        in: body
+        name: message
+        schema:
+          $ref: '#/definitions/apis.StorageRotateKeysPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: rotate the keys of a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/{id}/upgrade:
+    post:
+      consumes:
+      - application/json
+      description: 'roll a managed cluster to a new release, one host after the other
+        (shared-storage-design.md §7.7, §8.7). gpfs: name the package of the new release;
+        each host has the instances that use the cluster moved off (as maintenance
+        does), GPFS stopped, upgraded and started, and its disks brought back before
+        the next one; then, separately, finalize to raise the cluster and its file
+        systems to the release (irreversible). ceph: the hosts install the release
+        their distribution has and cephadm upgrades the daemons; no instance moves
+        (QEMU takes the new client library when it starts again or migrates). Every
+        member must be online'
+      parameters:
+      - description: Cluster UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: What to upgrade to
+        in: body
+        name: message
+        schema:
+          $ref: '#/definitions/apis.StorageUpgradePayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: upgrade a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/import:
+    post:
+      consumes:
+      - application/json
+      description: 'record a cluster its own admins run and that the given hosts are
+        members of already (shared-storage-design.md §7.8): every host is checked,
+        nothing of the cluster is changed. Pools are then registered on directories
+        that exist (POST /storage_pools with the cluster and params.path)'
+      parameters:
+      - description: Cluster
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageClusterImportPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageClusterResponse'
+      summary: import a storage cluster
+      tags:
+      - StorageCluster
+  /storage_clusters/precheck:
+    post:
+      consumes:
+      - application/json
+      description: run the precheck of a storage cluster plan on its hosts (shared-storage-design.md
+        §6.5); nothing is installed. Returns the precheck task
+      parameters:
+      - description: Plan to check
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StoragePrecheckPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: check hosts and disks for a storage cluster
+      tags:
+      - StorageCluster
+  /storage_packages:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StoragePackageListResponse'
+      summary: list storage packages
+      tags:
+      - StoragePackage
+    post:
+      consumes:
+      - application/json
+      description: upload an installer in parts (file_name and size_bytes; then PUT
+        the parts and POST complete), or have clapi download it (url). The package
+        is verified in the background and needs its license accepted before a deployment
+        can use it
+      parameters:
+      - description: Package
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StoragePackagePayload'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/apis.StoragePackageResponse'
+      summary: start a storage package
+      tags:
+      - StoragePackage
+  /storage_packages/{id}:
+    delete:
+      description: refused while a storage cluster uses it; an unfinished upload is
+        aborted in S3
+      parameters:
+      - description: Package UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      summary: delete a storage package
+      tags:
+      - StoragePackage
+    get:
+      description: with the license text and the number of packages its manifest lists
+      parameters:
+      - description: Package UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StoragePackageResponse'
+      summary: get a storage package
+      tags:
+      - StoragePackage
+  /storage_packages/{id}/accept_license:
+    post:
+      description: records who accepted it and when; a deployment can only use a package
+        whose license is accepted
+      parameters:
+      - description: Package UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StoragePackageResponse'
+      summary: accept the license of a storage package
+      tags:
+      - StoragePackage
+  /storage_packages/{id}/complete:
+    post:
+      description: joins the parts once all are uploaded and starts the verification
+      parameters:
+      - description: Package UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StoragePackageResponse'
+      summary: complete the upload of a storage package
+      tags:
+      - StoragePackage
+  /storage_packages/{id}/parts/{n}:
+    put:
+      consumes:
+      - application/octet-stream
+      description: the body is the bytes of part n (from 1), part_size bytes but the
+        last; parts go in order, and the last one may be sent again when its answer
+        was lost
+      parameters:
+      - description: Package UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Part number, from 1
+        in: path
+        name: "n"
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StoragePackageResponse'
+      summary: upload a part of a storage package
+      tags:
+      - StoragePackage
   /storage_pools:
     get:
       description: list storage pools. Members see the active pools with their media
@@ -8747,8 +10914,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: create a local storage pool. Its directory on every host is /opt/cloudland/pools/<uuid>;
-        nothing is written on any host until the pool is set up there
+      description: 'create a local storage pool: its directory on every host is /opt/cloudland/pools/<uuid>,
+        nothing is written on any host until the pool is set up there. With a cluster,
+        a shared pool on that storage cluster: 202, the pool is creating until the
+        task (task) made it there (shared-storage-design.md §7.4)'
       parameters:
       - description: Storage pool
         in: body
@@ -8763,11 +10932,17 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/apis.StoragePoolResponse'
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StoragePoolTaskResponse'
       summary: create a storage pool
       tags:
       - StoragePool
   /storage_pools/{id}:
     delete:
+      description: 'a shared pool is removed from its storage cluster by a task (202):
+        refused while it holds volumes'
       parameters:
       - description: Storage pool UUID
         in: path
@@ -8775,6 +10950,10 @@ paths:
         required: true
         type: string
       responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StoragePoolTaskResponse'
         "204":
           description: No Content
       summary: delete a storage pool
@@ -8800,6 +10979,9 @@ paths:
     patch:
       consumes:
       - application/json
+      description: 'quota_gb (shared pools only) is changed on its own: a task sets
+        it on the storage cluster (202); with other fields in the same request it
+        is refused before anything changes'
       parameters:
       - description: Storage pool UUID
         in: path
@@ -8819,6 +11001,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/apis.StoragePoolResponse'
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StoragePoolTaskResponse'
       summary: update a storage pool
       tags:
       - StoragePool
@@ -8864,6 +11050,191 @@ paths:
       summary: abandon the volumes of a pool that wait for adoption
       tags:
       - StoragePool
+  /storage_pools/{id}/reconcile:
+    get:
+      parameters:
+      - description: Pool UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StoragePoolReconcileResponse'
+      summary: the last orphan report of a shared pool
+      tags:
+      - StoragePool
+    post:
+      description: asks a host that reaches the pool for its files (GPFS) or RBD images
+        (Ceph); clapi then reports those it has no record of (shared-storage-design.md
+        §16 S5). Nothing is removed. A request still waiting is not sent again; read
+        the result with GET
+      parameters:
+      - description: Pool UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StoragePoolReconcileResponse'
+      summary: list the orphans of a shared pool
+      tags:
+      - StoragePool
+  /storage_tasks:
+    get:
+      description: cluster_id is the UUID of a cluster; 0 lists the tasks not tied
+        to a cluster (precheck, selftest); without it every task is listed
+      parameters:
+      - description: Cluster UUID, or 0
+        in: query
+        name: cluster_id
+        type: string
+      - description: running, failed, aborting, succeeded or aborted
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StorageTaskListResponse'
+      summary: list storage tasks
+      tags:
+      - StorageCluster
+  /storage_tasks/{id}:
+    get:
+      description: a task with its steps and every run of every step, with the log
+        tail each host sent
+      parameters:
+      - description: Task UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: get a storage task
+      tags:
+      - StorageCluster
+  /storage_tasks/{id}/abort:
+    post:
+      description: stop a running or failed task; jobs still running on hosts are
+        killed first, then the task ends and frees its cluster
+      parameters:
+      - description: Task UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: abort a storage task
+      tags:
+      - StorageCluster
+  /storage_tasks/{id}/retry:
+    post:
+      description: run the failed step again on the hosts it failed on (or from the
+        step it depends on)
+      parameters:
+      - description: Task UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: retry a failed storage task
+      tags:
+      - StorageCluster
+  /storage_tasks/{id}/runs/{run}/log:
+    get:
+      description: The callback of a run only brings the last 64 KiB of its log. The
+        first call asks the host for the whole log and answers 202; call again until
+        the answer is 200 with the log (its last 16 MiB). A run that is still running
+        is fetched again when the copy is older than 30 s.
+      parameters:
+      - description: Task UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Run ID
+        in: path
+        name: run
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.StorageRunLogResponse'
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageRunLogResponse'
+        "404":
+          description: No such task or run
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "409":
+          description: The host is offline, or the hosts can not upload
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: whole log of a storage task run
+      tags:
+      - StorageCluster
+  /storage_tasks/selftest:
+    post:
+      consumes:
+      - application/json
+      description: run a task whose steps only sleep, report progress and fail on
+        demand, to check the storage task path to the hosts (shared-storage-design.md
+        §16 S1)
+      parameters:
+      - description: Selftest
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.StorageSelftestPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/apis.StorageTaskResponse'
+      summary: run a selftest task
+      tags:
+      - StorageCluster
   /subnets:
     get:
       consumes:

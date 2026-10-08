@@ -83,17 +83,23 @@ func TestStorageCephDeployPG(t *testing.T) {
 	}
 	none := func(*stcSent) string { return "{}" }
 
-	// The hosts must run one release: each installs the Ceph of its own distribution
+	// The daemon hosts must run one release: each installs the Ceph of its own distribution. The client only host
+	// may run another one
 	sent := f.expect("precheck", "stc_precheck.sh", h...)
 	succeed(sent, func(s *stcSent) string {
-		if s.hostid == h[3] {
+		if s.hostid == h[1] {
 			return cephPrecheckResult("ubuntu 26.04")(s)
 		}
 		return cephPrecheckResult("ubuntu 24.04")(s)
 	})
 	f.wantTask(task.ID, model.StorageTaskFailed, "different releases")
 	must(t, RetryStorageTask(ctx, task.ID))
-	succeed(f.expect("precheck again", "stc_precheck.sh", h...), cephPrecheckResult("ubuntu 24.04"))
+	succeed(f.expect("precheck again", "stc_precheck.sh", h...), func(s *stcSent) string {
+		if s.hostid == h[3] {
+			return cephPrecheckResult("ubuntu 26.04")(s)
+		}
+		return cephPrecheckResult("ubuntu 24.04")(s)
+	})
 
 	sent = f.expect("join", "stc_join.sh", h...)
 	if sent[0].input["hold_kernel"] != false || sent[0].input["kind"] != "ceph" {
@@ -116,11 +122,12 @@ func TestStorageCephDeployPG(t *testing.T) {
 			t.Fatalf("OOM protection of host %d: %v", s.hostid, oom)
 		}
 	}
+	// The client runs the newer Ceph of its newer distribution: it reads the keys of the daemons
 	succeed(sent, func(s *stcSent) string {
 		if s.hostid == h[3] {
-			return `{"version":"19.2.3","image":""}`
+			return `{"version":"20.2.0","image":""}`
 		}
-		return `{"version":"19.2.3","image":"quay.io/ceph/ceph:v19.2.3"}`
+		return `{"version":"19.2.3","image":"quay.io/ceph/ceph:v19.2.3","image_version":"19.2.3"}`
 	})
 	c := &model.StorageCluster{}
 	must(t, db.Take(c, cluster.ID).Error)
@@ -216,7 +223,11 @@ func TestStorageCephDeployPG(t *testing.T) {
 		}
 	}
 	for _, n := range nodes {
-		if n.Status != model.StorageNodeActive || nodeAttr(n, "os") != "ubuntu 24.04" || nodeAttr(n, "hostname") != fmt.Sprintf("h%d", n.Hostid) {
+		os := "ubuntu 24.04"
+		if n.Hostid == h[3] {
+			os = "ubuntu 26.04"
+		}
+		if n.Status != model.StorageNodeActive || nodeAttr(n, "os") != os || nodeAttr(n, "hostname") != fmt.Sprintf("h%d", n.Hostid) {
 			t.Fatalf("deployed node %+v", n)
 		}
 	}

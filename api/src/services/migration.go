@@ -64,10 +64,10 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			return
 		}
 	}
-	// Local disks are only on the source host: it must be online and the disks are copied by virsh migrate
+	// A forced migration is an evacuation of instances whose source host is down: their disks must all be in shared
+	// pools (shared-storage-design.md §11.3); local disks are only on the source host
 	if force {
-		err = NewCLError(ErrOperationNotSupported, "Force migration is not supported with local storage", nil)
-		return
+		return a.createForced(ctx, instances, tgtHyper, opts, batch)
 	}
 	for _, instance := range instances {
 		sourceHyper := &model.Hyper{}

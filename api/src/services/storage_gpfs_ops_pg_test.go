@@ -173,7 +173,7 @@ func TestGPFSClusterChangesPG(t *testing.T) {
 	task, err = StorageClusters.RemoveDisk(ctx, f.cluster.UUID, added.UUID)
 	must(t, err)
 	sent = f.expect("remove disk", "gpfs_fs.sh", h[0])
-	if sent[0].input["action"] != "remove" || fmt.Sprint(sent[0].input["nsds"]) != "["+newName+"]" || sent[0].input["damaged"] != false {
+	if sent[0].input["action"] != "remove" || removedNSDs(sent[0].input) != "["+newName+"]" || sent[0].input["damaged"] != false {
 		t.Fatalf("remove disk input %v", sent[0].input)
 	}
 	succeed(sent, ok)
@@ -203,7 +203,7 @@ func TestGPFSClusterChangesPG(t *testing.T) {
 	task, err = StorageClusters.RemoveNode(ctx, f.cluster.UUID, &StorageNodeRemove{Hostid: h4, PurgePackages: true})
 	must(t, err)
 	sent = f.expect("remove disks of the host", "gpfs_fs.sh", h[0])
-	if fmt.Sprint(sent[0].input["nsds"]) != fmt.Sprintf("[cl%dh%dd1]", f.cluster.ID, h4) {
+	if removedNSDs(sent[0].input) != fmt.Sprintf("[cl%dh%dd1]", f.cluster.ID, h4) {
 		t.Fatalf("remove disks of the host %v", sent[0].input)
 	}
 	succeed(sent, ok)

@@ -15,6 +15,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"sort"
 	"strings"
 	"time"
@@ -113,6 +114,13 @@ func (cephBackend) TaskPlan(task string, cluster *model.StorageCluster, scope *S
 		if len(osdHosts) > 0 {
 			plan = append(plan, step("resolve_disks", n, osdHosts, 5*time.Minute), step("create_osds", a, admins, 60*time.Minute))
 		}
+		// New mons: the client configuration of every member names them (the new hosts get it with their setup)
+		if cephMonsChange(task, scope) {
+			plan = append(plan, step("mon_addrs", a, admins, 10*time.Minute))
+			if staying := cephStayingHosts(nodes, true); len(staying) > 0 {
+				plan = append(plan, step("client_refresh", n, staying, 10*time.Minute))
+			}
+		}
 		return append(plan, step("client_setup", n, joining, 10*time.Minute), step("finish", n, joining, 5*time.Minute)), nil
 	case StorageTaskAddDisks:
 		if len(osdHosts) == 0 {
@@ -167,16 +175,27 @@ func (cephBackend) TaskPlan(task string, cluster *model.StorageCluster, scope *S
 		}
 		// The mgr and admin hosts may log in to every host (ssh_trust on every member), then the labels change and
 		// cephadm places the mons and mgrs by them
-		return append(plan,
-			step("ssh_trust", n, all, 5*time.Minute),
-			step("set_labels", a, run, 30*time.Minute),
-			step("finish", n, []int32{scope.Changed}, 5*time.Minute)), nil
+		plan = append(plan, step("ssh_trust", n, all, 5*time.Minute), step("set_labels", a, run, 30*time.Minute))
+		// A mon came or went: the client configuration of every member names the mons as they are now
+		if cephMonsChange(task, scope) {
+			plan = append(plan, step("mon_addrs", a, run, 10*time.Minute), step("client_refresh", n, cephStayingHosts(nodes, false), 10*time.Minute))
+		}
+		return append(plan, step("finish", n, []int32{scope.Changed}, 5*time.Minute)), nil
 	case StorageTaskRemoveNode:
 		leaving := gpfsHostsBy(nodes, model.StorageNodeLeaving, "")
 		if len(leaving) != 1 {
 			return nil, planError("One host leaves at a time")
 		}
 		plan := []*StorageStepPlan{step("remove_host", a, admins, 7*24*time.Hour)}
+		// A mon left: the client configuration of the members that stay no longer names it
+		if cephMonsChange(task, scope) {
+			if run := cephStayingAdmins(admins, leaving); len(run) > 0 {
+				plan = append(plan, step("mon_addrs", a, run, 10*time.Minute))
+				if staying := cephStayingHosts(nodes, false); len(staying) > 0 {
+					plan = append(plan, step("client_refresh", n, staying, 10*time.Minute))
+				}
+			}
+		}
 		if !scope.Offline {
 			plan = append(plan, step("leave", n, leaving, 30*time.Minute))
 		}
@@ -200,6 +219,9 @@ func init() {
 			"create_osds":   {Script: "ceph_cluster.sh", Input: cephCreateOsdsInput, Done: cephCreateOsdsDone, RetryFrom: "resolve_disks"},
 			"client_setup":  {Script: "ceph_client.sh", Input: cephClientInput("setup"), Done: cephClientSetupDone},
 			"finish":        {Script: "stc_finish.sh", Input: gpfsFinishInput},
+			// The mons as they are after a change, then every member's client configuration naming them
+			"mon_addrs":      cephMonAddrsStep,
+			"client_refresh": {Script: "ceph_client.sh", Input: cephClientInput("setup"), Done: cephClientSetupDone},
 		}
 	}
 	registerStorageTaskKind("ceph:"+StorageTaskDeploy, &storageTaskKind{Slot: storageSlotStructural, Steps: deploySteps(), Finish: cephDeployFinish})
@@ -235,20 +257,106 @@ func init() {
 		}})
 	registerStorageTaskKind("ceph:"+StorageTaskChangeRoles, &storageTaskKind{Slot: storageSlotStructural, Finish: storageChangeRolesFinish,
 		Steps: map[string]*storageStepDef{
-			"ssh_trust":  {Script: "stc_ssh_trust.sh", Input: storageTrustInputFrom(model.StorageRoleAdmin, model.StorageRoleMgr)},
-			"install":    {Script: "ceph_install.sh", Input: cephInstallInput, Done: cephInstallDone},
-			"set_labels": {Script: "ceph_cluster.sh", Input: cephSetLabelsInput, RetryFrom: "ssh_trust"},
-			"finish":     {Script: "stc_finish.sh", Input: gpfsFinishInput},
+			"ssh_trust":      {Script: "stc_ssh_trust.sh", Input: storageTrustInputFrom(model.StorageRoleAdmin, model.StorageRoleMgr)},
+			"install":        {Script: "ceph_install.sh", Input: cephInstallInput, Done: cephInstallDone},
+			"set_labels":     {Script: "ceph_cluster.sh", Input: cephSetLabelsInput, RetryFrom: "ssh_trust"},
+			"mon_addrs":      cephMonAddrsStep,
+			"client_refresh": {Script: "ceph_client.sh", Input: cephClientInput("setup"), Done: cephClientSetupDone},
+			"finish":         {Script: "stc_finish.sh", Input: gpfsFinishInput},
 		}})
 	registerStorageTaskKind("ceph:"+StorageTaskRemoveNode, &storageTaskKind{Slot: storageSlotStructural, Finish: gpfsRemoveNodeFinish,
 		Steps: map[string]*storageStepDef{
-			"remove_host": {Script: "ceph_cluster.sh", Input: cephRemoveHostInput},
-			"leave":       {Script: "stc_leave.sh", Input: gpfsLeaveInput},
+			"remove_host":    {Script: "ceph_cluster.sh", Input: cephRemoveHostInput},
+			"mon_addrs":      cephMonAddrsStep,
+			"client_refresh": {Script: "ceph_client.sh", Input: cephClientInput("setup"), Done: cephClientSetupDone},
+			"leave":          {Script: "stc_leave.sh", Input: gpfsLeaveInput},
 		}})
 }
 
-// cephPrecheckStep is the shared precheck, plus: every host runs the same Ubuntu release, so the cephadm and
-// ceph-common it installs from its distribution are one Ceph release (§8.1)
+// cephMonsChange tells whether a task changes the mons of a cluster: a mon host joins, a host gains or loses the mon
+// role, a mon host leaves
+func cephMonsChange(task string, scope *StorageTaskScope) bool {
+	switch task {
+	case StorageTaskAddNodes:
+		for _, nd := range scope.Nodes {
+			if nd.Status == model.StorageNodeJoining && nd.HasRole(model.StorageRoleMon) {
+				return true
+			}
+		}
+	case StorageTaskChangeRoles:
+		for _, nd := range scope.Nodes {
+			if nd.Hostid == scope.Changed {
+				return nd.HasRole(model.StorageRoleMon) != hasRole(scope.ChangedFrom, model.StorageRoleMon)
+			}
+		}
+	case StorageTaskRemoveNode:
+		for _, nd := range scope.Nodes {
+			if nd.Status == model.StorageNodeLeaving && nd.HasRole(model.StorageRoleMon) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// cephStayingHosts are the members whose client configuration is rewritten after the mons changed: every member but
+// those leaving, and those joining when skipJoining (they get theirs with their setup)
+func cephStayingHosts(nodes []*model.StorageClusterNode, skipJoining bool) []int32 {
+	hosts := []int32{}
+	for _, nd := range nodes {
+		if nd.Status == model.StorageNodeLeaving || (skipJoining && nd.Status == model.StorageNodeJoining) {
+			continue
+		}
+		hosts = append(hosts, nd.Hostid)
+	}
+	return hosts
+}
+
+// cephStayingAdmins are the admin hosts that stay when a host leaves
+func cephStayingAdmins(admins []int32, leaving []int32) []int32 {
+	out := []int32{}
+	for _, a := range admins {
+		if len(leaving) == 0 || a != leaving[0] {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// cephMonAddrsStep reads the mons of the cluster as they are after a change (ceph mon dump) and records them for the
+// client configuration of the hosts
+var cephMonAddrsStep = &storageStepDef{Script: "ceph_cluster.sh", Input: cephActionInput("mon_addrs"),
+	Done: func(ctx context.Context, tx *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, runs []*model.StorageTaskRun) error {
+		cluster, _, _, err := storageClusterOfTask(tx, task)
+		if err != nil {
+			return err
+		}
+		for _, r := range runs {
+			res := struct {
+				MonAddrs []string `json:"mon_addrs"`
+			}{}
+			if json.Unmarshal([]byte(r.Result), &res) != nil || len(res.MonAddrs) == 0 {
+				continue
+			}
+			// Addresses without a port, as the configure step records them: the clients try msgr v2, then v1
+			mons := []string{}
+			for _, m := range res.MonAddrs {
+				if ip := net.ParseIP(m); ip == nil || ip.To4() == nil {
+					return fmt.Errorf("the cluster reported mon address %q", m)
+				}
+				mons = append(mons, m)
+			}
+			info := cephInfoOf(cluster)
+			info.MonAddrs = mons
+			return cephSaveInfo(tx, cluster, info, nil)
+		}
+		return fmt.Errorf("the cluster reported no mon address")
+	}}
+
+// cephPrecheckStep is the shared precheck, plus: every host running daemons runs the same Ubuntu release, so the
+// cephadm and ceph-common they install from their distribution are one Ceph release (§8.1). A client only host may run
+// another release: its ceph-common must just not be older than the daemons (checked when it installed,
+// cephClientVersionCheck)
 var cephPrecheckStep = &storageStepDef{
 	Script: "stc_precheck.sh",
 	Input:  gpfsPrecheckStep.Input,
@@ -256,21 +364,28 @@ var cephPrecheckStep = &storageStepDef{
 		if err := storagePrecheckStep.Done(ctx, tx, task, step, runs); err != nil {
 			return err
 		}
+		cluster, nodes, _, err := storageClusterOfTask(tx, task)
+		if err != nil {
+			return err
+		}
+		daemons := map[int32]bool{}
+		for _, n := range nodes {
+			daemons[n.Hostid] = len(cephOrchLabels(n)) > 0
+		}
 		releases := map[string][]string{}
 		for _, r := range runs {
+			if !daemons[r.Hostid] {
+				continue
+			}
 			result := &StoragePrecheckResult{}
 			_ = json.Unmarshal([]byte(r.Result), result)
 			osName, _ := result.Facts["os"].(string)
 			releases[osName] = append(releases[osName], hostName(tx, r.Hostid))
 		}
-		// A host joining an existing cluster must run what the cluster's hosts run
-		cluster, nodes, _, err := storageClusterOfTask(tx, task)
-		if err != nil {
-			return err
-		}
+		// A daemon host joining an existing cluster must run what the cluster's daemon hosts run
 		if facts, err := gpfsPrecheckFacts(tx, task); err == nil {
 			for _, n := range nodes {
-				if os, ok := nodeAttr(n, "os").(string); ok && os != "" && facts[n.Hostid] == nil {
+				if os, ok := nodeAttr(n, "os").(string); ok && os != "" && facts[n.Hostid] == nil && daemons[n.Hostid] {
 					releases[os] = append(releases[os], hostName(tx, n.Hostid))
 				}
 			}
@@ -281,7 +396,7 @@ var cephPrecheckStep = &storageStepDef{
 				parts = append(parts, fmt.Sprintf("%s on %s", os, strings.Join(hosts, ", ")))
 			}
 			sort.Strings(parts)
-			return fmt.Errorf("the hosts of Ceph cluster %s run different releases (%s): each installs its own Ceph release from its distribution", cluster.Name,
+			return fmt.Errorf("the daemon hosts of Ceph cluster %s run different releases (%s): each installs its own Ceph release from its distribution", cluster.Name,
 				strings.Join(parts, "; "))
 		}
 		return nil
@@ -314,12 +429,12 @@ func cephInstallInput(ctx context.Context, db *gorm.DB, task *model.StorageTask,
 	if info := cephInfoOf(cluster); info.Image != "" {
 		image = info.Image
 	}
-	return cephInstallArgs(cluster, nodes, hostid, image), nil
+	return cephInstallArgs(cluster, nodes, hostid, image)
 }
 
 // cephInstallArgs: the input of ceph_install.sh on a host; a cephadm host also gets what the units of the daemons
-// give their containers (§6.7.2)
-func cephInstallArgs(cluster *model.StorageCluster, nodes []*model.StorageClusterNode, hostid int32, image string) map[string]interface{} {
+// give their containers (§6.7.2), and the login of the private registry of the image when there is one
+func cephInstallArgs(cluster *model.StorageCluster, nodes []*model.StorageClusterNode, hostid int32, image string) (map[string]interface{}, error) {
 	orch := false
 	for _, n := range nodes {
 		if n.Hostid == hostid {
@@ -329,30 +444,66 @@ func cephInstallArgs(cluster *model.StorageCluster, nodes []*model.StorageCluste
 	in := map[string]interface{}{"cluster_uuid": cluster.UUID, "image": image, "orch": orch}
 	if orch {
 		in["oom"] = cephOomProtect(cephParamsOf(cluster))
+		login, err := cephRegistryLogin(cluster)
+		if err != nil {
+			return nil, err
+		}
+		if login != nil {
+			in["registry"] = login
+		}
 	}
-	return in
+	return in, nil
 }
 
-// cephInstallDone records the release and the image the hosts installed: one release everywhere, one image on the
-// cephadm hosts, or the step fails
+// cephInstalled is what ceph_install.sh reports: the ceph-common release of the host; on a cephadm host also the image
+// it pulled and the release in the image
+type cephInstalled struct {
+	Version      string `json:"version"`
+	Image        string `json:"image"`
+	ImageVersion string `json:"image_version"`
+}
+
+// cephClientVersionCheck: the client only hosts of a run read the keys the daemons write, so their ceph-common is not
+// older than the release of the daemons (a client may run a newer distribution than the daemon hosts, §8.1)
+func cephClientVersionCheck(tx *gorm.DB, clients map[int32]string, daemons string) error {
+	if daemons == "" {
+		return nil
+	}
+	for h, v := range clients {
+		if storageVersionLess(v, daemons) {
+			return fmt.Errorf("%s installed Ceph %s, older than the %s the daemons run: it could not read their keys; give it a newer distribution or keep it out",
+				hostName(tx, h), v, daemons)
+		}
+	}
+	return nil
+}
+
+// cephInstallDone records the release and the image the hosts installed: one release on the daemon hosts and one image,
+// or the step fails; the client only hosts may run a newer release, not an older one than the daemons
 func cephInstallDone(ctx context.Context, tx *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, runs []*model.StorageTaskRun) error {
-	cluster, _, _, err := storageClusterOfTask(tx, task)
+	cluster, nodes, _, err := storageClusterOfTask(tx, task)
 	if err != nil {
 		return err
 	}
+	daemonHost := map[int32]bool{}
+	for _, n := range nodes {
+		daemonHost[n.Hostid] = len(cephOrchLabels(n)) > 0
+	}
 	info := cephInfoOf(cluster)
-	version, image := info.Version, info.Image
+	version, image, daemons := info.Version, info.Image, info.Version
+	clients := map[int32]string{}
 	for _, r := range runs {
-		res := struct {
-			Version string `json:"version"`
-			Image   string `json:"image"`
-		}{}
-		_ = json.Unmarshal([]byte(r.Result), &res)
+		res := &cephInstalled{}
+		_ = json.Unmarshal([]byte(r.Result), res)
 		if res.Version == "" {
 			return fmt.Errorf("%s reported no Ceph release", hostName(tx, r.Hostid))
 		}
+		if !daemonHost[r.Hostid] {
+			clients[r.Hostid] = res.Version
+			continue
+		}
 		if version != "" && res.Version != version {
-			return fmt.Errorf("%s installed Ceph %s, the cluster runs %s", hostName(tx, r.Hostid), res.Version, version)
+			return fmt.Errorf("%s installed Ceph %s, the daemon hosts of the cluster run %s", hostName(tx, r.Hostid), res.Version, version)
 		}
 		if res.Image != "" && image != "" && res.Image != image {
 			return fmt.Errorf("%s pulled image %s, the cluster runs %s", hostName(tx, r.Hostid), res.Image, image)
@@ -361,9 +512,18 @@ func cephInstallDone(ctx context.Context, tx *gorm.DB, task *model.StorageTask, 
 		if res.Image != "" {
 			image = res.Image
 		}
+		if res.ImageVersion != "" {
+			daemons = res.ImageVersion
+		}
 	}
 	if image == "" {
 		return fmt.Errorf("no cephadm host pulled the image of the daemons")
+	}
+	if daemons == "" {
+		daemons = version
+	}
+	if err := cephClientVersionCheck(tx, clients, daemons); err != nil {
+		return err
 	}
 	info.Version, info.Image = version, image
 	return cephSaveInfo(tx, cluster, info, map[string]interface{}{"version": version})
@@ -429,9 +589,18 @@ func cephBootstrapInput(ctx context.Context, db *gorm.DB, task *model.StorageTas
 			orch++
 		}
 	}
-	return map[string]interface{}{"action": "bootstrap", "cluster_uuid": cluster.UUID, "fsid": info.Fsid, "mon_ip": ips[hostid],
+	in := map[string]interface{}{"action": "bootstrap", "cluster_uuid": cluster.UUID, "fsid": info.Fsid, "mon_ip": ips[hostid],
 		"hostname": names[hostid], "labels": cephOrchLabels(self), "image": info.Image, "cluster_network": p.ClusterNetwork,
-		"single_host": orch == 1}, nil
+		"single_host": orch == 1}
+	// cephadm keeps the login of a private registry and uses it on every host it pulls the image on
+	login, err := cephRegistryLogin(cluster)
+	if err != nil {
+		return nil, err
+	}
+	if login != nil {
+		in["registry"] = login
+	}
+	return in, nil
 }
 
 // cephAddHostsInput: every cephadm host of the cluster with its labels (the ones there are skipped, labels are set

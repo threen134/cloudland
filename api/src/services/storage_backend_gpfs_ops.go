@@ -180,26 +180,41 @@ func init() {
 			"finish":        {Script: "stc_finish.sh", Input: gpfsFinishInput},
 		}
 	}
-	registerStorageTaskKind("gpfs:"+StorageTaskAddNodes, &storageTaskKind{Slot: storageSlotStructural, Steps: expand(), Finish: gpfsExpandFinish})
-	registerStorageTaskKind("gpfs:"+StorageTaskAddDisks, &storageTaskKind{Slot: storageSlotStructural, Steps: expand(), Finish: gpfsExpandFinish})
+	// The steps of the erasure code layout join the same tasks (storage_backend_gpfs_ece_ops.go)
+	withECE := func(task string, steps map[string]*storageStepDef) map[string]*storageStepDef {
+		for name, def := range gpfsECEChangeSteps[task] {
+			steps[name] = def
+		}
+		return steps
+	}
+	// The shared disk layout: server lists of the LUNs (storage_backend_gpfs_san.go)
+	sanServers := &storageStepDef{Script: "gpfs_nsd.sh", Input: gpfsSANServersInput}
+	withSAN := func(steps map[string]*storageStepDef) map[string]*storageStepDef {
+		steps["san_servers"] = sanServers
+		return steps
+	}
+	registerStorageTaskKind("gpfs:"+StorageTaskAddNodes, &storageTaskKind{Slot: storageSlotStructural,
+		Steps: withSAN(withECE(StorageTaskAddNodes, expand())), Finish: gpfsExpandFinish})
+	registerStorageTaskKind("gpfs:"+StorageTaskAddDisks, &storageTaskKind{Slot: storageSlotStructural,
+		Steps: withSAN(withECE(StorageTaskAddDisks, expand())), Finish: gpfsExpandFinish})
 	registerStorageTaskKind("gpfs:"+StorageTaskRemoveDisk, &storageTaskKind{Slot: storageSlotStructural, Finish: gpfsRemoveDiskFinish,
 		Steps: map[string]*storageStepDef{
 			"remove_disks":  {Script: "gpfs_fs.sh", Input: gpfsRemoveDisksInput},
 			"release_disks": {Script: "stc_release_disks.sh", Input: gpfsReleaseDisksInput},
 		}})
 	registerStorageTaskKind("gpfs:"+StorageTaskRemoveNode, &storageTaskKind{Slot: storageSlotStructural, Finish: gpfsRemoveNodeFinish,
-		Steps: map[string]*storageStepDef{
+		Steps: withSAN(withECE(StorageTaskRemoveNode, map[string]*storageStepDef{
 			"remove_disks": {Script: "gpfs_fs.sh", Input: gpfsRemoveDisksInput},
 			"remove_node":  {Script: "gpfs_cluster.sh", Input: gpfsRemoveNodeInput},
 			"leave":        {Script: "stc_leave.sh", Input: gpfsLeaveInput},
-		}})
+		}))})
 	registerStorageTaskKind("gpfs:"+StorageTaskRebalance, &storageTaskKind{Slot: storageSlotStructural,
 		Steps: map[string]*storageStepDef{"rebalance": {Script: "gpfs_fs.sh", Input: gpfsRebalanceInput}}})
 	replace := expand()
 	replace["remove_disks"] = &storageStepDef{Script: "gpfs_fs.sh", Input: gpfsRemoveDisksInput}
 	replace["restore"] = &storageStepDef{Script: "gpfs_fs.sh", Input: gpfsRestoreInput}
 	replace["release_disks"] = &storageStepDef{Script: "stc_release_disks.sh", Input: storageReplaceReleaseInput}
-	registerStorageTaskKind("gpfs:"+StorageTaskReplaceDisk, &storageTaskKind{Slot: storageSlotStructural, Steps: replace,
+	registerStorageTaskKind("gpfs:"+StorageTaskReplaceDisk, &storageTaskKind{Slot: storageSlotStructural, Steps: withECE(StorageTaskReplaceDisk, replace),
 		Finish: storageReplaceFinish(gpfsExpandFinish)})
 	registerStorageTaskKind("gpfs:"+StorageTaskRotateKeys, &storageTaskKind{Slot: storageSlotStructural, Finish: storageRotateFinish,
 		Steps: map[string]*storageStepDef{
@@ -253,6 +268,23 @@ func gpfsAddNodeInput(ctx context.Context, db *gorm.DB, task *model.StorageTask,
 }
 
 // gpfsClusterFs is the file system the disks of a change go into: the first of the cluster
+// gpfsDisksFs is the file system a disk change of a task is about: the one it names (add_disks into a given file
+// system), else the one of the disks leaving (removal, replacement), else the first of the cluster
+func gpfsDisksFs(db *gorm.DB, task *model.StorageTask, cluster *model.StorageCluster, disks []*model.StorageClusterDisk) (*model.StorageFilesystem, error) {
+	if storageTaskInt(task, "filesystem_id") > 0 {
+		return storageTaskFs(db, task, cluster)
+	}
+	for _, d := range disks {
+		if d.Status == model.StorageDiskRemoving && d.FsID > 0 {
+			fs := &model.StorageFilesystem{}
+			if err := db.Take(fs, d.FsID).Error; err == nil {
+				return fs, nil
+			}
+		}
+	}
+	return gpfsClusterFs(db, cluster)
+}
+
 func gpfsClusterFs(db *gorm.DB, cluster *model.StorageCluster) (*model.StorageFilesystem, error) {
 	fs := &model.StorageFilesystem{}
 	if err := db.Where("cluster_id = ?", cluster.ID).Order("id").Take(fs).Error; err != nil {
@@ -263,6 +295,9 @@ func gpfsClusterFs(db *gorm.DB, cluster *model.StorageCluster) (*model.StorageFi
 
 // gpfsDiskStanzas describes disks for mmadddisk / mmcrfs: name, usage, failure group and storage pool of each
 func gpfsDiskStanzas(cluster *model.StorageCluster, nodes []*model.StorageClusterNode, all, disks []*model.StorageClusterDisk) []map[string]interface{} {
+	if cluster.Layout == model.StorageLayoutSAN {
+		return gpfsSANStanzas(cluster, all)
+	}
 	names := gpfsNSDNames(cluster, all)
 	groups := map[int32]interface{}{}
 	for _, n := range nodes {
@@ -281,7 +316,8 @@ func gpfsAddDisksInput(ctx context.Context, db *gorm.DB, task *model.StorageTask
 	if err != nil {
 		return nil, err
 	}
-	fs, err := gpfsClusterFs(db, cluster)
+	// The file system the task names, else the first one (a replacement: the one of the failed disk)
+	fs, err := gpfsDisksFs(db, task, cluster, disks)
 	if err != nil {
 		return nil, err
 	}
@@ -296,22 +332,52 @@ func gpfsRemoveDisksInput(ctx context.Context, db *gorm.DB, task *model.StorageT
 	if err != nil {
 		return nil, err
 	}
-	fs, err := gpfsClusterFs(db, cluster)
+	fs, err := gpfsDisksFs(db, task, cluster, disks)
 	if err != nil {
 		return nil, err
 	}
 	names := gpfsNSDNames(cluster, disks)
-	nsds := []string{}
+	// The disks leaving may be in more than one file system (a host leaving with disks in two): a group of NSDs for
+	// each, taken out of its own file system; a disk in none (an NSD not added yet) goes with the first
+	order := []int64{fs.ID}
+	byFs := map[int64][]string{}
 	for _, d := range disks {
-		if d.Status == model.StorageDiskRemoving {
-			nsds = append(nsds, names[d.ID])
+		if d.Status != model.StorageDiskRemoving {
+			continue
 		}
+		id := d.FsID
+		if id == 0 {
+			id = fs.ID
+		}
+		if _, ok := byFs[id]; !ok && id != fs.ID {
+			order = append(order, id)
+		}
+		byFs[id] = append(byFs[id], names[d.ID])
 	}
-	if len(nsds) == 0 {
+	// A shared LUN leaves only with all its servers, and is one NSD (one file system in this layout)
+	if cluster.Layout == model.StorageLayoutSAN {
+		order, byFs = []int64{fs.ID}, map[int64][]string{fs.ID: gpfsSANLeaving(cluster, disks)}
+	}
+	groups := []map[string]interface{}{}
+	for _, id := range order {
+		if len(byFs[id]) == 0 {
+			continue
+		}
+		name := fs.Name
+		if id != fs.ID {
+			other := &model.StorageFilesystem{}
+			if err := db.Where("id = ? AND cluster_id = ?", id, cluster.ID).Take(other).Error; err != nil {
+				return nil, fmt.Errorf("file system %d of the disks leaving is not known: %v", id, err)
+			}
+			name = other.Name
+		}
+		groups = append(groups, map[string]interface{}{"fs_name": name, "nsds": byFs[id]})
+	}
+	if len(groups) == 0 {
 		return nil, fmt.Errorf("no disk leaves the cluster")
 	}
 	// A replacement drops a disk as failed: the node looks once more that GPFS has it down before it does
-	return map[string]interface{}{"action": "remove", "cluster_uuid": cluster.UUID, "fs_name": fs.Name, "nsds": nsds,
+	return map[string]interface{}{"action": "remove", "cluster_uuid": cluster.UUID, "fs_name": groups[0]["fs_name"], "groups": groups,
 		"damaged": storageTaskBool(task, "offline") || storageTaskBool(task, "damaged"), "require_down": storageTaskBool(task, "damaged")}, nil
 }
 
@@ -324,12 +390,23 @@ func gpfsReleaseDisksInput(ctx context.Context, db *gorm.DB, task *model.Storage
 	}
 	keep := []string{}
 	release := []*storageDiskIdentity{}
+	removing := map[int32]bool{}
+	for _, d := range disks {
+		if d.Status == model.StorageDiskRemoving {
+			removing[d.Hostid] = true
+		}
+	}
 	for _, d := range disks {
 		if d.Hostid != hostid {
 			continue
 		}
 		if d.Status == model.StorageDiskRemoving {
-			release = append(release, storageClusterDiskIdentity(d, true))
+			id := storageClusterDiskIdentity(d, true)
+			// A shared LUN is wiped once, by the lowest of its hosts
+			if cluster.Layout == model.StorageLayoutSAN && !gpfsSANPrimary(d, disks, removing) {
+				id.Shared = true
+			}
+			release = append(release, id)
 		} else {
 			keep = append(keep, d.DiskID)
 		}
@@ -352,11 +429,11 @@ func gpfsRemoveNodeInput(ctx context.Context, db *gorm.DB, task *model.StorageTa
 
 // gpfsRestoreInput: the files that lost a copy with the failed disk get it back (mmrestripefs -r)
 func gpfsRestoreInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
-	cluster, _, _, err := storageClusterOfTask(db, task)
+	cluster, _, disks, err := storageClusterOfTask(db, task)
 	if err != nil {
 		return nil, err
 	}
-	fs, err := gpfsClusterFs(db, cluster)
+	fs, err := gpfsDisksFs(db, task, cluster, disks)
 	if err != nil {
 		return nil, err
 	}
@@ -419,11 +496,22 @@ func gpfsExpandFinish(ctx context.Context, tx *gorm.DB, task *model.StorageTask,
 		return tx.Model(&model.StorageClusterDisk{}).Where("cluster_id = ? AND status = ?", cluster.ID, model.StorageDiskClaiming).
 			Updates(map[string]interface{}{"status": model.StorageDiskFailed, "reason": "the change was aborted"}).Error
 	}
-	fs, err := gpfsClusterFs(tx, cluster)
+	fs, err := gpfsDisksFs(tx, task, cluster, disks)
 	if err != nil {
 		return err
 	}
-	names := gpfsNSDNames(cluster, disks)
+	var names map[int64]string
+	if cluster.Layout == model.StorageLayoutECE {
+		// The disks are pdisks of the recovery group, named after them; new capacity went into a new vdisk set
+		if names, fs, err = gpfsECEExpandNames(tx, task, cluster, nodes, gpfsNewDisks(disks)); err != nil {
+			return err
+		}
+		if err = gpfsECERecordNewSet(tx, task, cluster); err != nil {
+			return err
+		}
+	} else {
+		names = gpfsNSDNames(cluster, disks)
+	}
 	scan := map[int32]bool{}
 	for _, d := range gpfsNewDisks(disks) {
 		scan[d.Hostid] = true
@@ -480,18 +568,26 @@ func gpfsRemoveDiskFinish(ctx context.Context, tx *gorm.DB, task *model.StorageT
 	if err := tx.Take(disk, storageTaskInt(task, "disk_id")).Error; err != nil {
 		return nil
 	}
+	// The disk and the records of the same LUN on its other hosts (the shared disk layout) that left with it
+	same := tx.Model(&model.StorageClusterDisk{}).Where("cluster_id = ? AND disk_id = ? AND (id = ? OR status = ?)", disk.ClusterID, disk.DiskID,
+		disk.ID, model.StorageDiskRemoving)
 	if !succeeded {
 		// Where the removal stopped is not known: the disk may be out of the file system already
-		return tx.Model(&model.StorageClusterDisk{}).Where("id = ?", disk.ID).
-			Updates(map[string]interface{}{"status": model.StorageDiskFailed, "reason": "the removal was aborted; remove the disk again"}).Error
+		return same.Updates(map[string]interface{}{"status": model.StorageDiskFailed, "reason": "the removal was aborted; remove the disk again"}).Error
 	}
-	if err := tx.Delete(&model.StorageClusterDisk{}, disk.ID).Error; err != nil {
+	hosts := []int32{}
+	if err := tx.Model(&model.StorageClusterDisk{}).Where("cluster_id = ? AND disk_id = ? AND (id = ? OR status = ?)", disk.ClusterID, disk.DiskID,
+		disk.ID, model.StorageDiskRemoving).Pluck("hostid", &hosts).Error; err != nil {
 		return err
 	}
-	go func(ctx context.Context, id int32) {
+	if err := tx.Where("cluster_id = ? AND disk_id = ? AND (id = ? OR status = ?)", disk.ClusterID, disk.DiskID, disk.ID, model.StorageDiskRemoving).
+		Delete(&model.StorageClusterDisk{}).Error; err != nil {
+		return err
+	}
+	go func(ctx context.Context, ids []int32) {
 		time.Sleep(3 * time.Second)
-		scanStorageHosts(ctx, []int32{id})
-	}(context.WithoutCancel(ctx), disk.Hostid)
+		scanStorageHosts(ctx, ids)
+	}(context.WithoutCancel(ctx), hosts)
 	return nil
 }
 
@@ -516,10 +612,16 @@ func gpfsRemoveNodeFinish(ctx context.Context, tx *gorm.DB, task *model.StorageT
 		Delete(&model.HyperStoragePool{}).Error; err != nil {
 		return err
 	}
+	// The pools of other clusters it reached through this cluster's remote mounts go too
+	owners, err := remoteMountHostLeft(tx, cluster.ID, hostid)
+	if err != nil {
+		return err
+	}
 	if !storageTaskBool(task, "offline") {
 		go func(ctx context.Context, id int32) {
 			time.Sleep(3 * time.Second)
 			scanStorageHosts(ctx, []int32{id})
+			clearRemotePoolLists(ctx, id, owners)
 		}(context.WithoutCancel(ctx), hostid)
 	}
 	// Its fences on the cluster go: once this transaction is committed, the node rows are gone

@@ -762,6 +762,8 @@ type StorageExpandPayload struct {
 	Nodes            []*StorageNodePayload `json:"nodes" binding:"omitempty,max=64,dive"`
 	Disks            []*StorageDiskPayload `json:"disks" binding:"omitempty,max=512,dive"`
 	AllowUnsupported bool                  `json:"allow_unsupported"`
+	// The file system the disks go into (POST .../disks); the first one of the cluster when empty
+	Filesystem string `json:"filesystem" binding:"omitempty,max=32"`
 }
 
 type StorageRebalancePayload struct {
@@ -772,7 +774,7 @@ type StorageRebalancePayload struct {
 // expandPlan turns the hosts and disks of an expansion into host ids: the disks may be on the hosts of the request or
 // on members of the cluster
 func (v *StorageClusterAPI) expandPlan(c *gin.Context, payload *StorageExpandPayload) (*services.StorageClusterExpand, bool) {
-	req := &services.StorageClusterExpand{AllowUnsupported: payload.AllowUnsupported}
+	req := &services.StorageClusterExpand{AllowUnsupported: payload.AllowUnsupported, Filesystem: payload.Filesystem}
 	hosts := map[string]int32{}
 	resolve := func(uuid string) (int32, bool) {
 		if id, ok := hosts[uuid]; ok {

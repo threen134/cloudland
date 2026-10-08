@@ -134,7 +134,15 @@ func (gpfsBackend) TaskPlan(task string, cluster *model.StorageCluster, scope *S
 		return gpfsPoolTaskPlan(task, cluster, all, admins)
 	case StorageTaskAddNodes, StorageTaskAddDisks, StorageTaskRemoveDisk, StorageTaskRemoveNode, StorageTaskRebalance, StorageTaskReplaceDisk,
 		StorageTaskChangeRoles, StorageTaskRotateKeys, StorageTaskUpgrade:
+		switch cluster.Layout {
+		case model.StorageLayoutECE:
+			return gpfsECEChangeTaskPlan(task, scope)
+		case model.StorageLayoutSAN:
+			return gpfsSANChangeTaskPlan(task, cluster, scope)
+		}
 		return gpfsChangeTaskPlan(task, scope)
+	case StorageTaskCreateFs, StorageTaskDeleteFs:
+		return gpfsFsTaskPlan(task, scope)
 	}
 	return nil, planError("GPFS clusters have no task %s", task)
 }
@@ -210,8 +218,53 @@ var gpfsPrecheckStep = &storageStepDef{
 				return fmt.Errorf("%s runs %s, for which package %s has no packages", hostName(tx, r.Hostid), osName, pkg.FileName)
 			}
 		}
+		if cluster.Layout == model.StorageLayoutECE {
+			return gpfsECEPrecheckMemory(tx, cluster, runs)
+		}
 		return nil
 	},
+}
+
+// gpfsECEPrecheckMemory: the memory each server reported is kept with it (a server joining later is compared with
+// the ones there), and the servers of the recovery group, those there and those checked now, must be alike
+func gpfsECEPrecheckMemory(tx *gorm.DB, cluster *model.StorageCluster, runs []*model.StorageTaskRun) error {
+	nodes := []*model.StorageClusterNode{}
+	if err := tx.Where("cluster_id = ?", cluster.ID).Find(&nodes).Error; err != nil {
+		return err
+	}
+	byHost := map[int32]*model.StorageClusterNode{}
+	mem := map[int32]int64{}
+	for _, n := range nodes {
+		byHost[n.Hostid] = n
+		if !n.HasRole(model.StorageRoleNSD) || n.Status == model.StorageNodeLeaving {
+			continue
+		}
+		attrs := map[string]interface{}{}
+		_ = json.Unmarshal([]byte(n.Attrs), &attrs)
+		if m, ok := attrs["mem_mib"].(float64); ok {
+			mem[n.Hostid] = int64(m)
+		}
+	}
+	for _, r := range runs {
+		n := byHost[r.Hostid]
+		if n == nil || !n.HasRole(model.StorageRoleNSD) {
+			continue
+		}
+		result := &StoragePrecheckResult{}
+		_ = json.Unmarshal([]byte(r.Result), result)
+		m, ok := result.Facts["mem_mib"].(float64)
+		if !ok {
+			continue
+		}
+		mem[r.Hostid] = int64(m)
+		attrs := map[string]interface{}{}
+		_ = json.Unmarshal([]byte(n.Attrs), &attrs)
+		attrs["mem_mib"] = int64(m)
+		if err := tx.Model(&model.StorageClusterNode{}).Where("id = ?", n.ID).Update("attrs", jsonAttrs(attrs)).Error; err != nil {
+			return err
+		}
+	}
+	return gpfsECEMemorySpread(mem)
 }
 
 func gpfsJoinInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
@@ -451,7 +504,16 @@ func gpfsResolveInput(ctx context.Context, db *gorm.DB, task *model.StorageTask,
 	for _, d := range disks {
 		// A disk on its way out is not looked for: the failed disk of a replacement can not be read
 		if d.Hostid == hostid && d.Status != model.StorageDiskRemoving {
-			ids = append(ids, storageClusterDiskIdentity(d, wipe[storageDiskKey(d.Hostid, d.DiskID)]))
+			id := storageClusterDiskIdentity(d, wipe[storageDiskKey(d.Hostid, d.DiskID)])
+			// A disk the cluster uses holds its data: only its identity is checked (a change of the erasure code
+			// layout resolves every disk of the servers for the disk list of the recovery group)
+			id.InUse = d.Status == model.StorageDiskActive
+			// A new shared LUN is checked and wiped by one of its hosts; the others, and every host of a LUN the
+			// cluster uses already, resolve it alongside, identity only
+			if cluster.Layout == model.StorageLayoutSAN && !gpfsSANChecksEmpty(d, disks) {
+				id.Wipe, id.InUse = false, true
+			}
+			ids = append(ids, id)
 		}
 	}
 	// The disks of the erasure code layout become pdisks of the recovery group, never NSDs: no nsddevices exit
@@ -459,8 +521,12 @@ func gpfsResolveInput(ctx context.Context, db *gorm.DB, task *model.StorageTask,
 		"nsddevices": cluster.Layout != model.StorageLayoutECE}, nil
 }
 
-// gpfsNSDName names the NSDs of a cluster: cl<cluster>h<hostid>d<n>, n counting the disks of the host from 1
+// gpfsNSDName names the NSDs of a cluster: cl<cluster>h<hostid>d<n>, n counting the disks of the host from 1; the
+// shared LUNs of the shared disk layout cl<cluster>s<n> (gpfsSANNames)
 func gpfsNSDNames(cluster *model.StorageCluster, disks []*model.StorageClusterDisk) map[int64]string {
+	if cluster.Layout == model.StorageLayoutSAN {
+		return gpfsSANNames(cluster, disks)
+	}
 	names := map[int64]string{}
 	used := map[int32]int{}
 	// A disk keeps the name it was given: a disk removed before it must not rename it
@@ -519,6 +585,9 @@ func gpfsNSDInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, ste
 			devices[storageDiskKey(h, d.ID)] = d.Path
 		}
 	}
+	if cluster.Layout == model.StorageLayoutSAN {
+		return gpfsSANNSDInput(db, cluster, disks, devices, ips)
+	}
 	groups := map[int32]int{}
 	for _, n := range nodes {
 		if fg, ok := nodeAttr(n, "failure_group").(float64); ok {
@@ -550,6 +619,10 @@ func gpfsFileSystem(cluster *model.StorageCluster, nodes []*model.StorageCluster
 	}
 	if blockSize == "" {
 		blockSize = "4M"
+	}
+	// The shared disk layout: the array protects the data and metadata, one copy each
+	if p.san() {
+		return name, blockSize, 1, 1
 	}
 	groups := 0
 	for _, n := range nodes {
@@ -588,9 +661,14 @@ func gpfsFSInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step
 	}
 	// mmcrfs takes the usage, failure group and pool of every disk from its stanza, not from the NSD
 	nsds := []map[string]interface{}{}
-	for _, d := range gpfsNewDisks(disks) {
-		nsds = append(nsds, map[string]interface{}{"name": names[d.ID], "usage": diskAttr(d, "usage"), "failure_group": groups[d.Hostid],
-			"pool": diskAttr(d, "gpfs_pool")})
+	if cluster.Layout == model.StorageLayoutSAN {
+		// One stanza per shared LUN, however many hosts serve it
+		nsds = gpfsSANStanzas(cluster, disks)
+	} else {
+		for _, d := range gpfsNewDisks(disks) {
+			nsds = append(nsds, map[string]interface{}{"name": names[d.ID], "usage": diskAttr(d, "usage"), "failure_group": groups[d.Hostid],
+				"pool": diskAttr(d, "gpfs_pool")})
+		}
 	}
 	return map[string]interface{}{"action": "create", "cluster_uuid": cluster.UUID, "fs_name": name, "mount_point": gpfsMountRoot + "/" + name,
 		"block_size": blockSize, "data_replicas": data, "meta_replicas": meta, "nsds": nsds}, nil
@@ -766,10 +844,22 @@ func gpfsLeaveInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, s
 		Purge bool `json:"purge_packages"`
 	}{}
 	_ = json.Unmarshal([]byte(task.Params), &p)
+	// The hosts leaving: every host when the cluster goes, the one of a removal otherwise
+	leaving := map[int32]bool{}
+	for _, d := range disks {
+		if task.Kind == StorageTaskDeleteCluster || int64(d.Hostid) == storageTaskInt(task, "hostid") {
+			leaving[d.Hostid] = true
+		}
+	}
 	wipe := []*storageDiskIdentity{}
 	for _, d := range disks {
 		if d.Hostid == hostid {
-			wipe = append(wipe, storageClusterDiskIdentity(d, true))
+			id := storageClusterDiskIdentity(d, true)
+			// A shared LUN another host keeps serving is left alone; one leaving with all its hosts is wiped once
+			if cluster.Layout == model.StorageLayoutSAN && !gpfsSANWipedHere(d, disks, leaving) {
+				id.Shared = true
+			}
+			wipe = append(wipe, id)
 		}
 	}
 	return map[string]interface{}{"cluster_uuid": cluster.UUID, "kind": cluster.Kind, "wipe": wipe, "purge": p.Purge}, nil

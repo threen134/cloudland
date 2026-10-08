@@ -41,6 +41,9 @@ var (
 	cephKeyRe   = regexp.MustCompile(`^[A-Za-z0-9+/]{38,64}={0,2}$`)
 	cephPoolRe  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$`)
 	cephPortRe  = regexp.MustCompile(`^[0-9]{2,5}$`)
+	// host[:port] of a container registry, and a user of it
+	cephRegistryRe     = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]{0,252}[a-z0-9])?(:[0-9]{2,5})?$`)
+	cephRegistryUserRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$`)
 )
 
 // cephParams are the parameters of a Ceph cluster (§8.2)
@@ -53,6 +56,11 @@ type cephParams struct {
 	Image string `json:"image,omitempty"`
 	// Network of the replication traffic between the OSDs; empty: the public network
 	ClusterNetwork string `json:"cluster_network,omitempty"`
+	// A private registry the image is pulled from with a login: its host[:port] and user; the password is given with
+	// the parameters but kept encrypted with the cluster (SplitParamSecrets), never in params
+	Registry         string `json:"registry,omitempty"`
+	RegistryUser     string `json:"registry_user,omitempty"`
+	RegistryPassword string `json:"registry_password,omitempty"`
 }
 
 func (cephBackend) Kind() string { return model.StorageKindCeph }
@@ -100,7 +108,60 @@ func (b cephBackend) ParseParams(raw json.RawMessage) (interface{}, error) {
 			return nil, planError("The cluster network of a Ceph cluster is an IPv4 network such as 10.0.1.0/24")
 		}
 	}
+	if err := checkCephRegistry(p); err != nil {
+		return nil, err
+	}
 	return p, nil
+}
+
+// checkCephRegistry: a registry login comes with its user and an image of that registry. The password is given when
+// the cluster is made (SplitParamSecrets) and kept encrypted: the parameters of a cluster parsed later have none
+func checkCephRegistry(p *cephParams) error {
+	if p.Registry == "" && p.RegistryUser == "" && p.RegistryPassword == "" {
+		return nil
+	}
+	switch {
+	case !cephRegistryRe.MatchString(p.Registry):
+		return planError("The registry of a Ceph cluster is host[:port] of a container registry, such as registry.example.com:5000")
+	case !cephRegistryUserRe.MatchString(p.RegistryUser):
+		return planError("Give the user the hosts log in to registry %s with", p.Registry)
+	case len(p.RegistryPassword) > 256 || strings.ContainsAny(p.RegistryPassword, "\r\n\x00"):
+		return planError("The password of registry %s is at most 256 characters on one line", p.Registry)
+	case p.Image == "" || !strings.HasPrefix(p.Image, p.Registry+"/"):
+		return planError("With registry %s give the image of the daemons from it, such as %s/ceph/ceph:v19.2.3", p.Registry, p.Registry)
+	}
+	return nil
+}
+
+// SplitParamSecrets keeps the password of a private registry out of the parameters: it is stored encrypted with the
+// cluster (§5.10). A registry is given with its password
+func (cephBackend) SplitParamSecrets(params interface{}) (interface{}, map[string]string, error) {
+	p := *params.(*cephParams)
+	if p.Registry != "" && p.RegistryPassword == "" {
+		return nil, nil, planError("Give the password of registry %s", p.Registry)
+	}
+	if p.RegistryPassword == "" {
+		return &p, nil, nil
+	}
+	secrets := map[string]string{"registry_password": p.RegistryPassword}
+	p.RegistryPassword = ""
+	return &p, secrets, nil
+}
+
+// cephRegistryLogin is what the hosts log in to the private registry of a cluster with; nil without one
+func cephRegistryLogin(cluster *model.StorageCluster) (map[string]interface{}, error) {
+	p := cephParamsOf(cluster)
+	if p.Registry == "" {
+		return nil, nil
+	}
+	secrets, err := storageClusterSecrets(cluster)
+	if err != nil {
+		return nil, err
+	}
+	if secrets["registry_password"] == "" {
+		return nil, fmt.Errorf("the password of registry %s is not recorded", p.Registry)
+	}
+	return map[string]interface{}{"url": p.Registry, "username": p.RegistryUser, "password": secrets["registry_password"]}, nil
 }
 
 func (cephBackend) CheckLayout(nodes []*StorageNodePlan, disks []*StorageDiskPlan, params interface{}) error {
@@ -459,8 +520,26 @@ func (cephBackend) ScrapeTargets(cluster *model.StorageCluster, nodes []*model.S
 }
 
 // MetricQueries are the curves of a Ceph cluster from its mgr prometheus module (appendix E.2), labelled with the
-// cluster by the scrape target. Only the active mgr exports, so the sums and maxima are over one of them
+// cluster by the scrape target. Only the active mgr exports, so the sums and maxima are over one of them. An imported
+// cluster's mgr is not CloudLand's: its client hosts read it (backend_metrics of backends/ceph.sh), each the same
+// numbers, so the largest of them
 func (cephBackend) MetricQueries(cluster *model.StorageCluster, window int64) []StorageMetricQuery {
+	if cluster.Mode == model.StorageModeExternal {
+		l := "cluster=" + promLabel(cluster.UUID)
+		rate := func(metric string) string {
+			return fmt.Sprintf(`max(rate(%s{%s}[%ds]))`, metric, l, window)
+		}
+		return []StorageMetricQuery{
+			{Chart: StorageChartCapacity, Series: "used", Query: fmt.Sprintf(`max(cloudland_ceph_used_bytes{%s})`, l)},
+			{Chart: StorageChartCapacity, Series: "total", Query: fmt.Sprintf(`max(cloudland_ceph_total_bytes{%s})`, l)},
+			{Chart: StorageChartThroughput, Series: "read", Query: rate("cloudland_ceph_read_bytes_total")},
+			{Chart: StorageChartThroughput, Series: "write", Query: rate("cloudland_ceph_write_bytes_total")},
+			{Chart: StorageChartIOPS, Series: "read", Query: rate("cloudland_ceph_reads_total")},
+			{Chart: StorageChartIOPS, Series: "write", Query: rate("cloudland_ceph_writes_total")},
+			{Chart: StorageChartOSDs, Series: "up", Query: fmt.Sprintf(`max(cloudland_ceph_osds_up{%s})`, l)},
+			{Chart: StorageChartOSDs, Series: "in", Query: fmt.Sprintf(`max(cloudland_ceph_osds_in{%s})`, l)},
+		}
+	}
 	c := "storage_cluster=" + promLabel(cluster.UUID)
 	rate := func(metric string) string {
 		return fmt.Sprintf(`sum(rate(%s{%s}[%ds]))`, metric, c, window)

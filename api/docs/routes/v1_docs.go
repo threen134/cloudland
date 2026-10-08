@@ -2395,6 +2395,107 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/images/{id}/storage_copies": {
+            "get": {
+                "description": "the copy of the image in each shared pool it was imported into, with how far a running import got (shared-storage-design.md §9.6); system admins",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Image"
+                ],
+                "summary": "list the copies of an image in the shared pools",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Image UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ImageStorageCopiesResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "preheat: import the image into the shared pools given, so the first boot disk made there does not wait for the copy (shared-storage-design.md §9.6). A pool with a copy synced or being imported is left as it is, a failed one is imported again; system admins",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Image"
+                ],
+                "summary": "import an image into shared pools ahead of time",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Image UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Pools",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ImagePreheatPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ImageStorageCopiesResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/images/{id}/storage_copies/{pool}": {
+            "delete": {
+                "description": "removes the copy of the image in the pool when no boot disk is cloned from it (shared-storage-design.md §9.6); 409 while boot disks use it or its import runs. The copy goes once its host removed it; system admins",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Image"
+                ],
+                "summary": "remove the copy of an image in a shared pool",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Image UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Storage pool UUID",
+                        "name": "pool",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
         "/instance/{id}/interfaces": {
             "get": {
                 "description": "list interfaces",
@@ -6875,7 +6976,7 @@ const docTemplatev1 = `{
                 }
             },
             "patch": {
-                "description": "the description, and the zones whose hosts join the cluster as clients on their own (shared-storage-design.md §6.3): every online host of those zones not in the cluster is queued and joins with a task of its own once the cluster is free; one that fails is left alone and listed until retry_auto_join",
+                "description": "the description, and the zones whose hosts join the cluster as clients on their own (shared-storage-design.md §6.3): every online host of those zones not in the cluster is queued and joins with a task of its own once the cluster is free; one that fails is left alone and listed until retry_auto_join. With auto_join_new_only only the hosts registered from then on join",
                 "consumes": [
                     "application/json"
                 ],
@@ -7027,6 +7128,83 @@ const docTemplatev1 = `{
                         "schema": {
                             "$ref": "#/definitions/apis.StorageReplaceDiskPayload"
                         }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/{id}/filesystems": {
+            "post": {
+                "description": "a new file system on new disks of the members: NSDs made, the file system made and mounted on every member (shared-storage-design.md §7.3). Pools pick it by name (filesystem); system admins",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "make a file system on a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The file system and its disks",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageFilesystemPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/{id}/filesystems/{name}": {
+            "delete": {
+                "description": "unmounts and deletes a file system no storage pool is on, with its NSDs; its disks are wiped and given back to their hosts. The only file system of a cluster goes with the cluster (shared-storage-design.md §7.3); system admins",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "delete a file system of a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "File system name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -7271,6 +7449,110 @@ const docTemplatev1 = `{
                         "schema": {
                             "$ref": "#/definitions/apis.StorageRebalancePayload"
                         }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/{id}/remote_mounts": {
+            "get": {
+                "description": "the file systems of this cluster other clusters mount, and the file systems of others it mounts (shared-storage-design.md §7.11); system admins",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "list the remote mounts of a storage cluster",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageRemoteMountListResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "the hosts of another managed cluster of the kind mount a file system of this one under its name and mount point (GPFS multi-cluster: keys exchanged, the file system granted, mounted on every host there); the pools on it become usable on those hosts. A task of the cluster that mounts (shared-storage-design.md §7.11); system admins",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "let another storage cluster mount a file system",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID (whose file system it is)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The file system and the cluster that mounts it",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageRemoteMountPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/apis.StorageTaskResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage_clusters/{id}/remote_mounts/{mount_id}": {
+            "delete": {
+                "description": "the hosts of the other cluster unmount the file system and its grant goes; refused while instances on those hosts use volumes of the pools on it (shared-storage-design.md §7.11); system admins",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "StorageCluster"
+                ],
+                "summary": "stop another storage cluster mounting a file system",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cluster UUID (whose file system it is)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Remote mount UUID",
+                        "name": "mount_id",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -12199,6 +12481,22 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.ImagePreheatPayload": {
+            "type": "object",
+            "required": [
+                "storage_pools"
+            ],
+            "properties": {
+                "storage_pools": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                }
+            }
+        },
         "apis.ImageResponse": {
             "type": "object",
             "properties": {
@@ -12249,6 +12547,50 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "user": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ImageStorageCopiesResponse": {
+            "type": "object",
+            "properties": {
+                "copies": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.ImageStorageCopyResponse"
+                    }
+                }
+            }
+        },
+        "apis.ImageStorageCopyResponse": {
+            "type": "object",
+            "properties": {
+                "boot_disks": {
+                    "description": "Boot disks cloned from it; a copy with some can not be removed",
+                    "type": "integer"
+                },
+                "host": {
+                    "description": "The host running the import or the removal",
+                    "type": "string"
+                },
+                "phase": {
+                    "description": "Of an import running: wait (for an import slot of the host), download, write; percent of that phase",
+                    "type": "string"
+                },
+                "progress": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "syncing | synced | error | deleting",
+                    "type": "string"
+                },
+                "storage_pool": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }
@@ -13311,6 +13653,10 @@ const docTemplatev1 = `{
                     "description": "Replace a pool the target lacks by one of the same fallback group (default true)",
                     "type": "boolean"
                 },
+                "confirm_fenced": {
+                    "description": "With force: the source host is confirmed powered off, so the grace period is not waited for",
+                    "type": "boolean"
+                },
                 "disks": {
                     "description": "Target pool per disk; needs target_hyper and a single instance",
                     "type": "array",
@@ -13320,6 +13666,7 @@ const docTemplatev1 = `{
                     }
                 },
                 "force": {
+                    "description": "Evacuate instances whose source host is down; every disk must be in a shared pool (shared-storage-design.md §11.3)",
                     "type": "boolean"
                 },
                 "ignore_capacity": {
@@ -13964,11 +14311,18 @@ const docTemplatev1 = `{
         "apis.StorageAutoJoinResponse": {
             "type": "object",
             "properties": {
+                "new_only": {
+                    "description": "Only the hosts registered after since join; those of the zones registered before are left as they are",
+                    "type": "boolean"
+                },
                 "pending": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/apis.StoragePendingClientResponse"
                     }
+                },
+                "since": {
+                    "type": "string"
                 },
                 "zones": {
                     "type": "array",
@@ -14319,6 +14673,10 @@ const docTemplatev1 = `{
         "apis.StorageClusterPatchPayload": {
             "type": "object",
             "properties": {
+                "auto_join_new_only": {
+                    "description": "Only the hosts registered from now on join on their own (true), or every host of the zones (false)",
+                    "type": "boolean"
+                },
                 "auto_join_zones": {
                     "description": "Zones whose hosts join the cluster as clients on their own; [] turns it off (managed clusters only)",
                     "type": "array",
@@ -14563,12 +14921,54 @@ const docTemplatev1 = `{
                         "$ref": "#/definitions/apis.StorageDiskPayload"
                     }
                 },
+                "filesystem": {
+                    "description": "The file system the disks go into (POST .../disks); the first one of the cluster when empty",
+                    "type": "string",
+                    "maxLength": 32
+                },
                 "nodes": {
                     "type": "array",
                     "maxItems": 64,
                     "items": {
                         "$ref": "#/definitions/apis.StorageNodePayload"
                     }
+                }
+            }
+        },
+        "apis.StorageFilesystemPayload": {
+            "type": "object",
+            "required": [
+                "disks",
+                "name"
+            ],
+            "properties": {
+                "allow_unsupported": {
+                    "type": "boolean"
+                },
+                "block_size": {
+                    "description": "1M, 2M, 4M (default), 8M or 16M",
+                    "type": "string",
+                    "maxLength": 4
+                },
+                "data_replicas": {
+                    "description": "Copies of the data, 2 by default (1 in the test layout); the metadata gets 3 once there are 3 failure groups",
+                    "type": "integer",
+                    "maximum": 3,
+                    "minimum": 1
+                },
+                "disks": {
+                    "description": "New disks of member hosts, on at least 3 hosts (one failure group each) outside the test layout",
+                    "type": "array",
+                    "maxItems": 512,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageDiskPayload"
+                    }
+                },
+                "name": {
+                    "description": "Name of the new file system, mounted at /gpfs/\u003cname\u003e",
+                    "type": "string",
+                    "maxLength": 32
                 }
             }
         },
@@ -15116,6 +15516,75 @@ const docTemplatev1 = `{
                     "description": "Name of the file system; the first one of the cluster when empty",
                     "type": "string",
                     "maxLength": 32
+                }
+            }
+        },
+        "apis.StorageRemoteMountListResponse": {
+            "type": "object",
+            "properties": {
+                "remote_mounts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.StorageRemoteMountResponse"
+                    }
+                }
+            }
+        },
+        "apis.StorageRemoteMountPayload": {
+            "type": "object",
+            "required": [
+                "cluster",
+                "filesystem"
+            ],
+            "properties": {
+                "cluster": {
+                    "description": "The cluster whose hosts mount it (UUID)",
+                    "type": "string"
+                },
+                "filesystem": {
+                    "description": "File system of this cluster",
+                    "type": "string",
+                    "maxLength": 32
+                }
+            }
+        },
+        "apis.StorageRemoteMountResponse": {
+            "type": "object",
+            "properties": {
+                "access": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "filesystem": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "mount_point": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "owner_uuid": {
+                    "description": "OwnerUUID identifies the owning org across services (org names are not unique); cpgateway uses it to\nrelease quota only when the caller's org actually owns the deleted resource",
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "mounting | ready | unmounting | error",
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
@@ -17920,11 +18389,14 @@ const docTemplatev1 = `{
                 "client_key": {
                     "type": "boolean"
                 },
+                "create_filesystem": {
+                    "type": "boolean"
+                },
                 "external": {
                     "type": "boolean"
                 },
                 "filesystems": {
-                    "description": "Filesystems: the kind has file systems between the cluster and the pools (gpfs)",
+                    "description": "Filesystems: the kind has file systems between the cluster and the pools (gpfs); CreateFilesystem: a managed\ncluster can have more than the one it was made with, made and deleted with their disks",
                     "type": "boolean"
                 },
                 "finalize": {
@@ -17939,6 +18411,10 @@ const docTemplatev1 = `{
                     "type": "boolean"
                 },
                 "rebalance": {
+                    "type": "boolean"
+                },
+                "remote_mount": {
+                    "description": "RemoteMount: the hosts of another managed cluster of the kind mount a file system of this one (gpfs\nmulti-cluster)",
                     "type": "boolean"
                 },
                 "remove_disk": {

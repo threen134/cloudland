@@ -302,6 +302,8 @@ const (
 	ErrImageDeleteFailed   ErrCode = 151005
 	ErrImageNotAvailable   ErrCode = 151006
 	ErrRescueImageNotFound ErrCode = 151011
+	ErrImageCopyNotFound   ErrCode = 151012
+	ErrImageCopyInUse      ErrCode = 151013
 
 	// ssh key related errors (161xxx)
 	ErrSSHKeyNotFound       ErrCode = 161001

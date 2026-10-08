@@ -29,6 +29,8 @@ const (
 
 	StorageLayoutReplica = "replica"
 	StorageLayoutECE     = "ece"
+	// GPFS on shared LUNs of a SAN, each served by the members that see it (shared-storage-design.md §7.10)
+	StorageLayoutSAN = "san"
 
 	StorageClusterPlanning  = "planning"
 	StorageClusterDeploying = "deploying"
@@ -95,6 +97,8 @@ type StorageCluster struct {
 	// since}, status pending (waits for the structural slot), joining (its task runs) or failed (left alone)
 	PendingClients string `gorm:"type:text"`
 	AutoJoinZones  string `gorm:"type:varchar(256)"` // json array of zone IDs whose hosts join as clients
+	// Only the hosts registered after this time join on their own; nil: every host of the zones
+	AutoJoinSince *time.Time
 	SSHPubKey      string `gorm:"type:text"`
 	SSHPrivKey     string `gorm:"type:text"` // encrypted (common.EncryptSecret)
 	Description    string `gorm:"type:varchar(256)"`
@@ -163,8 +167,22 @@ type StorageFilesystem struct {
 	CapacityAt    *time.Time
 }
 
+// StorageRemoteMount is a file system of a cluster mounted by the hosts of another cluster of the kind (GPFS
+// multi-cluster remote mount, shared-storage-design.md §7.11), under the same name and mount point: the pools on it
+// are usable on those hosts too
+type StorageRemoteMount struct {
+	Model
+	OwnerClusterID  int64  `gorm:"index"`
+	AccessClusterID int64  `gorm:"index"`
+	FilesystemID    int64  `gorm:"index"`
+	Name            string `gorm:"type:varchar(32)"`
+	MountPoint      string `gorm:"type:varchar(256)"`
+	Status          string `gorm:"type:varchar(16)"` // mounting | ready | unmounting | error
+	Reason          string `gorm:"type:varchar(512)"`
+}
+
 func init() {
-	dbs.AutoMigrate(&StorageCluster{}, &StorageClusterNode{}, &StorageClusterDisk{}, &StorageFilesystem{})
+	dbs.AutoMigrate(&StorageCluster{}, &StorageClusterNode{}, &StorageClusterDisk{}, &StorageFilesystem{}, &StorageRemoteMount{})
 	// Unique over the live rows only, so a removed node, disk or file system can come back
 	dbs.AutoUpgrade("storage_cluster_unique_indexes_v1", func(db *gorm.DB) error {
 		for _, stmt := range []string{

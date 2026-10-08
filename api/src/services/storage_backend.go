@@ -91,8 +91,10 @@ type StorageCapabilities struct {
 	// Managed: CloudLand deploys and deletes clusters of the kind; External: it imports clusters set up by others
 	Managed  bool `json:"managed"`
 	External bool `json:"external"`
-	// Filesystems: the kind has file systems between the cluster and the pools (gpfs)
-	Filesystems bool `json:"filesystems"`
+	// Filesystems: the kind has file systems between the cluster and the pools (gpfs); CreateFilesystem: a managed
+	// cluster can have more than the one it was made with, made and deleted with their disks
+	Filesystems      bool `json:"filesystems"`
+	CreateFilesystem bool `json:"create_filesystem"`
 	// Pools: CloudLand pools can be made on clusters of the kind
 	Pools      bool `json:"pools"`
 	AddNodes   bool `json:"add_nodes"`
@@ -110,6 +112,9 @@ type StorageCapabilities struct {
 	// release in a separate, irreversible step afterwards (gpfs)
 	Upgrade  bool `json:"upgrade"`
 	Finalize bool `json:"finalize"`
+	// RemoteMount: the hosts of another managed cluster of the kind mount a file system of this one (gpfs
+	// multi-cluster)
+	RemoteMount bool `json:"remote_mount"`
 }
 
 // StorageRequirements are what a kind needs on its hosts
@@ -235,6 +240,21 @@ func storageCheckPackage(backend StorageBackend, params interface{}, pkg *model.
 		return c.CheckPackage(params, pkg)
 	}
 	return nil
+}
+
+// storageParamSecrets is a backend whose parameters of a managed cluster may carry credentials (ceph: the password of
+// a private registry): they go to storage_clusters.secrets, encrypted, never to params
+type storageParamSecrets interface {
+	SplitParamSecrets(params interface{}) (public interface{}, secrets map[string]string, err error)
+}
+
+// storageSplitParamSecrets keeps the credentials out of the parsed parameters of a new managed cluster; an error when
+// a credential the parameters need is missing
+func storageSplitParamSecrets(backend StorageBackend, params interface{}) (interface{}, map[string]string, error) {
+	if s, ok := backend.(storageParamSecrets); ok {
+		return s.SplitParamSecrets(params)
+	}
+	return params, nil, nil
 }
 
 // storageLayoutCapabilities is a backend whose clusters support less in some of their layouts (gpfs erasure code: no

@@ -57,6 +57,9 @@ type EvacuateRequest struct {
 	ConfirmFenced bool
 	// Only these instances (IDs); all of the host when empty
 	Instances []int64
+	// Start none unless every instance asked for can be: a single forced migration (POST /migrations with force)
+	// fails as a whole instead of leaving part of its instances behind
+	AllOrNothing bool
 }
 
 // EvacuateResult is what happens to one instance of the host
@@ -113,8 +116,19 @@ func evacueePools(ctx context.Context, inst *model.Instance) (pools map[int64]*m
 			return nil, nil, fmt.Errorf("its disk %s is %s", v.Name, v.Status)
 		}
 		pools[pool.ID] = pool
-		if pool.ClusterID > 0 && !slices.Contains(clusters, pool.ClusterID) {
-			clusters = append(clusters, pool.ClusterID)
+		cluster := pool.ClusterID
+		// A host that reaches the pool through a remote mount is fenced in its own cluster (§7.11)
+		if cluster > 0 {
+			var member int64
+			dbs.DBContext(ctx).Model(&model.StorageClusterNode{}).Where("cluster_id = ? AND hostid = ?", cluster, inst.Hyper).Count(&member)
+			if member == 0 {
+				if access, remote := sharedPoolRemoteHost(dbs.DBContext(ctx), pool, inst.Hyper); remote {
+					cluster = access
+				}
+			}
+		}
+		if cluster > 0 && !slices.Contains(clusters, cluster) {
+			clusters = append(clusters, cluster)
 		}
 	}
 	return
@@ -207,6 +221,9 @@ func (a *HyperAdmin) Evacuate(ctx context.Context, hostid int32, req *EvacuateRe
 			}
 		}
 	}
+	if req.AllOrNothing && evacuationRefused(results) {
+		return
+	}
 	// Fence the host on every cluster first; an instance on a cluster that can not be fenced is not recovered
 	unfenced := map[int64]string{}
 	for _, cid := range clusterSet {
@@ -218,13 +235,18 @@ func (a *HyperAdmin) Evacuate(ctx context.Context, hostid int32, req *EvacuateRe
 			unfenced[cid] = ferr.Error()
 		}
 	}
-	membership := GetMemberShip(ctx)
 	for _, c := range cands {
 		for _, cid := range c.clusters {
 			if why, bad := unfenced[cid]; bad {
 				c.result.Reason = why
 			}
 		}
+	}
+	if req.AllOrNothing && evacuationRefused(results) {
+		return
+	}
+	membership := GetMemberShip(ctx)
+	for _, c := range cands {
 		if c.result.Reason != "" {
 			continue
 		}
@@ -258,6 +280,83 @@ func (a *HyperAdmin) Evacuate(ctx context.Context, hostid int32, req *EvacuateRe
 		m := &model.Migration{}
 		if db.Where("uuid = ?", r.Migration).Take(m).Error == nil {
 			r.Status, r.Reason = m.Status, m.Message
+		}
+	}
+	return
+}
+
+// evacuationRefused tells whether an instance of the request can not be evacuated
+func evacuationRefused(results []*EvacuateResult) bool {
+	for _, r := range results {
+		if r.Reason != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// createForced evacuates instances off their down source hosts, the instances of each host in one evacuation
+// (shared-storage-design.md §11.3): a forced migration picks single instances where the evacuation of a host
+// (POST /hypers/:uuid/evacuate) takes all of them. Their disks stay in their shared pools, so no target pools; the
+// grace period, the fences and the placement groups are those of the evacuation. Without batch the instances of a host
+// start only when all of them can, and the first refusal is returned
+func (a *MigrationAdmin) createForced(ctx context.Context, instances []*model.Instance, tgtHyper int32, opts *MigrationOptions, batch bool) (migrations []*model.Migration, results []*MigrationResult, err error) {
+	if len(opts.Disks) > 0 {
+		return nil, nil, NewCLError(ErrInvalidParameter, "The disks of a forced migration stay in their shared pools, target pools can not be given", nil)
+	}
+	db := dbs.DBContext(ctx)
+	byHost := map[int32][]int64{}
+	hosts := []int32{}
+	byID := map[int64]*model.Instance{}
+	for _, inst := range instances {
+		if _, ok := byHost[inst.Hyper]; !ok {
+			hosts = append(hosts, inst.Hyper)
+		}
+		byHost[inst.Hyper] = append(byHost[inst.Hyper], inst.ID)
+		byID[inst.ID] = inst
+	}
+	// All or nothing holds within one evacuation: across two hosts the first would be fenced and its instances on
+	// their way before the second one is refused. A request evacuates the instances of one host
+	if !batch && len(hosts) > 1 {
+		return nil, nil, NewCLError(ErrInvalidParameter, "A forced migration moves the instances of one offline host; request the instances of each host separately", nil)
+	}
+	for _, h := range hosts {
+		res, eerr := hyperAdmin.Evacuate(ctx, h, &EvacuateRequest{TargetHyper: tgtHyper, ConfirmFenced: opts.ConfirmFenced,
+			Instances: byHost[h], AllOrNothing: !batch})
+		if eerr != nil {
+			if !batch {
+				return migrations, results, eerr
+			}
+			for _, id := range byHost[h] {
+				results = append(results, &MigrationResult{Instance: byID[id], Error: eerr})
+			}
+			continue
+		}
+		for _, r := range res {
+			mr := &MigrationResult{Instance: byID[r.InstanceID]}
+			results = append(results, mr)
+			if r.Migration == "" {
+				if r.Reason == "" {
+					// Fine itself, held back with the others of the call
+					mr.Error = NewCLError(ErrEvacuationRefused, fmt.Sprintf("Instance %s is not evacuated: another instance of the request can not be", r.Hostname), nil)
+					continue
+				}
+				mr.Error = NewCLError(ErrEvacuationRefused, fmt.Sprintf("Instance %s can not be evacuated: %s", r.Hostname, r.Reason), nil)
+				if !batch && err == nil {
+					err = mr.Error
+				}
+				continue
+			}
+			m := &model.Migration{}
+			if lerr := db.Where("uuid = ?", r.Migration).Take(m).Error; lerr != nil {
+				mr.Error = NewCLError(ErrSQLSyntaxError, "Failed to load the migration", lerr)
+				continue
+			}
+			mr.Migration = m
+			migrations = append(migrations, m)
+		}
+		if err != nil {
+			return
 		}
 	}
 	return

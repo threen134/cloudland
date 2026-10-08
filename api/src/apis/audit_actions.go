@@ -122,6 +122,9 @@ var auditRoutes = map[string]auditRoute{
 	"DELETE /images/:id": {"image", "image.delete", "id", false},
 	"PATCH /images/:id":  {"image", "image.update", "id", false},
 
+	"POST /images/:id/storage_copies":         {"image", "image.preheat", "id", false},
+	"DELETE /images/:id/storage_copies/:pool": {"image", "image.drop_copy", "id", false},
+
 	"POST /volumes":                  {"volume", "volume.create", "", false},
 	"DELETE /volumes/:id":            {"volume", "volume.delete", "id", false},
 	"PATCH /volumes/:id":             {"volume", "volume.update", "id", false},
@@ -143,6 +146,8 @@ var auditRoutes = map[string]auditRoute{
 	"POST /storage_clusters/:id/disks":                  {"storage_cluster", "storage_cluster.add_disks", "id", false},
 	"DELETE /storage_clusters/:id/disks/:disk_id":       {"storage_cluster", "storage_cluster.remove_disk", "id", false},
 	"POST /storage_clusters/:id/rebalance":              {"storage_cluster", "storage_cluster.rebalance", "id", false},
+	"POST /storage_clusters/:id/filesystems":            {"storage_cluster", "storage_cluster.create_filesystem", "id", false},
+	"DELETE /storage_clusters/:id/filesystems/:name":    {"storage_cluster", "storage_cluster.delete_filesystem", "id", false},
 	"POST /storage_clusters/:id/rotate_keys":            {"storage_cluster", "storage_cluster.rotate_keys", "id", false},
 	"POST /storage_clusters/:id/upgrade":                {"storage_cluster", "storage_cluster.upgrade", "id", false},
 	"PATCH /storage_clusters/:id":                       {"storage_cluster", "storage_cluster.update", "id", false},
@@ -154,6 +159,9 @@ var auditRoutes = map[string]auditRoute{
 	"POST /storage_tasks/selftest":                      {"storage_task", "storage_task.selftest", "", false},
 	"POST /storage_tasks/:id/retry":                     {"storage_task", "storage_task.retry", "id", false},
 	"POST /storage_tasks/:id/abort":                     {"storage_task", "storage_task.abort", "id", false},
+
+	"POST /storage_clusters/:id/remote_mounts":             {"storage_cluster", "storage_cluster.create_remote_mount", "id", false},
+	"DELETE /storage_clusters/:id/remote_mounts/:mount_id": {"storage_cluster", "storage_cluster.delete_remote_mount", "id", false},
 
 	"POST /hypers/:uuid/disks/scan":                          {"hyper", "hyper.disks_scan", "uuid", false},
 	"PATCH /hypers/:uuid/disks/:id":                          {"hyper", "hyper.disk_update", "uuid", false},

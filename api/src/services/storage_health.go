@@ -504,6 +504,7 @@ func HandleStorageHealth(ctx context.Context, hostid int32, clusterUUID string, 
 		for _, item := range report.Disks {
 			diskState[item.Name] = item.State
 		}
+		alarmed := map[string]bool{}
 		for _, d := range disks {
 			state, reported := diskState[d.Name]
 			if !reported {
@@ -513,7 +514,9 @@ func HandleStorageHealth(ctx context.Context, hostid int32, clusterUUID string, 
 			if err := tx.Model(&model.StorageClusterDisk{}).Where("id = ?", d.ID).Updates(map[string]interface{}{"state": truncate(state, 32), "checked_at": &now}).Error; err != nil {
 				return err
 			}
-			if d.Status == model.StorageDiskActive && state != "up" {
+			// A shared LUN is one disk however many hosts serve it: one condition
+			if d.Status == model.StorageDiskActive && state != "up" && !alarmed[d.Name] {
+				alarmed[d.Name] = true
 				bad = append(bad, storageCondition{Key: "disk:" + d.Name, Name: StorageAlarmDiskDown, Severity: "warning",
 					Summary: fmt.Sprintf("Disk %s (%s on %s) of storage cluster %s is %s", d.Name, d.DiskID, hostName(tx, d.Hostid), cluster.Name, state)})
 			}

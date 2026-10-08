@@ -32,8 +32,8 @@ type gpfsParams struct {
 	// The pagepool of every member in the replica layout; of the recovery group servers in the erasure code layout
 	// (the other members keep the default), at least 8 GiB there: mmvdisk refuses less
 	PagepoolMiB int `json:"pagepool_mib,omitempty"`
-	// replica (default) or ece: the disks of the NSD hosts go to a recovery group and the file system lives on a
-	// vdisk set with an erasure code (§7.9)
+	// replica (default); ece: the disks of the NSD hosts go to a recovery group and the file system lives on a vdisk
+	// set with an erasure code (§7.9); san: the NSDs are shared LUNs, each served by the members that see it (§7.10)
 	Layout string `json:"layout,omitempty"`
 	// The code of the vdisk set (4+2p by default) and how much of the declustered array it takes (80% by default)
 	ECECode    string `json:"ece_code,omitempty"`
@@ -41,6 +41,18 @@ type gpfsParams struct {
 	// Virtual machines and emulated disks have no slot map: the slot check of the recovery group is turned off.
 	// Only for tests, IBM does not support it
 	NoSlotMap bool `json:"no_slot_map,omitempty"`
+	// Real servers: the slot map is made by ecedrivemapping in lmr (SAS disks behind a LSI controller) or nvme mode,
+	// for the user slots given (it prompts for them otherwise); without a mode the slot map must be on the servers
+	SlotMode  string `json:"slot_mode,omitempty"`
+	SlotRange []int  `json:"slot_range,omitempty"`
+	// Mixed media (a declustered array of solid state disks beside the HDDs): the metadata vdisk set goes on the solid
+	// state array with its own code (3WayReplication by default), block size (1M) and share of the array (80%); the
+	// data vdisk set on the HDDs takes ece_code, block_size and ece_set_size
+	ECEMetaCode      string `json:"ece_meta_code,omitempty"`
+	ECEMetaBlockSize string `json:"ece_meta_block_size,omitempty"`
+	ECEMetaSetSize   int    `json:"ece_meta_set_size,omitempty"`
+	// What IBM supports only (16 cores, 25 Gbit/s, bare metal servers) fails the precheck instead of warning
+	ECEStrict bool `json:"ece_strict,omitempty"`
 }
 
 const (
@@ -53,6 +65,13 @@ const (
 	gpfsECEMinDisks        = 12
 	gpfsECEServerExtraMiB  = 2048
 	gpfsDefaultPagepoolMiB = 1024
+	gpfsECEMetaCode        = "3WayReplication"
+	gpfsECEMetaBlockSize   = "1M"
+	// The readiness of a recovery group server (§2.3): what IBM supports, and how far apart the memory of the servers
+	// may be (mmvdisk refuses more than 10%)
+	gpfsECESupportCores    = 16
+	gpfsECESupportLinkMbps = 25000
+	gpfsECEMemSpreadPct    = 10
 )
 
 // gpfsECECodes are the codes of a vdisk set, with how many pdisks a strip spans and the block sizes it takes (what
@@ -73,8 +92,13 @@ func (p *gpfsParams) ece() bool { return p.Layout == model.StorageLayoutECE }
 
 // LayoutOf: the layout the parameters ask for
 func (gpfsBackend) LayoutOf(params interface{}) string {
-	if p, ok := params.(*gpfsParams); ok && p.ece() {
-		return model.StorageLayoutECE
+	if p, ok := params.(*gpfsParams); ok {
+		if p.ece() {
+			return model.StorageLayoutECE
+		}
+		if p.san() {
+			return model.StorageLayoutSAN
+		}
 	}
 	return model.StorageLayoutReplica
 }
@@ -99,6 +123,18 @@ func (gpfsBackend) LayoutInfo(cluster *model.StorageCluster) map[string]interfac
 	}
 	p := gpfsParamsOf(cluster)
 	info := map[string]interface{}{"code": p.ECECode, "no_slot_map": p.NoSlotMap}
+	if p.SlotMode != "" {
+		info["slot_mode"] = p.SlotMode
+	}
+	// The metadata set only when the cluster made one (mixed media): the wizard always sends its parameters, a cluster of
+	// one media has no metadata set to show
+	sets := gpfsECESetsOf(cluster)
+	for _, s := range sets {
+		if s == gpfsECEMetaSet(cluster) {
+			code, bs, _ := gpfsECEMeta(p)
+			info["meta_code"], info["meta_block_size"] = code, bs
+		}
+	}
 	attrs := map[string]interface{}{}
 	_ = json.Unmarshal([]byte(cluster.Attrs), &attrs)
 	for _, k := range []string{"recovery_group", "vdisk_set", "node_class"} {
@@ -106,16 +142,79 @@ func (gpfsBackend) LayoutInfo(cluster *model.StorageCluster) map[string]interfac
 			info[k] = v
 		}
 	}
+	// Every vdisk set: the data sets (one more for each resize) and the metadata set of a mixed media cluster
+	if len(sets) > 1 {
+		info["vdisk_set"] = strings.Join(sets, ", ")
+	}
 	return info
 }
 
-// LayoutCapabilities: the first version of the erasure code layout deploys, deletes, makes pools and renews the key;
-// changing its hosts or disks (mmvdisk recoverygroup add / pdisk replace) and upgrading it come later (§7.9)
+// LayoutCapabilities: the erasure code layout takes hosts (servers into the recovery group, mmvdisk recoverygroup add;
+// clients plainly) and lets them go (recoverygroup delete -N), gets disks on every server at once (recoverygroup
+// resize and a vdisk set for them), replaces a failed pdisk, changes the roles that are not the server one, upgrades
+// with its servers suspended one at a time (§7.9). A single disk does not leave a recovery group (only with its server
+// or replaced), GNR balances its stripes itself, and a second file system would need its own vdisk set
 func (gpfsBackend) LayoutCapabilities(layout string) *StorageCapabilities {
+	if layout == model.StorageLayoutSAN {
+		// A LUN is not replaced (the array protects it) and a second file system would need failure groups of its own
+		return &StorageCapabilities{Managed: true, Filesystems: true, Pools: true, RotateKeys: true, AddNodes: true, RemoveNode: true,
+			AddDisks: true, RemoveDisk: true, Rebalance: true, ChangeRoles: true, Upgrade: true, Finalize: true, RemoteMount: true}
+	}
 	if layout != model.StorageLayoutECE {
 		return nil
 	}
-	return &StorageCapabilities{Managed: true, Filesystems: true, Pools: true, RotateKeys: true}
+	return &StorageCapabilities{Managed: true, Filesystems: true, Pools: true, RotateKeys: true, AddNodes: true, RemoveNode: true,
+		AddDisks: true, ReplaceDisk: true, ChangeRoles: true, Upgrade: true, Finalize: true, RemoteMount: true}
+}
+
+// gpfsECEMeta: the code, block size and share of the array of the metadata vdisk set of a mixed media cluster
+func gpfsECEMeta(p *gpfsParams) (code, blockSize string, setSize int) {
+	code, blockSize, setSize = p.ECEMetaCode, p.ECEMetaBlockSize, p.ECEMetaSetSize
+	if code == "" {
+		code = gpfsECEMetaCode
+	}
+	if blockSize == "" {
+		blockSize = gpfsECEMetaBlockSize
+	}
+	if setSize == 0 {
+		setSize = gpfsECEDefaultSetSize
+	}
+	return code, blockSize, setSize
+}
+
+// gpfsECEMedia is the media class of a disk in a recovery group: hdd, ssd or nvme (an unknown media counts as hdd)
+func gpfsECEMedia(media string) string {
+	switch strings.ToLower(media) {
+	case "ssd", "nvme":
+		return strings.ToLower(media)
+	}
+	return "hdd"
+}
+
+// gpfsECEArrays are the declustered arrays the disks of a recovery group make: the media of the data array, and of
+// the metadata array when there are two (the solid state disks beside the HDDs); an error for media mmvdisk does not
+// pair
+func gpfsECEArrays(media []string) (data, meta string, err error) {
+	classes := map[string]bool{}
+	for _, m := range media {
+		classes[gpfsECEMedia(m)] = true
+	}
+	switch {
+	case len(classes) == 1:
+		for c := range classes {
+			data = c
+		}
+	case len(classes) == 2 && classes["hdd"]:
+		data = "hdd"
+		for c := range classes {
+			if c != "hdd" {
+				meta = c
+			}
+		}
+	case len(classes) > 1:
+		return "", "", planError("A recovery group takes disks of one media, or solid state disks of one kind (SSD or NVMe) beside HDDs")
+	}
+	return data, meta, nil
 }
 
 func (gpfsBackend) Kind() string { return model.StorageKindGPFS }
@@ -167,8 +266,9 @@ func (b gpfsBackend) ParseParams(raw json.RawMessage) (interface{}, error) {
 	switch p.Layout {
 	case "", model.StorageLayoutReplica:
 		p.Layout = ""
-		if p.ECECode != "" || p.ECESetSize != 0 || p.NoSlotMap {
-			return nil, planError("ece_code, ece_set_size and no_slot_map belong to the erasure code layout (layout ece)")
+		if p.ECECode != "" || p.ECESetSize != 0 || p.NoSlotMap || p.SlotMode != "" || len(p.SlotRange) > 0 || p.ECEMetaCode != "" ||
+			p.ECEMetaBlockSize != "" || p.ECEMetaSetSize != 0 || p.ECEStrict {
+			return nil, planError("ece_*, no_slot_map, slot_mode and slot_range belong to the erasure code layout (layout ece)")
 		}
 	case model.StorageLayoutECE:
 		if p.Test {
@@ -206,10 +306,100 @@ func (b gpfsBackend) ParseParams(raw json.RawMessage) (interface{}, error) {
 		if p.PagepoolMiB < gpfsECEMinPagepoolMiB {
 			return nil, planError("The recovery group servers need a pagepool of at least %d MiB (mmvdisk refuses less)", gpfsECEMinPagepoolMiB)
 		}
+		if err := checkECEMetaParams(b.Kind(), p); err != nil {
+			return nil, err
+		}
+		if err := checkECESlotParams(p); err != nil {
+			return nil, err
+		}
+	case model.StorageLayoutSAN:
+		if p.ECECode != "" || p.ECESetSize != 0 || p.NoSlotMap || p.SlotMode != "" || len(p.SlotRange) > 0 || p.ECEMetaCode != "" ||
+			p.ECEMetaBlockSize != "" || p.ECEMetaSetSize != 0 || p.ECEStrict {
+			return nil, planError("ece_*, no_slot_map, slot_mode and slot_range belong to the erasure code layout (layout ece)")
+		}
+		// The array protects the data: one copy
+		if p.DataReplicas > 1 {
+			return nil, planError("The shared disk layout keeps one copy of the data: the storage array protects it")
+		}
 	default:
-		return nil, planError("The layout of a GPFS cluster is replica or ece")
+		return nil, planError("The layout of a GPFS cluster is replica, ece or san")
 	}
 	return p, nil
+}
+
+// ReadinessInput: a recovery group server of the erasure code layout is checked for what mmvdisk enforces (the
+// memory its pagepool takes: mmvdisk sets it to 80% of the memory at most) and what IBM supports (16 cores, 25 Gbit/s,
+// bare metal), the latter only warned of unless the cluster is strict (§2.3)
+func (gpfsBackend) ReadinessInput(roles []string, params interface{}) map[string]interface{} {
+	p, ok := params.(*gpfsParams)
+	if !ok || !p.ece() || !hasRole(roles, model.StorageRoleNSD) {
+		return nil
+	}
+	pagepool := p.PagepoolMiB
+	if pagepool < gpfsECEMinPagepoolMiB {
+		pagepool = gpfsECEMinPagepoolMiB
+	}
+	return map[string]interface{}{"ece": true, "min_mem_mib": pagepool * 5 / 4, "min_cores": gpfsECESupportCores,
+		"min_link_mbps": gpfsECESupportLinkMbps, "bare_metal": true, "strict": p.ECEStrict}
+}
+
+// gpfsECEMemorySpread: the memory of the recovery group servers may differ by 10% at most (mmvdisk refuses a server
+// configuration otherwise). mem is the memory of each server in MiB, as their prechecks reported it
+func gpfsECEMemorySpread(mem map[int32]int64) error {
+	var lo, hi int64
+	for _, m := range mem {
+		if m <= 0 {
+			continue
+		}
+		if lo == 0 || m < lo {
+			lo = m
+		}
+		if m > hi {
+			hi = m
+		}
+	}
+	if lo > 0 && (hi-lo)*100 > lo*gpfsECEMemSpreadPct {
+		return fmt.Errorf("the memory of the recovery group servers differs by more than %d%% (%d to %d MiB): mmvdisk configures only servers alike",
+			gpfsECEMemSpreadPct, lo, hi)
+	}
+	return nil
+}
+
+// checkECEMetaParams: the code and block size of the metadata vdisk set (used when the servers have solid state disks
+// beside their HDDs)
+func checkECEMetaParams(kind string, p *gpfsParams) error {
+	if p.ECEMetaCode != "" {
+		if _, ok := gpfsECECodes[p.ECEMetaCode]; !ok {
+			return planError("The metadata code of a GPFS vdisk set must be 4+2p, 4+3p, 8+2p, 8+3p, 3WayReplication or 4WayReplication")
+		}
+	}
+	code, bs, _ := gpfsECEMeta(p)
+	if !strings.Contains(gpfsECECodes[code].Blocks, " "+bs+" ") {
+		return planError("Metadata code %s takes the block sizes%s", code, strings.TrimRight(gpfsECECodes[code].Blocks, " "))
+	}
+	return storageParamRange(kind, "ece_meta_set_size", p.ECEMetaSetSize, 10, 100)
+}
+
+// checkECESlotParams: a slot mode takes the slot range ecedrivemapping maps (it prompts without one); emulated disks
+// have no slots to map
+func checkECESlotParams(p *gpfsParams) error {
+	switch p.SlotMode {
+	case "":
+		if len(p.SlotRange) > 0 {
+			return planError("slot_range goes with slot_mode")
+		}
+		return nil
+	case "lmr", "nvme":
+	default:
+		return planError("The slot mode is lmr (SAS disks behind a LSI controller) or nvme")
+	}
+	if p.NoSlotMap {
+		return planError("A cluster without slot map has no slot mode")
+	}
+	if len(p.SlotRange) != 2 || p.SlotRange[0] < 0 || p.SlotRange[1] < p.SlotRange[0] || p.SlotRange[1] > 9999 {
+		return planError("slot_range is the first and last user slot, [min, max]")
+	}
+	return nil
 }
 
 // checkECELayout: the NSD hosts are the servers of one recovery group (3-32 of them, the same number of disks on
@@ -241,16 +431,51 @@ func checkECELayout(nodes []*StorageNodePlan, disks []*StorageDiskPlan, p *gpfsP
 		return planError("A recovery group needs %d-%d servers (NSD hosts); %d given", gpfsECEMinServers, gpfsECEMaxServers, servers)
 	}
 	// One declustered array: SSD / NVMe beside HDDs (two arrays) comes later
-	if len(media) > 1 {
-		return planError("The disks of a recovery group must all be of one media for now")
+	mediaList := []string{}
+	for m := range media {
+		mediaList = append(mediaList, m)
 	}
-	total := per * servers
+	data, meta, err := gpfsECEArrays(mediaList)
+	if err != nil {
+		return err
+	}
+	// Every server has the same disks of each media: the topologies of the servers must match
+	byMedia := map[string]map[int32]int{}
+	for _, d := range disks {
+		c := gpfsECEMedia(d.Media)
+		if byMedia[c] == nil {
+			byMedia[c] = map[int32]int{}
+		}
+		byMedia[c][d.Hostid]++
+	}
+	totals := map[string]int{}
+	for c, on := range byMedia {
+		count := -1
+		for _, node := range nodes {
+			if !hasRole(node.Roles, model.StorageRoleNSD) {
+				continue
+			}
+			if count >= 0 && on[node.Hostid] != count {
+				return planError("Every recovery group server needs the same number of %s disks", strings.ToUpper(c))
+			}
+			count = on[node.Hostid]
+			totals[c] += on[node.Hostid]
+		}
+	}
+	total := totals[data]
 	if total < gpfsECEMinDisks {
-		return planError("A recovery group needs at least %d disks in all; %d given", gpfsECEMinDisks, total)
+		return planError("A recovery group needs at least %d disks in its data array; %d given", gpfsECEMinDisks, total)
 	}
 	if w := gpfsECECodes[p.ECECode].Width; total < w+2 {
 		return planError("Code %s spans %d disks, so the recovery group needs at least %d disks (2 of spare space); %d given",
 			p.ECECode, w, w+2, total)
+	}
+	if meta != "" {
+		code, _, _ := gpfsECEMeta(p)
+		if w := gpfsECECodes[code].Width; totals[meta] < w+2 {
+			return planError("The metadata code %s spans %d disks, so the %s array needs at least %d disks; %d given",
+				code, w, strings.ToUpper(meta), w+2, totals[meta])
+		}
 	}
 	return nil
 }
@@ -287,6 +512,9 @@ func (gpfsBackend) CheckLayout(nodes []*StorageNodePlan, disks []*StorageDiskPla
 	}
 	if p.ece() {
 		return checkECELayout(nodes, disks, p)
+	}
+	if p.san() {
+		return checkSANLayout(nodes, disks)
 	}
 	// The file system descriptor quorum is counted in failure groups: two groups lose the file system with either
 	// of them (§6.3)
@@ -350,5 +578,12 @@ func (gpfsBackend) MetricQueries(cluster *model.StorageCluster, window int64) []
 		{Chart: StorageChartIOPS, Series: "write", Query: rate("cloudland_gpfs_writes_total")},
 		{Chart: StorageChartNodes, Series: "active", Query: fmt.Sprintf(`sum(cloudland_gpfs_node_active{%s})`, c)},
 		{Chart: StorageChartNodes, Series: "mounted", Split: "fs", Query: fmt.Sprintf(`sum by (fs) (cloudland_gpfs_filesystem_mounted{%s})`, c)},
+		// Every member exports the same numbers of the GPFS storage pools and the filesets: the largest of them
+		{Chart: StorageChartGpfsPools, Series: "used", Split: "fspool", Query: fmt.Sprintf(
+			`label_join(max by (fs, gpfs_pool) (cloudland_gpfs_pool_total_bytes{%s} - cloudland_gpfs_pool_free_bytes{%s}), "fspool", "/", "fs", "gpfs_pool")`, c, c)},
+		{Chart: StorageChartGpfsPools, Series: "total", Split: "fspool", Query: fmt.Sprintf(
+			`label_join(max by (fs, gpfs_pool) (cloudland_gpfs_pool_total_bytes{%s}), "fspool", "/", "fs", "gpfs_pool")`, c)},
+		{Chart: StorageChartInodes, Series: "pool", Split: "pool", Query: fmt.Sprintf(
+			`max by (pool) (cloudland_gpfs_fileset_inodes_used{%s}) / max by (pool) (cloudland_gpfs_fileset_inodes_max{%s} > 0) * 100`, c, c)},
 	}
 }

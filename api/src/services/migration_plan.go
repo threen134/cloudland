@@ -29,6 +29,8 @@ type MigrationOptions struct {
 	IgnoreCapacity bool
 	// Skip the rules of the placement group of the instance (system admin, kept on the migration record)
 	IgnorePlacement bool
+	// With force: the admin confirms the source host is powered off (shared-storage-design.md §11.3)
+	ConfirmFenced bool
 }
 
 // instanceDisks loads the disks of an instance that have to move with it, each with its pool

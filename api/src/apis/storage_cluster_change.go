@@ -22,7 +22,10 @@ import (
 // StorageAutoJoinResponse is where the hosts that join a cluster as clients on their own come from, and how far each
 // got (shared-storage-design.md §6.3)
 type StorageAutoJoinResponse struct {
-	Zones   []*ResourceReference            `json:"zones"`
+	Zones []*ResourceReference `json:"zones"`
+	// Only the hosts registered after since join; those of the zones registered before are left as they are
+	NewOnly bool                            `json:"new_only"`
+	Since   string                          `json:"since,omitempty"`
 	Pending []*StoragePendingClientResponse `json:"pending"`
 }
 
@@ -38,6 +41,9 @@ type StoragePendingClientResponse struct {
 // storageAutoJoin describes the auto join of a cluster for its detail
 func storageAutoJoin(ctx context.Context, cluster *model.StorageCluster) *StorageAutoJoinResponse {
 	resp := &StorageAutoJoinResponse{Zones: []*ResourceReference{}, Pending: []*StoragePendingClientResponse{}}
+	if cluster.AutoJoinSince != nil {
+		resp.NewOnly, resp.Since = true, cluster.AutoJoinSince.Format(TimeStringForMat)
+	}
 	db := dbs.DBContext(ctx)
 	if ids := services.ParseStorageZones(cluster.AutoJoinZones); len(ids) > 0 {
 		zones := []*model.Zone{}
@@ -80,12 +86,14 @@ type StorageClusterPatchPayload struct {
 	Description *string `json:"description" binding:"omitempty,max=256"`
 	// Zones whose hosts join the cluster as clients on their own; [] turns it off (managed clusters only)
 	AutoJoinZones *[]string `json:"auto_join_zones" binding:"omitempty,max=32,dive,uuid"`
+	// Only the hosts registered from now on join on their own (true), or every host of the zones (false)
+	AutoJoinNewOnly *bool `json:"auto_join_new_only"`
 	// Forget the hosts that failed to join on their own, so they are tried again
 	RetryAutoJoin bool `json:"retry_auto_join"`
 }
 
 // @Summary change a storage cluster
-// @Description the description, and the zones whose hosts join the cluster as clients on their own (shared-storage-design.md §6.3): every online host of those zones not in the cluster is queued and joins with a task of its own once the cluster is free; one that fails is left alone and listed until retry_auto_join
+// @Description the description, and the zones whose hosts join the cluster as clients on their own (shared-storage-design.md §6.3): every online host of those zones not in the cluster is queued and joins with a task of its own once the cluster is free; one that fails is left alone and listed until retry_auto_join. With auto_join_new_only only the hosts registered from then on join
 // @tags StorageCluster
 // @Accept  json
 // @Produce json
@@ -101,7 +109,7 @@ func (v *StorageClusterAPI) Patch(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	if _, err := storageClusterAdmin.Update(ctx, c.Param("id"), &services.StorageClusterUpdate{Description: payload.Description,
-		AutoJoinZones: payload.AutoJoinZones, RetryAutoJoin: payload.RetryAutoJoin}); err != nil {
+		AutoJoinZones: payload.AutoJoinZones, AutoJoinNewOnly: payload.AutoJoinNewOnly, RetryAutoJoin: payload.RetryAutoJoin}); err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to change the storage cluster", err)
 		return
 	}

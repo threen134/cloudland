@@ -29,7 +29,8 @@ import (
 )
 
 const (
-	// An import that did not report back in this time is taken for failed: the host restarted or the job died
+	// An import neither finished nor reported its progress in this time (counted from sent_at, which every progress
+	// report moves on) is taken for failed: the host restarted or the job died
 	imageStorageImportTimeout = 3 * time.Hour
 	// A removal that did not report back is sent again after this time
 	imageStorageDeleteTimeout = 30 * time.Minute
@@ -78,7 +79,7 @@ func prepareImageStorage(ctx context.Context, tx *gorm.DB, pool *model.StoragePo
 // imageStorageImportCommand picks the host that imports a copy and builds its command; the copy is syncing with that
 // host from now on, the only one whose report is taken
 func imageStorageImportCommand(ctx context.Context, tx *gorm.DB, is *model.ImageStorage, pool *model.StoragePool, image *model.Image) (*volumeCommand, error) {
-	host, err := pickPoolHost(tx, pool)
+	host, err := pickImportHost(tx, pool)
 	if err != nil {
 		return nil, err
 	}
@@ -89,13 +90,13 @@ func imageStorageImportCommand(ctx context.Context, tx *gorm.DB, is *model.Image
 	// The file of the image in the cache of the host, named as launches name it
 	imageName := image.FileBase() + "." + image.Format
 	args, err := imageStorageArgs(pool, is, map[string]interface{}{
-		"image_name": imageName, "image_url_b64": url, "clone_mode": pool.CloneMode})
+		"image_name": imageName, "image_url_b64": url, "clone_mode": pool.CloneMode, "image_size": image.Size})
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now()
 	if err = tx.Model(&model.ImageStorage{}).Where("id = ?", is.ID).Updates(map[string]interface{}{
-		"status": model.ImageStorageSyncing, "reason": "", "hostid": host, "sent_at": &now}).Error; err != nil {
+		"status": model.ImageStorageSyncing, "reason": "", "hostid": host, "sent_at": &now, "phase": "", "progress": 0}).Error; err != nil {
 		return nil, NewCLError(ErrSQLSyntaxError, "Failed to record the import of the image", err)
 	}
 	is.Status, is.Hostid, is.SentAt = model.ImageStorageSyncing, host, &now

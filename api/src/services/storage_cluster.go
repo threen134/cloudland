@@ -152,6 +152,7 @@ func checkStoragePlan(db *gorm.DB, plan *StoragePlan) (hypers map[int32]*model.H
 			return nil, nil, err
 		}
 	}
+	takesShared := storageTakesShared(backend, params)
 	diskRole := backend.DiskRole()
 	if diskRole == "" && len(plan.Disks) > 0 {
 		return nil, nil, planError("A %s cluster takes no disks", plan.Kind)
@@ -175,6 +176,29 @@ func checkStoragePlan(db *gorm.DB, plan *StoragePlan) (hypers map[int32]*model.H
 		}
 		if time.Since(disk.ScannedAt) > diskScanValidity {
 			return nil, nil, NewCLError(ErrStorageDiskNotAllowed, fmt.Sprintf("The scan result of disk %s is too old; scan the disks of %s again", disk.Name, hyper.Hostname), nil)
+		}
+		// The shared disk layout takes shared LUNs only; a LUN another cluster claimed on any host is taken
+		if takesShared {
+			if disk.State != model.DiskShared {
+				return nil, nil, NewCLError(ErrStorageDiskNotAllowed, fmt.Sprintf("Disk %s of %s is no shared LUN (%s): the shared disk layout takes LUNs of a SAN only",
+					disk.Name, hyper.Hostname, disk.State), nil)
+			}
+			other := &model.StorageClusterDisk{}
+			if db.Where("disk_id = ? AND cluster_id <> ?", d.DiskID, plan.ClusterID).Take(other).Error == nil {
+				return nil, nil, NewCLError(ErrStorageDiskNotAllowed, fmt.Sprintf("LUN %s belongs to storage cluster %d", d.DiskID, other.ClusterID), nil)
+			}
+			// A LUN the cluster uses already (served by other hosts) holds its data: a new server of it never wipes it
+			if d.Wipe && plan.ClusterID > 0 {
+				used := &model.StorageClusterDisk{}
+				if db.Where("disk_id = ? AND cluster_id = ? AND status <> ?", d.DiskID, plan.ClusterID, model.StorageDiskClaiming).Take(used).Error == nil {
+					return nil, nil, NewCLError(ErrStorageDiskNotAllowed, fmt.Sprintf("LUN %s holds data of this cluster already: it can not be wiped", d.DiskID), nil)
+				}
+			}
+			if claimed, _ := storageDiskClaim(db, d.Hostid, d.DiskID); claimed != nil {
+				return nil, nil, NewCLError(ErrStorageDiskNotAllowed, fmt.Sprintf("Disk %s of %s belongs to storage cluster %d", disk.Name, hyper.Hostname, claimed.ClusterID), nil)
+			}
+			disks[key] = disk
+			continue
 		}
 		switch disk.State {
 		case model.DiskFree:
@@ -210,6 +234,27 @@ type storageDiskIdentity struct {
 	WWN       string `json:"wwn,omitempty"`
 	SizeBytes int64  `json:"size_bytes"`
 	Wipe      bool   `json:"wipe,omitempty"`
+	// In the cluster already: it holds data, only its identity is checked
+	InUse bool `json:"in_use,omitempty"`
+	// A shared LUN another host of the cluster wipes or keeps serving: released or left without wiping it
+	Shared bool `json:"shared,omitempty"`
+}
+
+// storageSharedDiskTaker is a backend some of whose layouts claim shared LUNs (gpfs san), and only those
+type storageSharedDiskTaker interface {
+	TakesSharedDisks(params interface{}) bool
+}
+
+// storageDiskSiblingsOf is a backend whose disks may be one device seen by several hosts (gpfs san): what leaves
+// with a disk
+type storageDiskSiblingsOf interface {
+	DiskSiblings(cluster *model.StorageCluster, disk *model.StorageClusterDisk, disks []*model.StorageClusterDisk) []*model.StorageClusterDisk
+}
+
+// storageTakesShared: whether the plan of a kind claims shared LUNs
+func storageTakesShared(backend StorageBackend, params interface{}) bool {
+	t, ok := backend.(storageSharedDiskTaker)
+	return ok && t.TakesSharedDisks(params)
 }
 
 func diskIdentity(disk *model.HyperDisk, wipe bool) *storageDiskIdentity {
@@ -236,6 +281,14 @@ type storagePrecheckInput struct {
 	NeedContainer    bool                   `json:"need_container"`
 	DataDirs         []storageDataDir       `json:"data_dirs"`
 	ReserveMB        int32                  `json:"reserve_mb"`
+	// What the backend checks besides for the roles of the host (backend_readiness of the node side; gpfs: a
+	// recovery group server of the erasure code layout)
+	Readiness map[string]interface{} `json:"readiness,omitempty"`
+}
+
+// storageReadinessProvider is a backend with checks of its own for a host and its roles, run by the precheck
+type storageReadinessProvider interface {
+	ReadinessInput(roles []string, params interface{}) map[string]interface{}
 }
 
 // StoragePrecheckResult is what stc_precheck.sh reports for a host
@@ -356,6 +409,9 @@ func precheckInput(db *gorm.DB, plan *storagePlanParams, hostid int32) (*storage
 		in.DataDirs = append(in.DataDirs, dir)
 	}
 	in.ReserveMB = backend.ReserveMB(in.Roles, diskCount, params)
+	if rp, ok := backend.(storageReadinessProvider); ok {
+		in.Readiness = rp.ReadinessInput(in.Roles, params)
+	}
 	return in, nil
 }
 

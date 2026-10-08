@@ -51,32 +51,37 @@ func cephUpgradeInstallInput(ctx context.Context, db *gorm.DB, task *model.Stora
 	if err != nil {
 		return nil, err
 	}
-	return cephInstallArgs(cluster, nodes, hostid, storageUpgradeOf(task).Image), nil
+	return cephInstallArgs(cluster, nodes, hostid, storageUpgradeOf(task).Image)
 }
 
-// cephUpgradeInstallDone: every host installed one release and the cephadm hosts pulled one image, whose release (what
-// the daemons run after the upgrade, maybe older than the hosts' with an image of its own) is not older than the one
-// the cluster runs; the release of the image and the image go with the task for the upgrade step and the record at
-// its end
+// cephUpgradeInstallDone: the daemon hosts installed one release and pulled one image, whose release (what the daemons
+// run after the upgrade, maybe older than the hosts' with an image of its own) is not older than the one the cluster
+// runs; the client only hosts may run another release, not older than the daemons will. The release of the image and
+// the image go with the task for the upgrade step and the record at its end
 func cephUpgradeInstallDone(ctx context.Context, tx *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, runs []*model.StorageTaskRun) error {
-	cluster, _, _, err := storageClusterOfTask(tx, task)
+	cluster, nodes, _, err := storageClusterOfTask(tx, task)
 	if err != nil {
 		return err
 	}
+	daemonHost := map[int32]bool{}
+	for _, n := range nodes {
+		daemonHost[n.Hostid] = len(cephOrchLabels(n)) > 0
+	}
 	info := cephInfoOf(cluster)
 	version, image, daemons := "", "", ""
+	clients := map[int32]string{}
 	for _, r := range runs {
-		res := struct {
-			Version      string `json:"version"`
-			Image        string `json:"image"`
-			ImageVersion string `json:"image_version"`
-		}{}
-		_ = json.Unmarshal([]byte(r.Result), &res)
+		res := &cephInstalled{}
+		_ = json.Unmarshal([]byte(r.Result), res)
+		if res.Version != "" && !daemonHost[r.Hostid] {
+			clients[r.Hostid] = res.Version
+			continue
+		}
 		switch {
 		case res.Version == "":
 			return fmt.Errorf("%s reported no Ceph release", hostName(tx, r.Hostid))
 		case version != "" && res.Version != version:
-			return fmt.Errorf("%s installed Ceph %s, another host %s: every host must run one release", hostName(tx, r.Hostid), res.Version, version)
+			return fmt.Errorf("%s installed Ceph %s, another daemon host %s: the daemon hosts must run one release", hostName(tx, r.Hostid), res.Version, version)
 		case res.Image != "" && image != "" && res.Image != image:
 			return fmt.Errorf("%s pulled image %s, another host %s", hostName(tx, r.Hostid), res.Image, image)
 		case res.Image != "" && res.ImageVersion == "":
@@ -94,6 +99,9 @@ func cephUpgradeInstallDone(ctx context.Context, tx *gorm.DB, task *model.Storag
 	}
 	if info.Version != "" && storageVersionLess(daemons, info.Version) {
 		return fmt.Errorf("the image %s runs Ceph %s, older than the %s the cluster runs", image, daemons, info.Version)
+	}
+	if err := cephClientVersionCheck(tx, clients, daemons); err != nil {
+		return err
 	}
 	p := storageUpgradeOf(task)
 	p.Version, p.Image = daemons, image
