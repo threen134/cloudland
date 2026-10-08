@@ -2,8 +2,10 @@
 # Find the claimed disks of a cluster on this host by their stable id and check them right before they are written
 # (shared-storage-design.md §6.4): serial, WWN and size as recorded when they were claimed, not a system disk, not
 # mounted, nothing on them (or wiped, when the admin chose that). Input: {"cluster_uuid", "kind", "disks":
-# [{"id", "serial", "wwn", "size_bytes", "wipe"}]}. Result: {"disks": [{"id", "path", "name"}]}: path is the device
-# the storage uses (the backend may put the disk under something first), name the kernel name of the disk
+# [{"id", "serial", "wwn", "size_bytes", "wipe", "in_use"}]}: "in_use" is a disk that holds data of the cluster
+# already, or a shared LUN another host checks: its identity is checked, its emptiness is not and it is never wiped.
+# Result: {"disks": [{"id", "path", "name"}]}: path is the device the storage uses (the backend may put the disk under
+# something first), name the kernel name of the disk
 
 cd $(dirname $0)
 source ../../cloudrc
@@ -13,7 +15,7 @@ STC_SCRIPT=$(readlink -f $0)
 
 function stc_main()
 {
-    local input uuid kind row id serial wwn size wipe path name claimed out="[]" ids=() sys
+    local input uuid kind row id serial wwn size wipe inuse path name claimed out="[]" ids=() sys
     input=$(cat)
     uuid=$(jq -r .cluster_uuid <<<"$input")
     kind=$(jq -r .kind <<<"$input")
@@ -27,6 +29,7 @@ function stc_main()
         wwn=$(jq -r '.wwn // ""' <<<"$row")
         size=$(jq -r '.size_bytes // 0' <<<"$row")
         wipe=$(jq -r '.wipe // false' <<<"$row")
+        inuse=$(jq -r '.in_use == true' <<<"$row")
         disk_identity "$id" "$serial" "$wwn" "$size" || stc_fail "$identity_error"
         path=$identity_path
         grep -qx "$(basename $path)" <<<"$sys" && stc_fail "$id ($path) holds the system"
@@ -34,7 +37,9 @@ function stc_main()
         # A disk checked clean by an earlier run of this cluster's task may hold its data by now (an NSD written
         # since): the identity still has to match, the emptiness does not
         claimed=$run_dir/storage/$uuid/claimed-$(echo -n "$id" | md5sum | cut -c1-16)
-        if [ -f $claimed ]; then
+        if [ "$inuse" = "true" ]; then
+            echo "$id ($path) holds data of the cluster or is checked by another host: identity only"
+        elif [ -f $claimed ]; then
             echo "$id ($path) was checked by an earlier run of this cluster"
         elif [ -n "$(wipefs -n $path 2>/dev/null)" ] || [ $(lsblk -nlo NAME $path | wc -l) -gt 1 ]; then
             if [ "$wipe" = "true" ]; then

@@ -623,6 +623,7 @@ report_lb_health
 recover_vpn_gateway
 check_vpn_process
 report_vpn_status
+image_import_report
 sync_delayed_job
 check_system_router
 #probe_arp >/dev/null 2>&1

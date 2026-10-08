@@ -14,7 +14,9 @@ local_pool_list=$(local_pools)
 types="disk"
 [ "$storage_allow_loop" = "true" ] && types="disk loop"
 items=""
-for dev in $(lsblk -dnpo NAME,TYPE,RM | awk -v t=" $types " 'index(t, " " $2 " ") && $3 == "0" {print $1}'); do
+# The disks, and the multipath devices of the shared LUNs of a SAN (their paths are disks too, in use by them)
+for dev in $(lsblk -dnpo NAME,TYPE,RM | awk -v t=" $types " 'index(t, " " $2 " ") && $3 == "0" {print $1}') \
+    $(lsblk -nrpo NAME,TYPE | awk '$2 == "mpath" {print $1}' | sort -u); do
     # A loop device without a backing file is not a disk
     if [[ "$(basename $dev)" == loop* ]] && [ -z "$(losetup -nO BACK-FILE $dev 2>/dev/null | xargs)" ]; then
         continue

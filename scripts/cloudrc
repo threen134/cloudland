@@ -364,7 +364,12 @@ function ensure_image_cached()
         trap 'rm -f "$partial"' EXIT INT TERM
         # 内置 MinIO 走 HTTP、外部 S3 走 HTTPS（均验证证书，无 -k）
         # --retry 5 --retry-max-time 600：建连阶段的重试窗口
-        curl -s -f --retry 5 --retry-max-time 600 -o "$partial" "$download_url"
+        # With image_fetch_progress set, curl's progress bar goes to that file (the progress of an image import)
+        if [ -n "$image_fetch_progress" ]; then
+            curl -f -# --retry 5 --retry-max-time 600 -o "$partial" "$download_url" 2>"$image_fetch_progress"
+        else
+            curl -s -f --retry 5 --retry-max-time 600 -o "$partial" "$download_url"
+        fi
         if [ $? -ne 0 ] || [ ! -s "$partial" ]; then
             exit 1
         fi

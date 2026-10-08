@@ -44,7 +44,8 @@ function backend_disks_resolved()
             case "$id" in
                 loop:*) echo "d=\$(losetup -j '${id#loop:}' -nO NAME | head -1); [ -n \"\$d\" ] && echo \"\${d#/dev/} generic\"" ;;
                 dev:*) echo "echo '${id#dev:} generic'" ;;
-                *) echo "d=\$(readlink -f '/dev/disk/by-id/$id'); [ -b \"\$d\" ] && echo \"\${d#/dev/} generic\"" ;;
+                # A multipath device (dm-N) is of type dmm, so GPFS uses it and not one of its paths (§7.10)
+                *) echo "d=\$(readlink -f '/dev/disk/by-id/$id'); t=generic; case \"\$d\" in /dev/dm-*) t=dmm ;; esac; [ -b \"\$d\" ] && echo \"\${d#/dev/} \$t\"" ;;
             esac
         done
         echo "return 0"
@@ -153,6 +154,51 @@ function gpfs_y()
     awk -F: -v sec="$1" -v fld="$2" '
         $2 == sec && $3 == "HEADER" { for (i = 1; i <= NF; i++) if ($i == fld) col = i; next }
         $2 == sec && col { print $col }'
+}
+
+# backend_readiness <json>: the readiness of a recovery group server of the erasure code layout, items of the precheck
+# (shared-storage-design.md §2.3, §7.9). {"min_mem_mib", "min_cores", "min_link_mbps", "bare_metal", "strict"}. The
+# memory the pagepool needs fails (mmvdisk sets the pagepool to 80% of the memory at most); what IBM supports only
+# (cores, the speed of the link to the other members, bare metal) warns, or fails when the cluster is strict. Uses
+# item and $input (the peers) of stc_precheck.sh
+function backend_readiness()
+{
+    local in=$1 level=warn mem min cores peer dev speed virt
+    [ "$(jq -r '.strict // false' <<<"$in")" = true ] && level=fail
+    mem=$(awk '/^MemTotal:/ {print int($2 / 1024); exit}' /proc/meminfo)
+    min=$(jq -r '.min_mem_mib // 0' <<<"$in")
+    if [ "${mem:-0}" -lt "$min" ]; then
+        item ece_memory fail "$mem MiB of memory; the pagepool of a recovery group server needs at least $min MiB"
+    else
+        item ece_memory ok "$mem MiB"
+    fi
+    cores=$(nproc)
+    min=$(jq -r '.min_cores // 0' <<<"$in")
+    if [ "$cores" -lt "$min" ]; then
+        item ece_cores $level "$cores cores; IBM supports recovery group servers with at least $min"
+    else
+        item ece_cores ok "$cores cores"
+    fi
+    # The link the other members are reached on (a bond reports the sum of its links)
+    peer=$(jq -r '.peers[0] // ""' <<<"$input")
+    dev=$([ -n "$peer" ] && ip route get "$peer" 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}')
+    speed=$([ -n "$dev" ] && cat /sys/class/net/$dev/speed 2>/dev/null)
+    min=$(jq -r '.min_link_mbps // 0' <<<"$in")
+    if ! [[ "$speed" =~ ^[0-9]+$ ]] || [ "$speed" -le 0 ]; then
+        item ece_network $level "the speed of the link to the other members (${dev:-no link}) is not known; IBM supports $min Mbit/s and more"
+    elif [ "$speed" -lt "$min" ]; then
+        item ece_network $level "$dev runs at $speed Mbit/s; IBM supports recovery group servers with $min Mbit/s and more"
+    else
+        item ece_network ok "$dev at $speed Mbit/s"
+    fi
+    if [ "$(jq -r '.bare_metal // false' <<<"$in")" = true ]; then
+        virt=$(systemd-detect-virt 2>/dev/null)
+        if [ -n "$virt" ] && [ "$virt" != none ]; then
+            item ece_bare_metal $level "this host is a virtual machine ($virt); IBM supports bare metal recovery group servers only"
+        else
+            item ece_bare_metal ok "bare metal"
+        fi
+    fi
 }
 
 # gpfs_y_rows <section> <field>...: per line of a section of the -Y output on stdin, the fields asked for, tab
@@ -276,6 +322,33 @@ function backend_health()
 # only read as rates) and the state of each mmhealth component of this host. The file systems come from mmlsfs and
 # are kept in gpfs_mounts for the times GPFS does not answer: a file system that is not mounted is not in
 # /proc/mounts at all.
+# gpfs_pool_metrics <cluster uuid> <fs> <mount point>: the capacity of each GPFS storage pool of a mounted file system
+# (mmdf, sizes in KiB), and the inodes of the filesets of the CloudLand pools in it (the pools of the cluster whose
+# root is a junction under the mount point: used from the fileset quota, the maximum of the inode space)
+function gpfs_pool_metrics()
+{
+    local l="cluster=\"$1\"" fs=$2 mnt=$3 pools fset used max pool
+    timeout 30 $gpfs_bin/mmdf $fs -Y 2>/dev/null | gpfs_y_rows poolTotal poolName poolSize freeBlocks |
+        awk -F'\t' -v l="$l,fs=\"$fs\"" '$1 ~ /^[A-Za-z0-9_]+$/ && $2 ~ /^[0-9]+$/ {
+            printf "cloudland_gpfs_pool_total_bytes{%s,gpfs_pool=\"%s\"} %.0f\n", l, $1, $2 * 1024
+            printf "cloudland_gpfs_pool_free_bytes{%s,gpfs_pool=\"%s\"} %.0f\n", l, $1, $3 * 1024 }'
+    pools=$(jq -r --arg m "$mnt/" '.[]? | select(.driver == "gpfs" and (.root | startswith($m))) | "\(.pool)\t\(.root)"' \
+        $run_dir/storage/$1/shared_pools.json 2>/dev/null)
+    [ -n "$pools" ] || return 0
+    local quota sets
+    quota=$(timeout 30 $gpfs_bin/mmrepquota -j $fs -Y 2>/dev/null | gpfs_y_rows "" name filesUsage)
+    sets=$(timeout 30 $gpfs_bin/mmlsfileset $fs -L -Y 2>/dev/null | gpfs_y_rows "" filesetName maxInodes)
+    while IFS=$'\t' read -r pool root; do
+        valid_uuid "$pool" || continue
+        fset=${root##*/}
+        [[ "$fset" =~ ^[A-Za-z0-9_]+$ ]] || continue
+        used=$(awk -F'\t' -v f="$fset" '$1 == f {print $2; exit}' <<<"$quota")
+        max=$(awk -F'\t' -v f="$fset" '$1 == f {print $2; exit}' <<<"$sets")
+        [[ "$used" =~ ^[0-9]+$ ]] && echo "cloudland_gpfs_fileset_inodes_used{$l,pool=\"$pool\"} $used"
+        [[ "$max" =~ ^[0-9]+$ ]] && echo "cloudland_gpfs_fileset_inodes_max{$l,pool=\"$pool\"} $max"
+    done <<<"$pools"
+}
+
 function backend_metrics()
 {
     local l="cluster=\"$1\"" dir=$run_dir/storage/$1 state list fs mnt mounted
@@ -303,6 +376,7 @@ function backend_metrics()
         timeout 10 df -B1 --output=size,avail "$mnt" 2>/dev/null | awk -v l="$l,fs=\"$fs\"" 'NR == 2 {
             print "cloudland_gpfs_filesystem_total_bytes{" l "} " $1
             print "cloudland_gpfs_filesystem_free_bytes{" l "} " $2 }'
+        gpfs_pool_metrics "$1" "$fs" "$mnt"
     done <<<"$list"
     [ "$state" = active ] || return 0
     # Pairs of _name_ value: _fs_ the file system, _br_ / _bw_ bytes read / written, _rdc_ / _wc_ read / write calls

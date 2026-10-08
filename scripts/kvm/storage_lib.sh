@@ -145,15 +145,17 @@ function local_pools()
 # Preference: wwn-* > nvme-eui.* > ata-*/scsi-*/nvme-*; loop devices (test switch only) use their backing file
 function disk_stable_id()
 {
-    local dev=$1 name link target best="" rank=9 r
+    local dev=$1 name link target best="" rank=9 r real
     name=$(basename $dev)
     if [[ "$name" == loop* ]]; then
         echo "loop:$(losetup -nO BACK-FILE $dev 2>/dev/null | xargs)"
         return
     fi
+    # A multipath device is /dev/mapper/<name>, its links point at /dev/dm-N
+    real=$(readlink -f $dev)
     for link in /dev/disk/by-id/*; do
         target=$(readlink -f $link)
-        [ "$target" = "/dev/$name" ] || continue
+        [ "$target" = "$real" ] || continue
         case $(basename $link) in
             wwn-*) r=1 ;;
             nvme-eui.*) r=2 ;;
@@ -289,7 +291,13 @@ function classify_disk()
     dup=0
     [ -n "$wwn" ] && [ $(lsblk -dno WWN 2>/dev/null | grep -cx "$wwn") -gt 1 ] && dup=1
     holders=$(lsblk -nlo TYPE $dev 2>/dev/null | tail -n +2 | sort -u | xargs)
-    if [ "$tran" = "fc" ] || [ "$tran" = "iscsi" ] || [[ " $holders " == *" mpath "* ]] || [ $dup -eq 1 ]; then
+    # A path of a multipath device is the multipath device's: never claimed by itself (shared-storage-design.md §7.10)
+    if [[ " $holders " == *" mpath "* ]]; then
+        disk_state=in_use
+        disk_detail="a path of multipath device $(lsblk -nlo NAME,TYPE $dev 2>/dev/null | awk '$2 == "mpath" {print $1; exit}')"
+        return
+    fi
+    if [ "$(lsblk -dno TYPE $dev 2>/dev/null)" = mpath ] || [ "$tran" = "fc" ] || [ "$tran" = "iscsi" ] || [ $dup -eq 1 ]; then
         disk_state=shared
         disk_detail="may be a shared LUN (${tran:-multipath})"
         return
@@ -614,11 +622,11 @@ function drv_load()
     drv_init "$json"
 }
 
-# shared_pools_apply <cluster uuid> <json array>: keep the pool list of a cluster and stop the probes of the pools no
-# list holds any more. Sets guard_error on failure
+# shared_pools_apply <cluster uuid> <json array> [remote]: keep the pool list of a cluster and stop the probes of the
+# pools no list holds any more. Sets guard_error on failure
 function shared_pools_apply()
 {
-    local cluster=$1 list=$2 dir
+    local cluster=$1 list=$2 remote=$3 dir
     guard_error=""
     if ! valid_uuid "$cluster"; then
         guard_error="invalid cluster uuid $cluster"
@@ -631,6 +639,13 @@ function shared_pools_apply()
     dir=$shared_storage_dir/$cluster
     mkdir -p $dir
     printf '%s\n' "$list" >$dir/shared_pools.json.tmp && mv -f $dir/shared_pools.json.tmp $dir/shared_pools.json
+    # The pools of a cluster whose file system this host's own cluster mounts (a remote mount): the owner's members
+    # report the owner, this host only uses the pools
+    if [ "$remote" = "remote" ]; then
+        touch $dir/remote
+    else
+        rm -f $dir/remote
+    fi
     shared_pools_prune
 }
 
@@ -789,4 +804,90 @@ function nvram_undefine_flag()
         $image_dir/* | $cache_dir/* | $pools_dir/*) echo "--nvram" ;;
         *) echo "--keep-nvram" ;;
     esac
+}
+
+# ---- imports of image copies into shared pools (shared-storage-design.md §9.6) ----
+# An import job (async_job/import_image_shared.sh) holds one of $image_import_concurrency slots of this host (2 by
+# default, cloudrc.local can change it) while it fetches and writes, the next ones wait for one. It records its phase
+# in $image_import_dir/<copy id>: "<phase> <progress file or -> <pid of the job>"; the heartbeat reads the progress
+# file (curl's bar while fetching, qemu-img convert -p while writing) and reports image_storage_progress.
+
+image_import_dir=$run_dir/image_imports
+
+# image_import_phase <copy id> <wait|download|write> [<progress file>]: record the phase of this job
+function image_import_phase()
+{
+    mkdir -p $image_import_dir
+    echo "$2 ${3:--} $$" >$image_import_dir/$1.tmp && mv -f $image_import_dir/$1.tmp $image_import_dir/$1
+}
+
+# image_import_done <copy id>: the job ends, its phase and progress files go
+function image_import_done()
+{
+    rm -f $image_import_dir/$1 $image_import_dir/$1.tmp $image_import_dir/$1.dl $image_import_dir/$1.wr $image_import_dir/.$1.reported
+}
+
+# image_import_slot: hold one of the import slots of this host for the rest of the job (the descriptor stays open in
+# image_import_fd); waits while all are taken
+function image_import_slot()
+{
+    local slots=${image_import_concurrency:-2} i fd
+    [[ "$slots" =~ ^[1-9][0-9]*$ ]] || slots=2
+    while :; do
+        for i in $(seq 1 $slots); do
+            exec {fd}>/var/lock/cloudland-image-import-$i.lock
+            if flock -n $fd; then
+                image_import_fd=$fd
+                return 0
+            fi
+            exec {fd}>&-
+        done
+        sleep ${image_import_wait:-5}
+    done
+}
+
+# image_import_percent <progress file>: the last percent in it: "(45.00/100%)" of qemu-img -p, "### 45.3%" of curl
+function image_import_percent()
+{
+    local line
+    [ -f "$1" ] || { echo 0; return; }
+    line=$(tr '\r' '\n' <"$1" | grep '%' | tail -1)
+    if [[ "$line" =~ ([0-9]+)(\.[0-9]+)?/100% ]]; then
+        echo "${BASH_REMATCH[1]}"
+    elif [[ "$line" =~ ([0-9]+)(\.[0-9]+)?% ]]; then
+        echo "${BASH_REMATCH[1]}"
+    else
+        echo 0
+    fi
+}
+
+# image_import_report: the progress of the imports running on this host, for the heartbeat. A phase is reported at
+# once when it changes, its percent at most every 10 seconds, and an unchanged one every 10 minutes (clapi counts the
+# import timeout from the last report: a job waiting for a slot or on a slow download is alive); the record of a job
+# that is gone (killed, a reboot) is dropped
+function image_import_report()
+{
+    local f id phase file pid pct now last lphase lpct ltime age
+    [ -d "$image_import_dir" ] || return 0
+    now=$(date +%s)
+    for f in $image_import_dir/*; do
+        id=${f##*/}
+        [[ "$id" =~ ^[0-9]+$ ]] || continue
+        read -r phase file pid <"$f" 2>/dev/null || continue
+        if ! [ -n "$pid" ] || ! [ -r /proc/$pid/cmdline ] || ! tr '\0' ' ' </proc/$pid/cmdline | grep -q "import_image_shared.sh $id "; then
+            image_import_done $id
+            continue
+        fi
+        pct=0
+        [ "$file" != "-" ] && pct=$(image_import_percent "$file")
+        # Reset first: read does not run when the file is not there yet, and the values of the import before would stay
+        lphase="" lpct="" ltime=0
+        read -r lphase lpct ltime 2>/dev/null <$image_import_dir/.$id.reported
+        age=$((now - ${ltime:-0}))
+        if [ "$phase" = "$lphase" ] && [ $age -lt 600 ] && { [ "$pct" = "$lpct" ] || [ $age -lt 10 ]; }; then
+            continue
+        fi
+        echo "$phase $pct $now" >$image_import_dir/.$id.reported
+        echo "|:-COMMAND-:| image_storage_progress '$id' '$phase' '$pct'"
+    done
 }

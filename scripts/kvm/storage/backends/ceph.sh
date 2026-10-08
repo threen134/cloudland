@@ -39,6 +39,31 @@ function ceph_admin_ready()
     [ -f /var/lib/ceph/$1/config/ceph.client.admin.keyring ] && CEPH_TIMEOUT=30 ceph_admin $1 fsid >/dev/null 2>&1
 }
 
+# backend_metrics <cluster uuid> <managed|external>: the curves of an imported cluster, whose mgr CloudLand does not
+# scrape (a managed one is scraped from its mgr, nothing here): read as the client user of the host, which may run
+# ceph -s and ceph df (shared-storage-design.md §14.3). Capacity, OSDs, and the counters of all pools summed
+function backend_metrics()
+{
+    local uuid=$1 mode=$2 l="cluster=\"$1\"" conf user status df
+    [ "$mode" = external ] || return 0
+    conf=$(ceph_client_conf $uuid)
+    [ -f "$conf" ] && command -v ceph >/dev/null || return 0
+    user=$(sed -n 's/^\[client\.\([A-Za-z0-9][A-Za-z0-9_.-]*\)\]$/\1/p' "$conf" | head -1)
+    [ -n "$user" ] || return 0
+    status=$(timeout 20 ceph --conf "$conf" --id "$user" -s -f json 2>/dev/null) || return 0
+    jq -r --arg l "$l" '
+        "cloudland_ceph_total_bytes{\($l)} \(.pgmap.bytes_total // 0)",
+        "cloudland_ceph_used_bytes{\($l)} \(.pgmap.bytes_used // 0)",
+        "cloudland_ceph_osds_up{\($l)} \(.osdmap.num_up_osds // .osdmap.osdmap.num_up_osds // 0)",
+        "cloudland_ceph_osds_in{\($l)} \(.osdmap.num_in_osds // .osdmap.osdmap.num_in_osds // 0)"' <<<"$status" 2>/dev/null
+    df=$(timeout 20 ceph --conf "$conf" --id "$user" df detail -f json 2>/dev/null) || return 0
+    jq -r --arg l "$l" '[.pools[]?.stats] |
+        "cloudland_ceph_read_bytes_total{\($l)} \(map(.rd_bytes // 0) | add // 0)",
+        "cloudland_ceph_write_bytes_total{\($l)} \(map(.wr_bytes // 0) | add // 0)",
+        "cloudland_ceph_reads_total{\($l)} \(map(.rd // 0) | add // 0)",
+        "cloudland_ceph_writes_total{\($l)} \(map(.wr // 0) | add // 0)"' <<<"$df" 2>/dev/null
+}
+
 function ceph_client_conf()
 {
     echo $ceph_conf_dir/$1.conf

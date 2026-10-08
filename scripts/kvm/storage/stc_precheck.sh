@@ -1,7 +1,8 @@
 #!/bin/bash
 # Check a host before it joins a storage cluster (shared-storage-design.md §6.5). Nothing is installed or changed.
 # Input (services/storage_cluster.go storagePrecheckInput): kind, cluster_uuid, roles, disks, peers, ports, support,
-# allow_unsupported, need_headers, need_container, data_dirs, reserve_mb.
+# allow_unsupported, need_headers, need_container, data_dirs, reserve_mb, readiness (checks of the kind: the
+# backend_readiness hook of backends/<kind>.sh adds its items).
 # Result: {"items": [{"name", "status": "ok|warn|fail", "detail"}], "facts": {...}}. The step fails when an item fails.
 
 cd $(dirname $0)
@@ -230,6 +231,14 @@ function check_existing()
     fi
 }
 
+# The checks of the kind for the roles of this host, when clapi asks for them (gpfs: a recovery group server)
+function check_readiness()
+{
+    [ "$(jq -c '.readiness // null' <<<"$input")" != null ] || return 0
+    backend_load "$kind" && declare -F backend_readiness >/dev/null || return 0
+    backend_readiness "$(jq -c .readiness <<<"$input")"
+}
+
 function stc_main()
 {
     input=$(cat)
@@ -245,11 +254,13 @@ function stc_main()
     [ "$(jq -r .need_container <<<"$input")" = "true" ] && check_container
     check_hostname
     check_existing
+    check_readiness
     local facts host_key
     host_key=$(cat /etc/ssh/ssh_host_ed25519_key.pub 2>/dev/null | awk '{print $1" "$2}')
     facts=$(jq -cn --arg h "$(hostname)" --arg k "$(uname -r)" --arg o "$(. /etc/os-release && echo "$ID $VERSION_ID")" \
         --arg key "$host_key" --arg ips "$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | xargs)" \
-        '{hostname: $h, kernel: $k, os: $o, host_key: $key, addresses: ($ips | split(" "))}')
+        --argjson mem "$(awk '/^MemTotal:/ {print int($2 / 1024); exit}' /proc/meminfo)" --argjson cpus "$(nproc)" \
+        '{hostname: $h, kernel: $k, os: $o, host_key: $key, addresses: ($ips | split(" ")), mem_mib: $mem, cpus: $cpus}')
     stc_result "$(printf '%s' "$items" | jq -cs --argjson f "$facts" '{items: ., facts: $f}')"
     local failed
     failed=$(printf '%s' "$items" | jq -rs '[.[] | select(.status == "fail") | .name] | join(", ")')

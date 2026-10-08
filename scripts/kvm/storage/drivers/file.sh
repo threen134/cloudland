@@ -205,7 +205,8 @@ function drv_import_image()
     local src=$1 fmt=$2 base=$3 tmp lock i rc got=0
     tmp=$drv_root/tmp/$(basename "$base" .qcow2).${NODE_ID:-0}-$$.import
     lock=$drv_root/tmp/$(basename "$base" .qcow2).place
-    if ! qemu-img convert -q -f "$fmt" -O qcow2 -o cluster_size=2M "$src" "$tmp" >/dev/null 2>&1; then
+    # With drv_progress set the percent goes there (qemu-img -p), for the progress of an import
+    if ! qemu-img convert $([ -n "$drv_progress" ] && echo -p || echo -q) -f "$fmt" -O qcow2 -o cluster_size=2M "$src" "$tmp"         >"${drv_progress:-/dev/null}" 2>&1; then
         rm -f "$tmp"
         guard_error="writing the image into $tmp failed"
         return 1

@@ -5,11 +5,14 @@
 #              make the file system on the NSDs and mount it on every node. The maximum replicas are always 3, so
 #              copies can be added later without making the file system again
 #   add:       {"cluster_uuid", "fs_name", "nsds": [...]}   put more NSDs into the file system (no rebalancing)
-#   remove:    {"cluster_uuid", "fs_name", "nsds": [name], "damaged"}   take NSDs out (their data moves to the other
-#              disks first; damaged: the disks are gone, the other copies stay) and delete them
+#   remove:    {"cluster_uuid", "fs_name", "groups": [{"fs_name", "nsds": [name]}], "damaged"}   take NSDs out of
+#              their file system (their data moves to the other disks first; damaged: the disks are gone, the other
+#              copies stay) and delete them; a group for each file system the disks leaving are in
 #   rebalance: {"cluster_uuid", "fs_name"}   spread the data over all disks (mmrestripefs -b), long and I/O heavy
 #   restore:   {"cluster_uuid", "fs_name"}   give the files that lost a copy with a failed disk their copies back
 #              (mmrestripefs -r), after the disk was replaced
+#   delete:    {"cluster_uuid", "fs_name", "mount_point", "nsds": [name]}   unmount the file system everywhere, delete it
+#              and its NSDs (a file system or an NSD already gone is fine: an aborted making leaves either)
 
 cd $(dirname $0)
 source ../../cloudrc
@@ -98,7 +101,62 @@ function do_remove()
             echo "mmdelnsd could not clear the disks, their NSDs are gone from the cluster"
         fi
     fi
+}
+
+# do_remove_groups: the disks leaving may be in more than one file system (a host leaving with disks in two): each
+# group of NSDs leaves its own file system ("groups": [{"fs_name", "nsds"}]); without groups, "nsds" leave "fs_name"
+function do_remove_groups()
+{
+    local input=$1 fs=$2 group gfs
+    if [ "$(jq -r '(.groups // []) | length' <<<"$input")" -gt 0 ]; then
+        while read -r group; do
+            gfs=$(jq -r .fs_name <<<"$group")
+            [[ "$gfs" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] || stc_fail "invalid file system name $gfs"
+            $gpfs_bin/mmlsfs $gfs >/dev/null 2>&1 || stc_fail "file system $gfs not found"
+            do_remove "$(jq -c --argjson g "$group" '. + {nsds: $g.nsds}' <<<"$input")" $gfs
+        done < <(jq -c '.groups[]' <<<"$input")
+    else
+        $gpfs_bin/mmlsfs $fs >/dev/null 2>&1 || stc_fail "file system $fs not found"
+        do_remove "$input" $fs
+    fi
     stc_result '{"removed": true}'
+}
+
+function do_delete()
+{
+    local input=$1 fs=$2 mount list="" name left i
+    mount=$(jq -r .mount_point <<<"$input")
+    [[ "$mount" =~ ^/gpfs/[A-Za-z0-9_]+$ ]] || stc_fail "invalid mount point"
+    if $gpfs_bin/mmlsfs $fs >/dev/null 2>&1; then
+        stc_progress 10 "unmounting $fs on every node"
+        $gpfs_bin/mmumount $fs -a -f >/dev/null 2>&1
+        for i in $(seq 1 60); do
+            [ -z "$($gpfs_bin/mmlsmount $fs -L -Y 2>/dev/null | gpfs_y "" nodeIP | grep .)" ] && break
+            stc_progress 20 "waiting for the nodes to unmount $fs"
+            sleep 5
+        done
+        [ -z "$($gpfs_bin/mmlsmount $fs -L -Y 2>/dev/null | gpfs_y "" nodeIP | grep .)" ] || stc_fail "$fs is still mounted on some node"
+        stc_progress 40 "deleting file system $fs"
+        $gpfs_bin/mmdelfs $fs || stc_fail "mmdelfs $fs failed"
+    else
+        echo "file system $fs is gone already"
+    fi
+    for name in $(jq -r '.nsds[]' <<<"$input"); do
+        [[ "$name" =~ ^[A-Za-z0-9_]+$ ]] || stc_fail "invalid NSD name $name"
+        gpfs_nsd_exists $name && list="${list:+$list;}$name"
+    done
+    if [ -n "$list" ]; then
+        stc_progress 70 "deleting the NSDs $list"
+        if ! $gpfs_bin/mmdelnsd "$list"; then
+            left=""
+            for name in ${list//;/ }; do
+                gpfs_nsd_exists $name && left="$left $name"
+            done
+            [ -z "$left" ] || stc_fail "mmdelnsd failed for$left"
+        fi
+    fi
+    rmdir "$mount" 2>/dev/null
+    stc_result '{"deleted": true}'
 }
 
 function do_rebalance()
@@ -132,7 +190,17 @@ function stc_main()
     [[ "$fs" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] || stc_fail "invalid file system name"
     case $action in
         create) ;;
-        add|remove|rebalance|restore)
+        delete)
+            stc_lock "gpfs-$uuid"
+            do_delete "$input" $fs
+            return
+            ;;
+        remove)
+            stc_lock "gpfs-$uuid"
+            do_remove_groups "$input" $fs
+            return
+            ;;
+        add|rebalance|restore)
             stc_lock "gpfs-$uuid"
             $gpfs_bin/mmlsfs $fs >/dev/null 2>&1 || stc_fail "file system $fs not found"
             do_$action "$input" $fs

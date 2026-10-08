@@ -26,6 +26,11 @@ function stc_main()
     fi
     for row in $(jq -c '.wipe[]?' <<<"$input"); do
         id=$(jq -r .id <<<"$row")
+        # A shared LUN another host keeps serving, or wipes (shared-storage-design.md §7.10)
+        if [ "$(jq -r '.shared == true' <<<"$row")" = true ]; then
+            echo "not wiping $id: a shared LUN another host keeps or wipes"
+            continue
+        fi
         if ! disk_identity "$id" "$(jq -r '.serial // ""' <<<"$row")" "$(jq -r '.wwn // ""' <<<"$row")" "$(jq -r '.size_bytes // 0' <<<"$row")"; then
             # Gone or another disk now: never wipe what is not the claimed disk
             echo "not wiping: $identity_error"

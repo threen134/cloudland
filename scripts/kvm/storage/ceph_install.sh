@@ -5,7 +5,9 @@
 # daemons must not be newer than the client libraries of the hosts (a newer release writes keys an older client can
 # not read). A cephadm host also gets the drop-ins of the units of the daemons: the order of their stop, and their
 # protection when the memory runs out (oom: what ceph_oom_protect.sh gives the containers, §6.7.2).
-# Input: {"cluster_uuid", "image", "orch", "oom": {"adj", "mon_bytes", "mgr_bytes", "osd_bytes"}}.
+# A cephadm host logs in to the private registry of the image first when the cluster has one (registry).
+# Input: {"cluster_uuid", "image", "orch", "oom": {"adj", "mon_bytes", "mgr_bytes", "osd_bytes"},
+#         "registry": {"url", "username", "password"}}.
 # Result: {"version", "image", "image_version"} (the release of the image; both empty on a client host)
 
 cd $(dirname $0)
@@ -55,6 +57,17 @@ function stc_main()
     read -r adj mon mgr osd < <(jq -r '.oom // {} | "\(.adj) \(.mon_bytes) \(.mgr_bytes) \(.osd_bytes)"' <<<"$input")
     ceph_unit_oom $uuid "$adj" "$mon" "$mgr" "$osd" || stc_fail "protecting the daemons of the cluster from the OOM killer failed (oom: $adj $mon $mgr $osd)"
     [ -n "$image" ] || image=quay.io/ceph/ceph:v$version
+    local reg user
+    reg=$(jq -r '.registry.url // empty' <<<"$input")
+    if [ -n "$reg" ]; then
+        user=$(jq -r '.registry.username // empty' <<<"$input")
+        [[ "$reg" =~ ^[a-z0-9]([a-z0-9.-]{0,252}[a-z0-9])?(:[0-9]{2,5})?$ ]] || stc_fail "invalid registry $reg"
+        [[ "$image" == "$reg/"* ]] || stc_fail "the image $image is not from registry $reg"
+        stc_progress 30 "logging in to $reg as $user"
+        # The password goes through stdin only
+        jq -r '.registry.password' <<<"$input" | docker login "$reg" -u "$user" --password-stdin >/dev/null ||
+            stc_fail "docker login $reg as $user failed"
+    fi
     stc_progress 40 "pulling $image"
     for i in 1 2 3; do
         timeout 1800 docker pull -q "$image" && break

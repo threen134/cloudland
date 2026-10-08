@@ -9,6 +9,10 @@
 #      again for the running kernel (the modules of the release before do not load with the new one)
 #   3. GPFS starts (mmstartup) and is active, the file systems mount, the disks that went down while it was stopped are
 #      started (mmchdisk start, which also brings their data up to date) and every disk is up before the next host goes
+# A recovery group server of the erasure code layout (input "ece": {"recovery_group"}) is suspended in the group
+# instead (mmvdisk recoverygroup change --suspend stops GPFS and suspends its pdisks, for an hour before the group
+# rebuilds their data elsewhere) and resumed afterwards; it goes only when no pdisk of the group needs attention and no
+# declustered array rebuilds, and the next host goes only once every pdisk is back (§7.9).
 # A host on the new release already (a retry) only does 3. Result: {"version"}
 
 cd $(dirname $0)
@@ -61,6 +65,53 @@ function local_active()
     [ "$(timeout 30 $gpfs_bin/mmgetstate -Y 2>/dev/null | gpfs_y "" state | head -1)" = "active" ]
 }
 
+# local_node: the GPFS name of this node (mmgetstate answers with it when GPFS is down too)
+function local_node()
+{
+    local me
+    me=$(timeout 30 $gpfs_bin/mmgetstate -Y 2>/dev/null | gpfs_y "" nodeName | head -1)
+    echo ${me:-$(hostname)}
+}
+
+# rg_not_ready <rg>: what keeps a server of the recovery group from going now: pdisks that need attention, arrays
+# that rebuild (a strip may be at its fault tolerance already), or a state that can not be read (a query that fails or
+# times out is no answer: taking a second server out while a strip is at its fault tolerance loses data); nothing when
+# it may go. mmvdisk exits 0 with no rows when every pdisk is ok
+function rg_not_ready()
+{
+    local rg=$1 out bad
+    if ! out=$(timeout 120 $gpfs_bin/mmvdisk pdisk list --recovery-group $rg --not-ok -Y </dev/null 2>/dev/null); then
+        echo "the pdisks of $rg can not be read"
+        return 0
+    fi
+    bad=$(gpfs_y_rows pdiskSummary pdiskName state <<<"$out" | awk -F'\t' '$1 != "" {print $1 " (" $2 ")"}' | xargs)
+    [ -n "$bad" ] && echo "pdisks not ok: $bad"
+    if ! out=$(timeout 120 $gpfs_bin/mmvdisk recoverygroup list --recovery-group $rg --declustered-array -Y </dev/null 2>/dev/null); then
+        echo "the declustered arrays of $rg can not be read"
+        return 0
+    fi
+    bad=$(gpfs_y_rows rgDeclusteredArray declusteredArray backgroundTask <<<"$out" | awk -F'\t' 'tolower($2) ~ /rebuild/ {print $1 " (" $2 ")"}' | xargs)
+    [ -n "$bad" ] && echo "rebuilding: $bad"
+    return 0
+}
+
+# rg_suspended <rg>: yes / no whether a server of the recovery group is suspended, unknown when it can not be asked
+# (mmvdisk asks the daemon: with GPFS down on this server the query fails, which is exactly when it is needed)
+function rg_suspended()
+{
+    local out flag
+    if ! out=$(timeout 120 $gpfs_bin/mmvdisk recoverygroup list -Y </dev/null 2>/dev/null); then
+        echo unknown
+        return 0
+    fi
+    flag=$(gpfs_y_rows rgSummary rgName suspendedServer <<<"$out" | awk -F'\t' -v rg="$1" '$1 == rg {print $2; exit}')
+    case "$flag" in
+        yes) echo yes ;;
+        no) echo no ;;
+        *) echo unknown ;;
+    esac
+}
+
 # move_managers: hand the file system manager and cluster manager roles of this node to another active quorum node
 # before GPFS stops here. The node that leaves is recovered only after its lease ran out (about a minute); while the
 # file system manager is the one waiting, writes that need a block stall that long on every node (TC-24 UPG-01)
@@ -94,9 +145,15 @@ function move_managers()
 
 function stc_main()
 {
-    local version have users bad fs i mp
+    local version have users bad fs i mp rg me uuid marker state
     input=$(cat)
-    valid_uuid "$(jq -r .cluster_uuid <<<"$input")" || stc_fail "invalid cluster uuid"
+    rg=$(jq -r '.ece.recovery_group // ""' <<<"$input")
+    [ -z "$rg" ] || [[ "$rg" =~ ^[A-Za-z][A-Za-z0-9_]{0,31}$ ]] || stc_fail "invalid recovery group name"
+    uuid=$(jq -r .cluster_uuid <<<"$input")
+    valid_uuid "$uuid" || stc_fail "invalid cluster uuid"
+    # Written before this server is suspended, removed once it is resumed: a retry after a failure in between resumes
+    # it although mmvdisk can not be asked here while GPFS is down (the run directory survives a reboot)
+    marker=$run_dir/storage/$uuid/rg-suspended
     for fs in $(jq -r '.filesystems[]?' <<<"$input"); do
         [[ "$fs" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] || stc_fail "invalid file system $fs"
     done
@@ -113,7 +170,22 @@ function stc_main()
             [ -z "$bad" ] || stc_fail "disks not up: $bad; stopping GPFS here now could take the only copy of some data away"
             stc_progress 10 "stopping GPFS $have"
             move_managers
-            timeout 600 $gpfs_bin/mmshutdown || stc_fail "mmshutdown failed"
+            if [ -n "$rg" ]; then
+                bad=$(rg_not_ready $rg | xargs)
+                [ -z "$bad" ] || stc_fail "recovery group $rg is not ready for a server to go: $bad"
+                me=$(local_node)
+                stc_progress 12 "suspending $me in recovery group $rg"
+                mkdir -p $(dirname $marker) && echo "$rg" >$marker
+                timeout 900 $gpfs_bin/mmvdisk recoverygroup change --recovery-group $rg --suspend -N $me --window 60 </dev/null ||
+                    stc_fail "mmvdisk recoverygroup change --suspend -N $me failed"
+                for i in $(seq 1 60); do
+                    local_active || break
+                    sleep 5
+                done
+                local_active && stc_fail "GPFS still runs here after suspending it in $rg"
+            else
+                timeout 600 $gpfs_bin/mmshutdown || stc_fail "mmshutdown failed"
+            fi
         fi
         stc_progress 20 "installing GPFS $version"
         gpfs_install_packages "$input"
@@ -125,7 +197,27 @@ function stc_main()
     fi
     if ! local_active; then
         stc_progress 70 "starting GPFS"
-        timeout 600 $gpfs_bin/mmstartup || stc_fail "mmstartup failed"
+        state=no
+        if [ -n "$rg" ]; then
+            if [ -f $marker ]; then
+                state=yes
+            else
+                state=$(rg_suspended $rg)
+            fi
+        fi
+        if [ "$state" = yes ]; then
+            # Resuming starts GPFS here and gives the group its pdisks back
+            me=$(local_node)
+            timeout 900 $gpfs_bin/mmvdisk recoverygroup change --recovery-group $rg --resume -N $me </dev/null ||
+                stc_fail "mmvdisk recoverygroup change --resume -N $me failed"
+            rm -f $marker
+        elif [ "$state" = unknown ]; then
+            # Starting GPFS on a suspended server leaves its pdisks suspended; resuming one that is not suspended
+            # is not known to be harmless either: the admin looks
+            stc_fail "whether this server is suspended in recovery group $rg can not be told here (mmvdisk recoverygroup list on an admin host shows it); resume it with mmvdisk recoverygroup change --resume or start GPFS, then retry"
+        else
+            timeout 600 $gpfs_bin/mmstartup || stc_fail "mmstartup failed"
+        fi
         for i in $(seq 1 120); do
             local_active && break
             sleep 5
@@ -149,6 +241,16 @@ function stc_main()
     done
     bad=$(disks_not_up | xargs)
     [ -z "$bad" ] || stc_fail "disks not up after the upgrade: $bad"
+    if [ -n "$rg" ]; then
+        # The next server goes only once the pdisks of this one are back and nothing rebuilds
+        for i in $(seq 1 120); do
+            bad=$(rg_not_ready $rg | xargs)
+            [ -z "$bad" ] && break
+            stc_progress 90 "waiting for recovery group $rg: $bad"
+            sleep 15
+        done
+        [ -z "$bad" ] || stc_fail "recovery group $rg is not ready 30 minutes after the upgrade: $bad"
+    fi
     stc_result "$(jq -cn --arg v "$(dpkg-query -W -f='${Version}' gpfs.base)" '{version: $v}')"
 }
 

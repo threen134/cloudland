@@ -11,9 +11,10 @@
 #             one (§13.1), online; server: it needs a server license
 #   fence:    {"cluster_uuid", "ip"}   a host that is down is expelled and can not join again (§11.2)
 #   unfence:  {"cluster_uuid", "ip"}   it may join again, once it removed what was recovered elsewhere
-#   finalize: {"cluster_uuid", "filesystems"}   once every host runs the new release (upgrade, §7.7): the cluster and the
-#             file systems take it (mmchconfig release=LATEST, mmchfs -V full); hosts of an older release can not
-#             join afterwards, there is no way back
+#   finalize: {"cluster_uuid", "filesystems", "recovery_group"}   once every host runs the new release (upgrade, §7.7):
+#             the cluster and the file systems take it (mmchconfig release=LATEST, mmchfs -V full), and the recovery
+#             group of the erasure code layout its feature version (mmvdisk recoverygroup change --version LATEST);
+#             hosts of an older release can not join afterwards, there is no way back
 # Every action checks first what is there, so it can run again after a failure.
 
 cd $(dirname $0)
@@ -412,7 +413,7 @@ function fs_format()
 
 function do_finalize()
 {
-    local fs release
+    local fs release rg have top
     stc_progress 10 "raising the cluster to the release its hosts run"
     # GPFS 5.1 and later refuse without a cipher list unless told the clear daemon traffic is what the admin wants
     timeout 900 $gpfs_bin/mmchconfig release=LATEST --accept-empty-cipherlist-security ||
@@ -427,6 +428,13 @@ function do_finalize()
         [ -n "$have" ] && [ "$have" = "$top" ] || stc_fail "$fs is at format ${have:-unknown} after mmchfs -V full, not ${top:-unknown}"
         echo "$fs is at format $have"
     done
+    rg=$(jq -r '.recovery_group // ""' <<<"$1")
+    if [ -n "$rg" ]; then
+        [[ "$rg" =~ ^[A-Za-z][A-Za-z0-9_]{0,31}$ ]] || stc_fail "invalid recovery group name"
+        stc_progress 80 "raising recovery group $rg to the feature version of the release"
+        timeout 900 $gpfs_bin/mmvdisk recoverygroup change --recovery-group $rg --version LATEST </dev/null ||
+            stc_fail "mmvdisk recoverygroup change --version LATEST failed"
+    fi
     release=$($gpfs_bin/mmlsconfig minReleaseLevel -Y 2>/dev/null | gpfs_y "" value | head -1)
     stc_result "$(jq -cn --arg r "$release" '{release: $r}')"
 }

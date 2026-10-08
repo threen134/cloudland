@@ -240,7 +240,8 @@ function drv_import_image()
     local src=$1 fmt=$2 base=$3 tmp=tmp-$3-${NODE_ID:-0}-$$
     # Out-of-order writes with 16 coroutines: in order, qemu-img waits for each replicated write before the next one
     # (a fresh thin RBD image does not care about the order; 4.6 times faster on the test cluster)
-    if ! qemu-img convert -q -W -m 16 -f "$fmt" -O raw "$src" "rbd:$drv_ceph_pool/$tmp:id=$drv_user:conf=$drv_conf" >/dev/null 2>&1; then
+    # (with drv_progress set the percent goes there, qemu-img -p, for the progress of an import)
+    if ! qemu-img convert $([ -n "$drv_progress" ] && echo -p || echo -q) -W -m 16 -f "$fmt" -O raw "$src"         "rbd:$drv_ceph_pool/$tmp:id=$drv_user:conf=$drv_conf" >"${drv_progress:-/dev/null}" 2>&1; then
         drv_drop_image "$tmp"
         guard_error="writing the image into $drv_ceph_pool/$tmp failed"
         return 1

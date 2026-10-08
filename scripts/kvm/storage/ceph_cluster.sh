@@ -1,11 +1,13 @@
 #!/bin/bash
 # Cluster level Ceph commands of a managed cluster, run on an admin host (shared-storage-design.md §8.2, §8.5, §8.6).
 # Input: {"action", "cluster_uuid", "fsid", ...}
-#   bootstrap:   {"mon_ip", "hostname", "labels", "image", "cluster_network", "single_host"}  the first mon and mgr,
-#                with the key of the cluster as the key cephadm logs in with
+#   bootstrap:   {"mon_ip", "hostname", "labels", "image", "cluster_network", "single_host", "registry"}  the first mon
+#                and mgr, with the key of the cluster as the key cephadm logs in with; registry: {"url", "username",
+#                "password"} of a private registry of the image, which cephadm keeps for its pulls
 #   add_hosts:   {"hosts": [{"hostname", "ip", "labels"}], "mons"}   every cephadm host with its labels, the daemons
 #                placed by label; waits for the mons to form their quorum
 #   configure:   {"replicas", "osd_memory_target", "cluster_network", "client_user"}   result: {"client_key", "mon_addrs"}
+#   mon_addrs:   the addresses of the mons as they are now (after mons came or went)   result: {"mon_addrs"}
 #   create_osds: {"osds": [{"key", "hostname", "device", "kname", "media"}]}           result: {"osds": [{"key", "osd_id"}]}
 #   remove_osds: {"osd_ids", "offline"}    their data moves to the other OSDs first, unless their host is gone
 #   remove_host: {"hostname", "orch_host", "osd_ids", "offline"}   drained and removed, or removed at once when gone
@@ -62,7 +64,7 @@ function wait_for()
 
 function do_bootstrap()
 {
-    local uuid dir ip name image net single labels l args pub keys
+    local uuid dir ip name image net single labels l args pub keys regjson rc
     uuid=$(jq -r .cluster_uuid <<<"$input")
     ip=$(jq -r .mon_ip <<<"$input")
     name=$(jq -r .hostname <<<"$input")
@@ -90,10 +92,19 @@ function do_bootstrap()
         args="$args --skip-monitoring-stack --skip-dashboard --skip-firewalld --skip-pull --allow-fqdn-hostname --orphan-initial-daemons"
         [ -n "$net" ] && args="$args --cluster-network $net"
         [ "$single" = "true" ] && args="$args --single-host-defaults"
+        # The login of a private registry goes in a file, never on a command line
+        regjson=""
+        if [ "$(jq -r '.registry.url // empty' <<<"$input")" != "" ]; then
+            regjson=$dir/registry.json
+            (umask 077 && jq -c '.registry | {url, username, password}' <<<"$input" >$regjson) || stc_fail "writing the registry login failed"
+            args="$args --registry-json $regjson"
+        fi
         stc_progress 10 "bootstrapping the first monitor on $name"
         # The configuration and the admin key go to the cluster's own directory, not /etc/ceph/ceph.conf
-        cephadm --image "$image" bootstrap $args --output-dir /var/lib/ceph/$fsid/bootstrap --no-cleanup-on-failure ||
-            stc_fail "cephadm bootstrap failed"
+        cephadm --image "$image" bootstrap $args --output-dir /var/lib/ceph/$fsid/bootstrap --no-cleanup-on-failure
+        rc=$?
+        [ -n "$regjson" ] && rm -f $regjson
+        [ $rc -eq 0 ] || stc_fail "cephadm bootstrap failed"
         ceph_admin_ready $fsid || stc_fail "the cluster does not answer after bootstrap"
         # cephadm authorized the key of the cluster for root without restriction; the line of the ssh_trust step
         # (only from the admin and mgr hosts) is the one that stays
@@ -103,6 +114,22 @@ function do_bootstrap()
         ceph_admin $fsid orch host label add "$name" "$l" >/dev/null || stc_fail "labelling $name $l failed"
     done
     stc_result "$(jq -cn --arg f "$fsid" '{fsid: $f}')"
+}
+
+# The addresses of the mons, without their ports: the clients try msgr v2, then v1
+function mon_addrs_json()
+{
+    ceph_admin $fsid mon dump -f json | jq -c '[.mons[].public_addrs.addrvec[] | select(.type == "v2") | .addr | split(":")[0]] | unique'
+}
+
+function do_mon_addrs()
+{
+    local mons
+    ceph_admin_ready $fsid || stc_fail "this host has no working admin configuration of cluster $fsid"
+    mons=$(mon_addrs_json)
+    [ "$(jq length <<<"$mons" 2>/dev/null)" -gt 0 ] 2>/dev/null || stc_fail "the mon map has no address"
+    echo "mon addresses: $mons"
+    stc_result "$(jq -cn --argjson m "$mons" '{mon_addrs: $m}')"
 }
 
 function mons_in_quorum()
@@ -184,7 +211,7 @@ function do_configure()
     ceph_admin $fsid auth get-or-create client.$user mon 'profile rbd' osd 'profile rbd' mgr 'profile rbd' >/dev/null ||
         stc_fail "making client.$user failed"
     key=$(ceph_admin $fsid auth get-key client.$user) || stc_fail "reading the key of client.$user failed"
-    mons=$(ceph_admin $fsid mon dump -f json | jq -c '[.mons[].public_addrs.addrvec[] | select(.type == "v2") | .addr | split(":")[0]] | unique')
+    mons=$(mon_addrs_json)
     [ "$(jq length <<<"$mons")" -gt 0 ] || stc_fail "the mon map has no address"
     echo "mon addresses: $mons"
     stc_result "$(jq -cn --arg k "$key" --argjson m "$mons" '{client_key: $k, mon_addrs: $m}')"
@@ -682,6 +709,7 @@ function stc_main()
         bootstrap) do_bootstrap ;;
         add_hosts) do_add_hosts ;;
         configure) do_configure ;;
+        mon_addrs) do_mon_addrs ;;
         create_osds) do_create_osds ;;
         remove_osds) do_remove_osds ;;
         remove_host) do_remove_host ;;
