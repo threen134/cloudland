@@ -111,48 +111,53 @@ clapi 侧另由 PostgreSQL 测试覆盖：`TestStorageGPFSECEDeployPG`（假 cla
 
 **预期**：文件系统、纠删码卷（先 delete 再 undefine，只定义未建的直接 undefine）、恢复组、节点类都删掉，`mmvdisk recoverygroup list` 为空，全程不停任何节点的 GPFS；恢复组上还有纠删码卷时直接失败（「still has vdisk sets」），不停服务器；建到一半的恢复组普通删除报 `Vdisk RG001ROOTLOGHOME not found`，兜底停掉服务器后 `-p` 删除成功，之后取消服务器配置、删节点类都成功；这些盘用 `wipe_disk` 擦过后能重新建恢复组
 
-## ECE-09 加服务器与加客户端（未执行，E1）
+## ECE-09 加服务器与加客户端（2026-10-12 work-04 通过，E1）
 
 1. 加一台同配置的服务器（`nsd` 角色，盘数、介质与现有服务器相同）
 2. 加一台客户端（不带 `nsd`）
 
 **预期**：
 - 服务器：任务步骤 `precheck … add_node → resolve_disks`（所有服务器）`→ ece_add_servers → finish`。
-- `ece_add_servers` 的过程：`mmvdisk server configure -N <新服务器> --target-node-class`，槽位 / 检查关闭（`no_slot_map` 时），全部服务器拓扑一致，`mmvdisk recoverygroup add`，均衡完成后由回调（10 分钟不来就自己）执行 `--complete-node-add`，日志组数变成 2×服务器数+1。
+- `ece_add_servers` 的过程：`mmvdisk server configure -N <新服务器> --target-node-class`（不 `nodeclass add`），槽位 / 检查关闭（`no_slot_map` 时，`mmchconfig -N <类>,<新服务器>`），全部服务器拓扑一致（`-N <类>,<新服务器>`，日志里新旧服务器都列出），`mmvdisk recoverygroup add`（输出「Adding … to node class」），均衡完成后由回调（10 分钟不来就自己）执行 `--complete-node-add`，日志组数变成 2×服务器数+1。
 - 结束后新服务器的盘名是物理盘名，`mmvdisk vdiskset list` 显示纠删码卷扩展到新服务器，文件系统容量变大。
 - 客户端：只有 `add_node`，恢复组不动。
 - 均衡期间 I/O 不中断。
 
-## ECE-10 移除服务器（未执行，E1）
+## ECE-10 移除服务器（2026-10-12 work-04 通过，E1）
 
 1. 移除 ECE-09 加的服务器（集群剩 3 台以上）
 2. 集群只剩 3 台时再移除一台
 
-**预期**：步骤 `ece_remove_server → remove_node → leave`；`ece_remove_server` 依次 `mmvdisk filesystem delete … -N <节点> --confirm`、`mmvdisk recoverygroup delete … -N <节点> --confirm`，等它的物理盘全部不在，再 `mmvdisk nodeclass delete -N`；节点的盘被擦并归还；第 2 步接口 400（恢复组至少 3 台）
+**预期**：步骤 `ece_remove_server → remove_node → leave`；`ece_remove_server` 依次 `mmvdisk filesystem delete … -N <节点> --confirm`、`mmvdisk recoverygroup delete … -N <节点> --confirm`，等它的物理盘全部不在、它离开节点类（由 `recoverygroup delete` 移出，不调 `nodeclass delete`）；`remove_node` 在 `mmdelnode` 前删掉加服务器留下的 `RG<n>CompletNodeAdd` 回调（日志「deleted the callback … of a finished server add」，`mmlscallback` 为空）；节点的盘被擦并归还；第 2 步接口 400（恢复组至少 3 台）
 
-## ECE-11 加盘（未执行，E2）
+## ECE-11 加盘（2026-10-12 work-x 通过，E2）
 
 1. 每台服务器各加 1 块同介质的盘
 2. 只给其中两台加盘
 
 **预期**：
 - 第 1 步：步骤 `resolve_disks`（所有服务器）`→ ece_resize`。`mmvdisk recoverygroup resize` 之后，新纠删码卷 `cl<ID>_vs2`，占用 = 集群占用比例 − 阵列已用比例（定义不下时每次少 5 个百分点），建好后 `mmvdisk filesystem add` 进文件系统；集群详情「纠删码卷」显示两个卷。
-- 非 IBM 认可的拓扑升级时 resize 可能被拒（记录原文）。
+- 非 IBM 认可的拓扑升级时 resize 可能被拒（记录原文）。实测 LIO 盘「ECE 5 HDD → ECE 6 HDD」没被拒。
 - 第 2 步：接口 400（每台服务器的盘数要相同）。
 
-## ECE-12 换盘（未执行，E3）
+## ECE-12 换盘（2026-10-12 work-x 部分通过，E3）
 
-1. 让一块物理盘坏掉（LIO 删掉它的 LUN，等健康看护报 down）
+1. 让一块物理盘坏掉（LIO 删掉它的 LUN，等健康看护报告非 up）
 2. 在同一台服务器上认领一块新盘，替换坏盘（`no_slot_map` 集群）
 3. 拿一块状态 `ok` 的物理盘去换
+4. 把第 1 步删掉的 LUN 加回来
+5. 中止一次换盘后（例如老版本留下的），移除新盘留下的失败认领
 
 **预期**：
-- 第 2 步：步骤 `resolve_disks → ece_replace → release_disks`。`ece_replace` 先 `mmvdisk pdisk replace --prepare`，再 `mmaddpdisk <rg> -F <%pdisk: pdiskName=<旧名> device=//<节点>/dev/<新盘> da=<阵列>> --replace -v no`。
-- 结束后新盘叫旧物理盘的名字、状态 `ok`，旧盘排空期间显示为 `<旧名>#nnnn`；坏盘的记录删除、不擦盘。
-- 有槽位映射的实体机上改为把新盘插在原槽位，`mmvdisk pdisk replace -v no`。
-- 第 3 步：接口 400（健康看护报告它是 up）。
+- 第 1 步：健康看护 1 分钟内报告这块盘 `diagnosing`，GNR 里是 `missing`，之后排空成 `missing/drained`。
+- 第 2 步（没有槽位映射）：GNR 只替换它标记了替换的盘，`missing` 的盘永远不标记，所以接口 400「GNR has not marked pdisk … for replacement (missing/drained): without a slot map only a marked pdisk is replaced. Bring the disk back, or take its server out of the recovery group and add it again」。真正坏掉（dead / failing）且阵列坏盘数到达替换门槛（默认 2）时 GNR 才标记（状态里有 `replace`），这时步骤 `resolve_disks → ece_replace → release_disks`，`ece_replace` 是 `mmaddpdisk <rg> -F <%pdisk: pdiskName=<旧名> device=//<节点>/dev/<新盘> da=<阵列>> --replace -v no --class-mode vdisk`（LIO 造不出 dead 的盘，这条只有单元与 PG 测试）；结束后新盘叫旧物理盘的名字、状态 `ok`；`release_disks` 不写 `nsddevices`。
+- 有槽位映射的实体机上改为 `mmvdisk pdisk replace --prepare`，新盘插在原槽位，`mmvdisk pdisk replace -v no`。
+- 第 3 步：接口 400「Disk … works (the storage reports it up): only a failed disk is replaced」（不再叫人「先正常移除」：纠删码不能单独移除盘）。
+- 第 4 步：GNR 十几秒内把这块盘恢复成 `ok`；平台记录若被之前中止的换盘留成 `failed`，健康看护下一轮把它恢复成 `active`、清掉原因（同一台服务器上还有无名的失败认领时不动）。
+- 第 5 步：纠删码集群的残留认领（`failed`、没有名字、健康看护没见过）在接口里带 `stray: true`，也能「移除磁盘」：先在管理节点 `ece_claim_free` 按 WWN 核对（日志「the disk (…) is no pdisk of cl<ID>_rg」），再只对这一块 `release_disks` 擦盘、删记录，服务器上不写 `nsddevices`；之前它会一直算作这台服务器的盘，让之后的换盘都卡在「Every recovery group server needs the same number of disks」。核对发现它其实是物理盘 P 时改为认领（记录改名 P、active，旧盘的失败记录不擦、删除；P 没有失败记录时这一步失败、不改记录）——这条只有 PG 测试。副本 / SAN / Ceph 布局里 failed 无名的记录不算残留认领，移除照常先把盘从存储里拿出来。
+- 步骤超时时节点上的作业被结束（`stc_kill.sh`），不会占着集群锁继续跑。
 
-## ECE-13 改角色（未执行）
+## ECE-13 改角色（2026-10-12 只能验证拒绝：仲裁数改不了，用户决定不做）
 
 1. 给一台服务器加 / 去掉 `quorum`（仲裁仍为奇数）、去掉 `nsd`
 
