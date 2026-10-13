@@ -3511,6 +3511,7 @@ export default {
                 running: '執行中',
                 failed: '失敗',
                 succeeded: '成功',
+                skipped: '已跳過（節點離線）',
             },
             stepNames: {
                 trust_add: '加入新 SSH 金鑰',

@@ -105,6 +105,8 @@ export interface StorageClusterDisk {
     /** What the storage software reports for the disk (GPFS availability, Ceph up / down) */
     state?: string
     checked_at?: string
+    /** A claim that never made it into the storage, removable where no disk leaves on its own (erasure code) */
+    stray?: boolean
 }
 
 /** An alarm the health watchdog raised for the cluster and that still fires */

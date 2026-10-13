@@ -3640,6 +3640,7 @@ export default {
                 running: 'Running',
                 failed: 'Failed',
                 succeeded: 'Succeeded',
+                skipped: 'Skipped (host offline)',
             },
             stepNames: {
                 trust_add: 'Add the new SSH key',

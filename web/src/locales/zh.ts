@@ -3508,6 +3508,7 @@ export default {
                 running: '执行中',
                 failed: '失败',
                 succeeded: '成功',
+                skipped: '已跳过（节点离线）',
             },
             stepNames: {
                 trust_add: '加入新 SSH 密钥',

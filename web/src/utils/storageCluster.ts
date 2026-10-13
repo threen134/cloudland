@@ -32,6 +32,7 @@ export const taskVariant = (status?: string): StatusVariant => {
         case 'failed':
             return 'error'
         case 'aborted':
+        case 'skipped':
             return 'neutral'
         default:
             return 'pending'

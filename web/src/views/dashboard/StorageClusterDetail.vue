@@ -848,7 +848,7 @@ const modeText = (m?: string) => (m && te(`storage.cluster.modes.${m}`) ? t(`sto
                             <Replace :size="16" />
                         </button>
                         <button
-                            v-if="caps?.remove_disk"
+                            v-if="caps?.remove_disk || d.stray"
                             class="icon-btn-table icon-danger"
                             :title="t('storage.clusterDetail.removeDisk')"
                             :disabled="!canChange"
