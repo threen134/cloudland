@@ -21,24 +21,28 @@
 #               pool) the placement rule sends the files there
 #   add_servers: {"cluster_uuid", "node_class", "recovery_group", "servers": [ip], "disk_expr", "full_expr",
 #               "total_servers", "no_slot_map", "slot_mode", "slot_range"}   result: {"pdisks": [...]}
-#               servers joining a scale-out recovery group: configured like the class (and in it), their topology the
-#               same as the others', added with their disks (mmvdisk recoverygroup add); mmvdisk rebalances the
+#               servers joining a scale-out recovery group: configured like the class, their topology the same as the
+#               others', added with their disks (mmvdisk recoverygroup add, which puts them in the node class: a class
+#               with a recovery group can not be changed otherwise, and the add skips its members); mmvdisk rebalances the
 #               stripes over them and then formats their log groups and extends the vdisk sets and file systems
 #               (--complete-node-add, run by its callback; run here when the callback did not)
 #   remove_server: {"cluster_uuid", "node_class", "recovery_group", "ip"}
 #               a server leaving: the file systems give up its vdisk set members, the recovery group its pdisks (the
-#               data moves to the other servers), the node class the node. mmvdisk refuses when the servers left can
-#               not hold the data or the width of the code
+#               data moves to the other servers), then the node class the node (the recovery group delete does it).
+#               mmvdisk refuses when the servers left can not hold the data or the width of the code
 #   replace:    {"cluster_uuid", "recovery_group", "pdisk", "ip", "device", "wwn", "slot_map"}
 #               result: {"pdisks": [...]}
 #               a failed pdisk replaced by a new disk of the same server: with a slot map mmvdisk finds the new disk
-#               in the slot (pdisk replace); without one the new device is named to mmaddpdisk --replace. The new
-#               disk takes the name of the old pdisk
+#               in the slot (pdisk replace); without one the new device is named to mmaddpdisk --replace, which takes
+#               only a pdisk GNR marked for replacement (a missing one never is). The new disk takes the old name
 #   resize:     {"cluster_uuid", "recovery_group", "disk_expr", "vdisk_set", "code", "block_size", "set_size_pct",
 #               "da_type", "nsd_usage", "storage_pool", "fs_name"}   result: {"pdisks": [...]}
 #               disks added to every server (the same number each): the recovery group takes them (mmvdisk
 #               recoverygroup resize), a new vdisk set takes the share of the array the set size leaves for it, the
 #               file system gets it (mmvdisk filesystem add)
+#   claim_free: {"cluster_uuid", "recovery_group", "wwn"}   result: {"pdisk"} or {}
+#               whether a disk about to be given back and wiped as a claim that never made it into the recovery
+#               group is a pdisk of it after all (by its WWN)
 
 cd $(dirname $0)
 source ../../cloudrc
@@ -71,6 +75,22 @@ function ip_of()
     echo ${ip:-$1}
 }
 
+# ips_of <node name or ip>...: the addresses of nodes, a line each, with one read of the cluster
+function ips_of()
+{
+    local map n ip
+    [ $# -gt 0 ] || return 0
+    map=$(node_map)
+    for n in "$@"; do
+        if [[ "$n" =~ ^[0-9.]+$ ]]; then
+            echo $n
+            continue
+        fi
+        ip=$(awk -F'\t' -v n="$n" '$1 == n { print $2; exit }' <<<"$map")
+        echo ${ip:-$n}
+    done
+}
+
 # on_node <node> <command>: run a command on a member with the remote shell of the cluster (its key and known_hosts,
 # written by the ssh_trust step), by the address of the node: known_hosts surely has that, not always its GPFS name.
 # mmdsh is no use here, mmdiag prints nothing under it
@@ -84,10 +104,29 @@ function on_node()
 # class_ips <node class>: the addresses of the members of a node class
 function class_ips()
 {
-    local n
-    for n in $($gpfs_bin/mmlsnodeclass $1 -Y 2>/dev/null | gpfs_y "" memberNodes | tr ',' ' '); do
-        ip_of $n
+    ips_of $($gpfs_bin/mmlsnodeclass $1 -Y 2>/dev/null | gpfs_y "" memberNodes | tr ',' ' ')
+}
+
+# configured_ips: the addresses of the nodes mmvdisk configured as recovery group servers, in a node class or not;
+# fails when mmvdisk can not list them (an empty list would read as none configured)
+function configured_ips()
+{
+    local out
+    out=$($gpfs_bin/mmvdisk server list -Y </dev/null 2>/dev/null) || return 1
+    grep -q ':serverSummary:HEADER:' <<<"$out" || return 1
+    ips_of $(gpfs_y_rows serverSummary nodeName configured <<<"$out" | awk -F'\t' '$2 == "yes" {print $1}')
+}
+
+# class_spec <node class> <ip>...: a node specification of the class and those of the nodes that are not in it
+function class_spec()
+{
+    local nc=$1 spec=$1 members ip
+    shift
+    members=" $(class_ips $nc | xargs) "
+    for ip in "$@"; do
+        [[ "$members" == *" $ip "* ]] || spec="$spec,$ip"
     done
+    echo "$spec"
 }
 
 # wait_active <node>...: every node active in GPFS, at most 10 minutes
@@ -106,16 +145,16 @@ function wait_active()
     return 1
 }
 
-# check_topology <node class> <disk expression>: every server sees its claimed disks with the same topology and none
-# needs attention; the topology in topo_kinds
+# check_topology <nodes> <disk expression>: every server (a node class, or a class and servers joining it) sees its
+# claimed disks with the same topology and none needs attention; the topology in topo_kinds
 function check_topology()
 {
-    local nc=$1 expr=$2 topo bad kinds
-    topo=$($gpfs_bin/mmvdisk server list --node-class $nc --disk-list "$expr" --disk-topology -Y </dev/null 2>&1)
+    local nodes=$1 expr=$2 topo bad kinds
+    topo=$($gpfs_bin/mmvdisk server list -N $nodes --disk-list "$expr" --disk-topology -Y </dev/null 2>&1)
     echo "$topo"
     bad=$(gpfs_y_rows serverDiskTopology nodeName needsAttention <<<"$topo" | awk -F'\t' '$2 != "no" {print $1}')
     kinds=$(gpfs_y_rows serverDiskTopology diskTopology <<<"$topo" | sort -u)
-    [ -n "$kinds" ] || stc_fail "mmvdisk reported no disk topology for node class $nc"
+    [ -n "$kinds" ] || stc_fail "mmvdisk reported no disk topology for $nodes"
     [ -z "$bad" ] || stc_fail "the disk topology of $(echo $bad) needs attention"
     [ "$(grep -c . <<<"$kinds")" = 1 ] || stc_fail "the servers have different disk topologies: $(echo $kinds)"
     topo_kinds=$kinds
@@ -184,7 +223,7 @@ function has_slot_map()
 # was done in slot_result
 function slots_on()
 {
-    local input=$1 noslot mode min max n a missing=""
+    local input=$1 noslot mode min max n a spec missing=""
     shift
     noslot=$(jq -r '.no_slot_map // false' <<<"$input")
     mode=$(jq -r '.slot_mode // ""' <<<"$input")
@@ -212,11 +251,12 @@ function slots_on()
         return
     fi
     # mmchconfig wants 999 typed to write an attribute it does not know (the slot one; a known one does not ask). Set
-    # for the node class every time (a value left from a class deleted before does not count), what the daemons run
-    # with is checked below
+    # for the node class every time (a value left from a class deleted before does not count) and for the servers
+    # joining it (the recovery group add puts them in the class later), what the daemons run with is checked below
     stc_progress 10 "turning the slot and write cache checks off"
+    spec=$(class_spec "$(jq -r .node_class <<<"$input")" "$@")
     for a in $test_disk_attrs; do
-        printf '999\n' | $gpfs_bin/mmchconfig $a -N $(jq -r .node_class <<<"$input") || stc_fail "mmchconfig ${a%%=*} failed"
+        printf '999\n' | $gpfs_bin/mmchconfig $a -N $spec || stc_fail "mmchconfig ${a%%=*} failed"
     done
     # The daemons read them when they start: one server at a time, so the cluster keeps its quorum
     for n in "$@"; do
@@ -551,8 +591,10 @@ function do_add_servers()
     [[ "$ips" =~ ^[0-9.\ ]+$ ]] || stc_fail "invalid server list"
     valid_expr "$expr" && valid_expr "$full" || stc_fail "invalid disk expression"
     [[ "$total" =~ ^[0-9]+$ ]] || stc_fail "invalid server count"
-    # 1. configured like the class, and in it
-    members=" $(class_ips $nc | xargs) "
+    # 1. configured like the class. Not put in it: a class with a recovery group can not be changed, and the
+    # recovery group add below skips the members of the class (it puts the servers it adds in the class itself)
+    members=$(configured_ips) || stc_fail "mmvdisk server list failed: can not tell which servers are configured"
+    members=" $(xargs <<<"$members") "
     for ip in $ips; do
         [[ "$members" == *" $ip "* ]] || missing="$missing,$ip"
     done
@@ -560,17 +602,12 @@ function do_add_servers()
         stc_progress 5 "configuring ${missing#,} like node class $nc"
         $gpfs_bin/mmvdisk server configure -N ${missing#,} --target-node-class $nc --recycle one </dev/null ||
             stc_fail "mmvdisk server configure -N ${missing#,} failed"
-        members=" $(class_ips $nc | xargs) "
-        for ip in ${missing//,/ }; do
-            [[ "$members" == *" $ip "* ]] && continue
-            $gpfs_bin/mmvdisk nodeclass add --node-class $nc -N $ip </dev/null || stc_fail "mmvdisk nodeclass add $ip failed"
-        done
     fi
     wait_active $ips || stc_fail "GPFS is not active on the new servers"
     # 2. the slot map, or the checks off, on them
     slots_on "$input" $ips
     # 3. every server with the same topology, the new ones too
-    check_topology $nc "$full"
+    check_topology $(class_spec $nc $ips) "$full"
     # 4. their disks into the recovery group
     missing=""
     for ip in $ips; do
@@ -603,19 +640,23 @@ function do_add_servers()
         fi
         sleep 30
     done
+    # The callback of the add stays when the add was finished here, and keeps every server from being removed
+    gpfs_drop_add_callbacks
     pdisks=$(wait_pdisks $rg $(expr_disks "$full") 5) || stc_fail "recovery group $rg lists $(jq length <<<"$pdisks") pdisks, $(expr_disks "$full") disks were claimed"
     stc_result "$(jq -cn --argjson p "$pdisks" '{pdisks: $p}')"
 }
 
 function do_remove_server()
 {
-    local input=$1 nc rg ip node line vs fs rgs created sets i
+    local input=$1 nc rg ip node line vs fs rgs created sets i pdisks=false member=false
     nc=$(jq -r .node_class <<<"$input")
     rg=$(jq -r .recovery_group <<<"$input")
     ip=$(jq -r .ip <<<"$input")
     valid_name "$nc" && valid_name "$rg" || stc_fail "invalid node class or recovery group name"
     [[ "$ip" =~ ^[0-9.]+$ ]] || stc_fail "invalid address"
-    if rg_has_server $rg $ip; then
+    rg_has_server $rg $ip && pdisks=true
+    [[ " $(class_ips $nc | xargs) " == *" $ip "* ]] && member=true
+    if $pdisks; then
         # The file systems give up the members of their vdisk sets on the server first (mmvdisk checks the servers
         # left can hold them)
         declare -A sets_of=()
@@ -628,6 +669,10 @@ function do_remove_server()
             $gpfs_bin/mmvdisk filesystem delete --file-system $fs --vdisk-set ${sets_of[$fs]} --recovery-group $rg -N $ip --confirm </dev/null ||
                 stc_fail "mmvdisk filesystem delete -N $ip failed: the servers left may not hold the data of $fs"
         done
+    fi
+    # A server in the class without pdisks (an add that stopped between the two, or pdisks that could not be listed)
+    # leaves the same way: the recovery group delete is what takes a node out of a class with a recovery group
+    if $pdisks || $member; then
         stc_progress 40 "taking $ip out of recovery group $rg (its data moves to the other servers)"
         $gpfs_bin/mmvdisk recoverygroup delete --recovery-group $rg -N $ip --confirm </dev/null ||
             stc_fail "mmvdisk recoverygroup delete -N $ip failed"
@@ -637,13 +682,35 @@ function do_remove_server()
             sleep 30
         done
     else
-        echo "$ip has no pdisks in $rg"
+        echo "$ip has no pdisks in $rg and is not in node class $nc"
     fi
-    if [[ " $(class_ips $nc | xargs) " == *" $ip "* ]]; then
-        stc_progress 90 "taking $ip out of node class $nc"
-        $gpfs_bin/mmvdisk nodeclass delete --node-class $nc -N $ip </dev/null || stc_fail "mmvdisk nodeclass delete -N $ip failed"
-    fi
+    # The recovery group delete takes the node out of the class when its pdisks are gone (a class with a recovery
+    # group can not be changed otherwise)
+    for i in $(seq 1 20); do
+        [[ " $(class_ips $nc | xargs) " == *" $ip "* ]] || break
+        [ $i -eq 20 ] && stc_fail "$ip is still in node class $nc after its pdisks left recovery group $rg"
+        stc_progress 90 "waiting for $ip to leave node class $nc"
+        sleep 15
+    done
     stc_result '{}'
+}
+
+# pdisk_add <rg> <pdisk> <ip> <device> <da> [--replace]: a disk of a server into a declustered array as the pdisk of
+# that name (replacing the failed one of that name with --replace). --class-mode vdisk as mmvdisk passes it to the
+# commands under it: they refuse a recovery group of mmvdisk otherwise
+function pdisk_add()
+{
+    local node tmp
+    node=$(node_map | awk -F'\t' -v ip="$3" '$2 == ip { print $1; exit }')
+    [ -n "$node" ] || stc_fail "no node of the cluster has address $3"
+    tmp=$(mktemp)
+    echo "%pdisk: pdiskName=$2 device=//$node/dev/$4 da=$5" >$tmp
+    stc_progress 40 "putting /dev/$4 of $node in as pdisk $2"
+    if ! $gpfs_bin/mmaddpdisk $1 -F $tmp $6 -v no --class-mode vdisk </dev/null; then
+        rm -f $tmp
+        stc_fail "mmaddpdisk ${6:+$6 }failed"
+    fi
+    rm -f $tmp
 }
 
 # pdisk_of <rg> <pdisk>: a pdisk of the recovery group as JSON, empty when it has none of that name
@@ -654,7 +721,7 @@ function pdisk_of()
 
 function do_replace()
 {
-    local input=$1 rg pdisk ip device wwn slotmap cur state node da tmp i new
+    local input=$1 rg pdisk ip device wwn slotmap cur state da i new
     rg=$(jq -r .recovery_group <<<"$input")
     pdisk=$(jq -r .pdisk <<<"$input")
     ip=$(jq -r .ip <<<"$input")
@@ -668,32 +735,31 @@ function do_replace()
     [[ "$wwn" =~ ^[A-Za-z0-9.x-]*$ ]] || stc_fail "invalid WWN"
     cur=$(pdisk_of $rg $pdisk)
     [ -n "$cur" ] || stc_fail "recovery group $rg has no pdisk $pdisk"
-    # A retry after the new disk went in: the pdisk is on it
-    if [ "$(jq -r .ip <<<"$cur")" = "$ip" ] && [ "$(jq -r .device <<<"$cur")" = "$device" ] && [[ "$(jq -r .state <<<"$cur")" == ok* ]]; then
-        echo "pdisk $pdisk is on /dev/$device already"
+    # A retry after the new disk went in: the pdisk is on it, maybe still formatting (waited for below)
+    if [ "$(jq -r .ip <<<"$cur")" = "$ip" ] && [ "$(jq -r .device <<<"$cur")" = "$device" ]; then
+        echo "pdisk $pdisk is on /dev/$device already ($(jq -r .state <<<"$cur"))"
     else
         state=$(jq -r .state <<<"$cur")
         # GNR replaces a pdisk that failed (dead, missing, failing, drained...); a working one is never replaced
         [[ "$state" == ok ]] && stc_fail "pdisk $pdisk is working (state ok): only a failed pdisk is replaced"
-        stc_progress 10 "preparing pdisk $pdisk ($state) for replacement"
-        # Prepared already on a retry: it says so and fails, the replacement below tells
-        $gpfs_bin/mmvdisk pdisk replace --prepare --recovery-group $rg --pdisk $pdisk </dev/null || echo "prepare said no, going on"
         if [ "$slotmap" = true ]; then
+            stc_progress 10 "preparing pdisk $pdisk ($state) for replacement"
+            # Prepared already on a retry: it says so and fails, the replacement below tells
+            $gpfs_bin/mmvdisk pdisk replace --prepare --recovery-group $rg --pdisk $pdisk </dev/null || echo "prepare said no, going on"
             # The new disk sits in the slot of the old one: mmvdisk finds it there
             stc_progress 40 "replacing pdisk $pdisk with the disk in its slot"
             printf 'yes\n' | $gpfs_bin/mmvdisk pdisk replace --recovery-group $rg --pdisk $pdisk -v no ||
                 stc_fail "mmvdisk pdisk replace failed: is the new disk in the slot of $pdisk?"
         else
-            # No slot map: the new device is named, on the node of the old pdisk, in the declustered array of it
-            node=$(node_map | awk -F'\t' -v ip="$ip" '$2 == ip { print $1; exit }')
+            # No slot map: mmvdisk pdisk replace finds the new disk by the location of the old one, which is not known
+            # (it says so and fails, --prepare too); the new device is named to mmaddpdisk --replace instead, which
+            # takes only a pdisk GNR marked for replacement (clapi checks it before the task): a missing pdisk never
+            # is, a failed one once the failed pdisks of its array reach the replace threshold (2 by default)
+            [[ "$state" == *replace* ]] ||
+                stc_fail "GNR has not marked pdisk $pdisk for replacement (state $state): without a slot map only a marked pdisk is replaced"
             da=$(jq -r .da <<<"$cur")
-            [ -n "$node" ] || stc_fail "no node of the cluster has address $ip"
             valid_name "$da" || stc_fail "the declustered array of $pdisk is not known"
-            tmp=$(mktemp)
-            echo "%pdisk: pdiskName=$pdisk device=//$node/dev/$device da=$da" >$tmp
-            stc_progress 40 "replacing pdisk $pdisk with /dev/$device of $node"
-            $gpfs_bin/mmaddpdisk $rg -F $tmp --replace -v no || { rm -f $tmp; stc_fail "mmaddpdisk --replace failed"; }
-            rm -f $tmp
+            pdisk_add $rg $pdisk $ip $device $da --replace
         fi
     fi
     # The new disk under the old name, working
@@ -716,6 +782,31 @@ function gpfs_wwn()
     local w=${1,,}
     w=${w#wwn-}; w=${w#naa.}; w=${w#0x}
     echo $w
+}
+
+# claim_free: whether a disk about to be given back and wiped (a claim the cluster's records say never made it into
+# the recovery group: the new disk of an aborted replacement) is a pdisk of the recovery group after all, which an
+# abort after the replacement went through leaves. result: {"pdisk": <its name>} then (clapi records it as that pdisk
+# and nothing is wiped), {} when it is none
+function do_claim_free()
+{
+    local input=$1 rg wwn pdisks hit
+    rg=$(jq -r .recovery_group <<<"$input")
+    wwn=$(jq -r '.wwn // ""' <<<"$input")
+    valid_name "$rg" || stc_fail "invalid recovery group name"
+    [[ "$wwn" =~ ^[A-Za-z0-9.x-]+$ ]] || stc_fail "the disk has no WWN to check against the pdisks of $rg: it is not given back"
+    pdisks=$(rg_pdisks $rg)
+    [ "$(jq length <<<"$pdisks" 2>/dev/null)" -gt 0 ] 2>/dev/null || stc_fail "the pdisks of recovery group $rg can not be read"
+    hit=$(jq -r '.[] | "\(.name)\t\(.wwn)"' <<<"$pdisks" | while IFS=$'\t' read -r name w; do
+        [ "$(gpfs_wwn "$w")" = "$(gpfs_wwn "$wwn")" ] && echo $name
+    done | head -1)
+    if [ -n "$hit" ]; then
+        echo "the disk ($wwn) is pdisk $hit of recovery group $rg: it is in use, it is recorded as that pdisk and not wiped"
+        stc_result "$(jq -cn --arg p "$hit" '{pdisk: $p}')"
+        return
+    fi
+    echo "the disk ($wwn) is no pdisk of $rg"
+    stc_result '{}'
 }
 
 function do_resize()
@@ -772,7 +863,7 @@ function stc_main()
     [ -x $gpfs_bin/mmvdisk ] || stc_fail "mmvdisk is not installed (the gpfs.gnr packages)"
     stc_lock "gpfs-$cluster_uuid"
     case $action in
-        configure|slots|create_rg|create_vs|create_fs|add_servers|remove_server|replace|resize) do_$action "$input" ;;
+        configure|slots|create_rg|create_vs|create_fs|add_servers|remove_server|replace|resize|claim_free) do_$action "$input" ;;
         *) stc_fail "unknown action $action" ;;
     esac
 }

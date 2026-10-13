@@ -76,6 +76,25 @@ function backend_leave()
     if pgrep -x mmfsd >/dev/null; then
         $gpfs_bin/mmshutdown >/dev/null 2>&1 || pkill -x mmfsd
     fi
+    # A host removed while it was offline is no node of the cluster when it is back: mmshutdown fails and its file
+    # systems stay mounted, dead, holding the kernel modules
+    for m in $(awk '$3 == "gpfs" {print $2}' /proc/mounts); do
+        umount -f "$m" 2>/dev/null || umount -l "$m"
+    done
+    # The pool lists of other clusters this host reached through the remote mounts of this one (a host is in one GPFS
+    # cluster, so every remote list here came with it): clapi clears them when the host leaves online, not one that
+    # left while offline. The probes of their pools stop, then the lists go
+    local r owner
+    for r in $shared_storage_dir/*/remote; do
+        [ -f "$r" ] || continue
+        owner=$(basename $(dirname $r))
+        if shared_pools_apply "$owner" '[]' remote; then
+            rm -rf $shared_storage_dir/$owner
+            echo "dropped the pool list of storage cluster $owner (a remote mount)"
+        else
+            echo "clearing the pool list of storage cluster $owner failed: $guard_error"
+        fi
+    done
     grep -q "storage cluster $uuid" /var/mmfs/etc/nsddevices 2>/dev/null && rm -f /var/mmfs/etc/nsddevices
     rm -f /var/mmfs/gen/mmsdrfs
     if [ "$purge" = "true" ]; then
@@ -88,11 +107,61 @@ function backend_leave()
     return 0
 }
 
+# gpfs_delfs <fs> [-p]: mmdelfs, again while a command reading the file system makes GPFS give up the deletion ("a
+# conflicting program tsdf is running": the mmdf of the metrics and of the health check, once a minute on the members).
+# -p: disks of hosts that are offline can not be marked available any more, the file system goes anyway
+function gpfs_delfs()
+{
+    local out i
+    for i in 1 2 3 4 5 6; do
+        out=$(echo yes | $gpfs_bin/mmdelfs "$@" 2>&1) && { echo "$out"; return 0; }
+        echo "$out"
+        grep -q "conflicting program" <<<"$out" || return 1
+        sleep 10
+    done
+    return 1
+}
+
 # gpfs_nsd_exists <name>: whether an NSD of that name is defined. mmlsnsd -d answers 0 for a name it does not know
 # (it only prints "No disks were found"), so the names are read from the list
 function gpfs_nsd_exists()
 {
-    $gpfs_bin/mmlsnsd -X 2>/dev/null | awk '{print $1}' | grep -qx "$1"
+    local out
+    # 0 when it is defined, 1 when not, 2 when the list could not be read (an empty cluster answers 0 too). From the
+    # cluster configuration only: -X asks the NSD servers for their devices and fails with one of them offline, the
+    # case of a removal or deletion that goes on without it
+    out=$($gpfs_bin/mmlsnsd -Y 2>/dev/null) || return 2
+    gpfs_y_rows nsd diskName <<<"$out" | grep -qx "$1"
+}
+
+# gpfs_drop_add_callbacks: the callback mmvdisk registers on the servers to finish a server add after the rebalance
+# (RG<n>CompletNodeAdd) deletes itself only when it is the one that finishes the add; an add finished by the
+# erasure code step (gpfs_ece.sh) leaves it, and mmdelnode refuses a node that is in a callback. They go once no
+# recovery group has an add pending; nothing without mmvdisk (a replica cluster) or when the groups can not be read
+function gpfs_drop_add_callbacks()
+{
+    local out id
+    [ -x $gpfs_bin/mmvdisk ] || return 0
+    out=$($gpfs_bin/mmvdisk recoverygroup list -Y </dev/null 2>/dev/null) || return 0
+    grep -q ':rgSummary:HEADER:' <<<"$out" || return 0
+    [ -z "$(gpfs_y_rows rgSummary AddNode <<<"$out" | grep .)" ] || return 0
+    for id in $($gpfs_bin/mmlscallback -Y 2>/dev/null | gpfs_y_rows "" identifier command parms |
+        awk -F'\t' '$1 ~ /^RG[0-9]+CompletNodeAdd[0-9]*$/ && $2 ~ /mmvdisk$/ && $3 ~ /--complete-node-add/ {print $1}'); do
+        $gpfs_bin/mmdelcallback $id && echo "deleted the callback $id of a finished server add"
+    done
+    return 0
+}
+
+# gpfs_nsd_defined <name>: gpfs_nsd_exists in a storage job, which fails when the list can not be read: NSDs still
+# defined must not pass for gone
+function gpfs_nsd_defined()
+{
+    gpfs_nsd_exists "$1"
+    case $? in
+        0) return 0 ;;
+        1) return 1 ;;
+        *) stc_fail "mmlsnsd -X failed: can not tell whether NSD $1 is defined" ;;
+    esac
 }
 
 # gpfs_debs_missing <input>: the packages of the installer (input "debs", files <package>_<version>_<arch>.deb) that are
@@ -345,7 +414,8 @@ function gpfs_pool_metrics()
         $run_dir/storage/$1/shared_pools.json 2>/dev/null)
     [ -n "$pools" ] || return 0
     local quota sets
-    quota=$(timeout 30 $gpfs_bin/mmrepquota -j $fs -Y 2>/dev/null | gpfs_y_rows "" name filesUsage)
+    # mmrepquota takes its options before the device: "-Y" after it is read as a name and the command fails
+    quota=$(timeout 30 $gpfs_bin/mmrepquota -j -Y $fs 2>/dev/null | gpfs_y_rows "" name filesUsage)
     sets=$(timeout 30 $gpfs_bin/mmlsfileset $fs -L -Y 2>/dev/null | gpfs_y_rows "" filesetName maxInodes)
     while IFS=$'\t' read -r pool root; do
         valid_uuid "$pool" || continue

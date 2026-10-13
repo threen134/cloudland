@@ -1,12 +1,14 @@
 #!/bin/bash
-# Stop the job of a storage task run when its task is aborted (shared-storage-design.md §6.2.5): the job leads its
-# own process group, so everything it started goes with it. Reports the run as failed.
+# Stop the job of a storage task run when its task is aborted or its step timed out (shared-storage-design.md
+# §6.2.5): the job leads its own process group, so everything it started goes with it. Reports the run as failed:
+# <run id> [reason]
 
 cd $(dirname $0)
 source ../../cloudrc
 source ./stc_lib.sh
 
 run=$1
+reason=${2:-stopped because the task was aborted}
 stc_valid_run "$run" || exit 1
 dir=$stc_jobs_dir/$run
 [ -d $dir ] || exit 0
@@ -21,5 +23,5 @@ if stc_job_alive $dir; then
     stc_job_alive $dir && kill -KILL -- -$pid 2>/dev/null
 fi
 # The job may have ended on its own meanwhile; otherwise record the end it will not write
-stc_end_lost $run "stopped because the task was aborted"
+stc_end_lost $run "$reason"
 cat $dir/callback

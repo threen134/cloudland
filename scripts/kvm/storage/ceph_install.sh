@@ -57,6 +57,10 @@ function stc_main()
     read -r adj mon mgr osd < <(jq -r '.oom // {} | "\(.adj) \(.mon_bytes) \(.mgr_bytes) \(.osd_bytes)"' <<<"$input")
     ceph_unit_oom $uuid "$adj" "$mon" "$mgr" "$osd" || stc_fail "protecting the daemons of the cluster from the OOM killer failed (oom: $adj $mon $mgr $osd)"
     [ -n "$image" ] || image=quay.io/ceph/ceph:v$version
+    # The login goes where cephadm pulls with: its mgr runs cephadm over ssh as root, which reads /root/.docker, while
+    # this job runs with the HOME of the agent (sudo -E). The mgr logs a host in itself only when it adds the host, and
+    # it adds the bootstrap host before it has the login
+    export DOCKER_CONFIG=/root/.docker
     local reg user
     reg=$(jq -r '.registry.url // empty' <<<"$input")
     if [ -n "$reg" ]; then
@@ -67,7 +71,10 @@ function stc_main()
         # The password goes through stdin only
         jq -r '.registry.password' <<<"$input" | docker login "$reg" -u "$user" --password-stdin >/dev/null ||
             stc_fail "docker login $reg as $user failed"
+        # Leaving the cluster logs out of it (backend_leave); the password is never written here
+        mkdir -p $run_dir/storage/$uuid && echo "$reg" >$run_dir/storage/$uuid/registry
     fi
+    [ -n "$reg" ] && echo "$image" >$run_dir/storage/$uuid/image
     stc_progress 40 "pulling $image"
     for i in 1 2 3; do
         timeout 1800 docker pull -q "$image" && break

@@ -384,6 +384,8 @@ function disk_identity()
     fi
     if [ -n "$wwn" ]; then
         have=$(lsblk -dno WWN $path 2>/dev/null | xargs)
+        # lsblk has no WWN for a multipath device (a shared LUN of a SAN); udev has it
+        [ -n "$have" ] || have=$(udevadm info -q property -n $path 2>/dev/null | awk -F= '$1 == "DM_WWN" || $1 == "ID_WWN" {print $2; exit}')
         if [ "${have#0x}" != "${wwn#0x}" ]; then
             identity_error="disk $id ($path) has WWN '$have', expected '$wwn'"
             return 1
@@ -399,6 +401,16 @@ function disk_identity()
     identity_path=$path
 }
 
+# drop_partition_maps <device path>: the partitions of a multipath device (a LUN of a SAN: an NSD gets a partition
+# table) are device-mapper devices kpartx made on top of it; they go. Nothing for another device
+function drop_partition_maps()
+{
+    [ "$(lsblk -dno TYPE $1 2>/dev/null)" = mpath ] || return 0
+    kpartx -d $1 2>/dev/null
+    udevadm settle 2>/dev/null
+    return 0
+}
+
 # Wipe every partition, then the whole disk, and make the kernel drop the partitions: <device path>
 # Wiping only the whole disk leaves the file system signature of the first partition at the start of the
 # logical volume, and lvcreate / mkfs refuse to go on
@@ -408,6 +420,8 @@ function wipe_disk()
     for p in $(lsblk -nlpo NAME,TYPE $dev | awk '$2 == "part" {print $1}' | sort -r); do
         wipefs -a -q $p || return 1
     done
+    # The partition maps of a multipath device hold it: wipefs of the whole device fails busy
+    drop_partition_maps $dev
     wipefs -a -q $dev || return 1
     # Zero 10 MiB at both ends too (shared-storage-design.md §6.4): what a partition left at the head (the descriptor
     # of an NSD) would make classify_disk take the disk for a GPFS NSD on a host with GPFS installed
@@ -637,6 +651,20 @@ function shared_pools_apply()
         return 1
     fi
     dir=$shared_storage_dir/$cluster
+    # A host that left the cluster a moment ago (stc_leave) may still get a list sent while it was a member: the command
+    # waited in cloudlet's queue behind the leave. It would bring back the directory of the cluster, with no member
+    # mark, taken for one of an imported cluster. Such lists are dropped for 10 minutes, unless the host is a member
+    # again; the lists of a remote mount come only to the hosts that mount. clapi sends no lists to a host that is
+    # leaving, this only covers one sent just before. Marks older than that go, of any cluster
+    find $shared_storage_dir -maxdepth 1 -name '.left-*' -mmin +10 -delete 2>/dev/null
+    local left=$shared_storage_dir/.left-$cluster
+    if [ -f $left ]; then
+        if [ "$remote" != "remote" ] && [ ! -f $dir/member ] && [ $(($(date +%s) - $(stat -c %Y $left))) -lt 600 ]; then
+            echo "this host left storage cluster $cluster: the pool list is dropped" >&2
+            return 0
+        fi
+        rm -f $left
+    fi
     mkdir -p $dir
     printf '%s\n' "$list" >$dir/shared_pools.json.tmp && mv -f $dir/shared_pools.json.tmp $dir/shared_pools.json
     # The pools of a cluster whose file system this host's own cluster mounts (a remote mount): the owner's members

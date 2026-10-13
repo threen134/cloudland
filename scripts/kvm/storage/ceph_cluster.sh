@@ -1,8 +1,9 @@
 #!/bin/bash
 # Cluster level Ceph commands of a managed cluster, run on an admin host (shared-storage-design.md §8.2, §8.5, §8.6).
 # Input: {"action", "cluster_uuid", "fsid", ...}
-#   bootstrap:   {"mon_ip", "hostname", "labels", "image", "cluster_network", "single_host", "registry"}  the first mon
-#                and mgr, with the key of the cluster as the key cephadm logs in with; registry: {"url", "username",
+#   bootstrap:   {"mon_ip", "hostname", "labels", "image", "cluster_network", "single_host", "replicas", "registry"}
+#                the first mon and mgr, with the key of the cluster as the key cephadm logs in with; replicas: the pool
+#                size the cluster starts with (the configure step sets it again); registry: {"url", "username",
 #                "password"} of a private registry of the image, which cephadm keeps for its pulls
 #   add_hosts:   {"hosts": [{"hostname", "ip", "labels"}], "mons"}   every cephadm host with its labels, the daemons
 #                placed by label; waits for the mons to form their quorum
@@ -64,13 +65,15 @@ function wait_for()
 
 function do_bootstrap()
 {
-    local uuid dir ip name image net single labels l args pub keys regjson rc
+    local uuid dir ip name image net single replicas labels l args pub keys regjson rc
     uuid=$(jq -r .cluster_uuid <<<"$input")
     ip=$(jq -r .mon_ip <<<"$input")
     name=$(jq -r .hostname <<<"$input")
     image=$(jq -r '.image // ""' <<<"$input")
     net=$(jq -r '.cluster_network // ""' <<<"$input")
     single=$(jq -r '.single_host // false' <<<"$input")
+    replicas=$(jq -r '.replicas // ""' <<<"$input")
+    [ -z "$replicas" ] || [[ "$replicas" =~ ^[1-3]$ ]] || stc_fail "invalid replicas $replicas"
     valid_ip "$ip" || stc_fail "invalid mon address $ip"
     valid_name "$name" || stc_fail "invalid host name $name"
     [ "$(hostname)" = "$name" ] || stc_fail "this host is $(hostname), the cluster knows it as $name"
@@ -92,6 +95,20 @@ function do_bootstrap()
         args="$args --skip-monitoring-stack --skip-dashboard --skip-firewalld --skip-pull --allow-fqdn-hostname --orphan-initial-daemons"
         [ -n "$net" ] && args="$args --cluster-network $net"
         [ "$single" = "true" ] && args="$args --single-host-defaults"
+        # The pool size goes in the bootstrap configuration: the first mon keeps that file as its own, and a local
+        # option outranks the central one the configure step sets. --single-host-defaults writes size 2 there unless
+        # it is given, and a cluster of one OSD then warns TOO_FEW_OSDS for good
+        if [ -n "$replicas" ]; then
+            {
+                printf '[global]\nosd_pool_default_size = %s\nosd_pool_default_min_size = %s\n' "$replicas" "$((replicas - replicas / 2))"
+                # The pools bootstrap makes (.mgr) are of that size too: one replica allowed from the start, not only
+                # from the configure step on
+                if [ "$replicas" = 1 ]; then
+                    printf 'mon_allow_pool_size_one = true\nmon_warn_on_pool_no_redundancy = false\n'
+                fi
+            } >$dir/bootstrap.conf || stc_fail "writing the bootstrap configuration failed"
+            args="$args --config $dir/bootstrap.conf"
+        fi
         # The login of a private registry goes in a file, never on a command line
         regjson=""
         if [ "$(jq -r '.registry.url // empty' <<<"$input")" != "" ]; then
@@ -100,8 +117,9 @@ function do_bootstrap()
             args="$args --registry-json $regjson"
         fi
         stc_progress 10 "bootstrapping the first monitor on $name"
-        # The configuration and the admin key go to the cluster's own directory, not /etc/ceph/ceph.conf
-        cephadm --image "$image" bootstrap $args --output-dir /var/lib/ceph/$fsid/bootstrap --no-cleanup-on-failure
+        # The configuration and the admin key go to the cluster's own directory, not /etc/ceph/ceph.conf. The docker
+        # login of bootstrap goes to root's configuration, the one the mgr pulls with (ceph_install.sh)
+        DOCKER_CONFIG=/root/.docker cephadm --image "$image" bootstrap $args --output-dir /var/lib/ceph/$fsid/bootstrap --no-cleanup-on-failure
         rc=$?
         [ -n "$regjson" ] && rm -f $regjson
         [ $rc -eq 0 ] || stc_fail "cephadm bootstrap failed"

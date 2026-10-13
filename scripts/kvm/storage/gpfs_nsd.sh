@@ -32,7 +32,7 @@ function do_servers()
         servers=$(jq -r .servers <<<"$row")
         [[ "$name" =~ ^[A-Za-z0-9_]+$ ]] || stc_fail "invalid NSD name $name"
         [[ "$servers" =~ ^[0-9.,]+$ ]] || stc_fail "invalid server list $servers"
-        gpfs_nsd_exists $name || stc_fail "NSD $name does not exist"
+        gpfs_nsd_defined $name || stc_fail "NSD $name does not exist"
         # GPFS lists the servers by name or address: compare the addresses
         if [ "$(nsd_servers $name | tr ',' '\n' | while read -r s; do [ -n "$s" ] && getent ahostsv4 "$s" | awk '{print $1; exit}'; done | sort | xargs)" = \
             "$(tr ',' '\n' <<<"$servers" | sort | xargs)" ]; then
@@ -68,7 +68,7 @@ function stc_main()
     for row in $(jq -c '.nsds[]' <<<"$input"); do
         name=$(jq -r .name <<<"$row")
         [[ "$name" =~ ^[A-Za-z0-9_]+$ ]] || stc_fail "invalid NSD name $name"
-        if gpfs_nsd_exists $name; then
+        if gpfs_nsd_defined $name; then
             kept=$((kept + 1))
             continue
         fi
@@ -83,7 +83,7 @@ function stc_main()
     rm -f $tmp
     $gpfs_bin/mmlsnsd
     for row in $(jq -c '.nsds[]' <<<"$input"); do
-        gpfs_nsd_exists "$(jq -r .name <<<"$row")" || stc_fail "NSD $(jq -r .name <<<"$row") is not there after mmcrnsd"
+        gpfs_nsd_defined "$(jq -r .name <<<"$row")" || stc_fail "NSD $(jq -r .name <<<"$row") is not there after mmcrnsd"
     done
     stc_result "$(jq -cn --argjson m $made --argjson k $kept '{created: $m, existing: $k}')"
 }

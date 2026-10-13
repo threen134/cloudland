@@ -207,9 +207,20 @@ function ceph_client_remove()
 # loop devices. purge also removes cephadm and the image, when no other cluster uses them
 function backend_leave()
 {
-    local uuid=$1 purge=$2 vg f others
+    local uuid=$1 purge=$2 vg f others reg image other
+    # The private registry and image the install step logged in to and pulled (ceph_install.sh)
+    reg=$(cat $run_dir/storage/$uuid/registry 2>/dev/null)
+    image=$(cat $run_dir/storage/$uuid/image 2>/dev/null)
     if [ -d /var/lib/ceph/$uuid ] && command -v cephadm >/dev/null; then
         cephadm rm-cluster --force --zap-osds --fsid $uuid || return 1
+    fi
+    if [ -n "$reg" ]; then
+        # The login stays while another cluster on this host pulls from the same registry
+        for other in $run_dir/storage/*/registry; do
+            [ "$other" = "$run_dir/storage/$uuid/registry" ] && continue
+            [ "$(cat $other 2>/dev/null)" = "$reg" ] && reg="" && break
+        done
+        [ -n "$reg" ] && DOCKER_CONFIG=/root/.docker docker logout "$reg" >/dev/null 2>&1
     fi
     ceph_unit_order_remove $uuid
     for f in $ceph_conf_dir/ceph.conf $ceph_conf_dir/ceph.client.admin.keyring $ceph_conf_dir/ceph.pub; do
@@ -233,6 +244,13 @@ function backend_leave()
         if [ -z "$others" ]; then
             DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 purge -y -q cephadm >/dev/null 2>&1
             docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep '^quay.io/ceph/ceph:' | xargs -r docker rmi >/dev/null 2>&1
+            # Every image of the repository the install step pulled from: an upgrade (ceph orch upgrade) pulls another
+            # tag of it, by its digest
+            if [ -n "$image" ]; then
+                image=${image%%@*}
+                [[ "${image##*/}" == *:* ]] && image=${image%:*}
+                docker images -q "$image" 2>/dev/null | sort -u | xargs -r docker rmi -f >/dev/null 2>&1
+            fi
             rm -f $ceph_ours
         fi
     fi

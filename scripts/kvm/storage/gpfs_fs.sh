@@ -86,7 +86,7 @@ function do_remove()
     fi
     list=""
     for name in $(jq -r '.nsds[]' <<<"$input"); do
-        gpfs_nsd_exists $name && list="${list:+$list;}$name"
+        gpfs_nsd_defined $name && list="${list:+$list;}$name"
     done
     if [ -n "$list" ]; then
         stc_progress 80 "deleting the NSDs $list"
@@ -95,7 +95,7 @@ function do_remove()
             # has no such NSD any more
             left=""
             for name in ${list//;/ }; do
-                gpfs_nsd_exists $name && left="$left $name"
+                gpfs_nsd_defined $name && left="$left $name"
             done
             [ -z "$left" ] || stc_fail "mmdelnsd failed for$left"
             echo "mmdelnsd could not clear the disks, their NSDs are gone from the cluster"
@@ -137,20 +137,20 @@ function do_delete()
         done
         [ -z "$($gpfs_bin/mmlsmount $fs -L -Y 2>/dev/null | gpfs_y "" nodeIP | grep .)" ] || stc_fail "$fs is still mounted on some node"
         stc_progress 40 "deleting file system $fs"
-        $gpfs_bin/mmdelfs $fs || stc_fail "mmdelfs $fs failed"
+        gpfs_delfs $fs || stc_fail "mmdelfs $fs failed"
     else
         echo "file system $fs is gone already"
     fi
     for name in $(jq -r '.nsds[]' <<<"$input"); do
         [[ "$name" =~ ^[A-Za-z0-9_]+$ ]] || stc_fail "invalid NSD name $name"
-        gpfs_nsd_exists $name && list="${list:+$list;}$name"
+        gpfs_nsd_defined $name && list="${list:+$list;}$name"
     done
     if [ -n "$list" ]; then
         stc_progress 70 "deleting the NSDs $list"
         if ! $gpfs_bin/mmdelnsd "$list"; then
             left=""
             for name in ${list//;/ }; do
-                gpfs_nsd_exists $name && left="$left $name"
+                gpfs_nsd_defined $name && left="$left $name"
             done
             [ -z "$left" ] || stc_fail "mmdelnsd failed for$left"
         fi

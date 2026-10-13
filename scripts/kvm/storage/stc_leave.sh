@@ -24,11 +24,16 @@ function stc_main()
         stc_progress 10 "cleaning up $kind"
         backend_leave "$uuid" "$purge" || stc_fail "the $kind part of leaving failed"
     fi
-    for row in $(jq -c '.wipe[]?' <<<"$input"); do
+    # A row a line (a serial may hold a space); read on fd 3, the commands in the loop keep their stdin
+    while read -r row <&3; do
         id=$(jq -r .id <<<"$row")
         # A shared LUN another host keeps serving, or wipes (shared-storage-design.md §7.10)
         if [ "$(jq -r '.shared == true' <<<"$row")" = true ]; then
             echo "not wiping $id: a shared LUN another host keeps or wipes"
+            # The partition maps kpartx made here on the NSD would stay, on a partition table the wipe removes
+            if disk_identity "$id" "$(jq -r '.serial // ""' <<<"$row")" "$(jq -r '.wwn // ""' <<<"$row")" "$(jq -r '.size_bytes // 0' <<<"$row")"; then
+                drop_partition_maps $identity_path
+            fi
             continue
         fi
         if ! disk_identity "$id" "$(jq -r '.serial // ""' <<<"$row")" "$(jq -r '.wwn // ""' <<<"$row")" "$(jq -r '.size_bytes // 0' <<<"$row")"; then
@@ -47,7 +52,7 @@ function stc_main()
         stc_progress 50 "wiping $id ($path)"
         wipe_disk $path || stc_fail "wiping $id ($path) failed"
         wiped=$((wiped + 1))
-    done
+    done 3< <(jq -c '.wipe[]?' <<<"$input")
     # The line of the cluster, and the one of a new key an aborted rotation left
     stc_keys_update suffix "cloudland-storage-$uuid" || stc_fail "rewriting authorized_keys failed"
     stc_keys_update suffix "cloudland-storage-$uuid-rotate" || stc_fail "rewriting authorized_keys failed"
@@ -55,6 +60,9 @@ function stc_main()
     for p in $(cat $dir/held_packages 2>/dev/null); do
         apt-mark unhold $p >/dev/null 2>&1
     done
+    # A pool list sent while it was a member may still come (shared_pools_apply drops it): marked before the
+    # directory goes, so one that runs in between does not bring it back
+    touch $shared_storage_dir/.left-$uuid
     rm -rf $dir
     # The pools of the cluster went before it; a probe left over would never stop otherwise
     shared_pools_prune

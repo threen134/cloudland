@@ -2,8 +2,10 @@
 # Give disks a storage cluster no longer uses back to this host (shared-storage-design.md §7.5): the kind is told which
 # disks of the cluster stay here (the GPFS nsddevices exit lists only those), then the released disks are wiped,
 # each checked to be the disk that was claimed first, and forget their claim.
-# Input: {"cluster_uuid", "kind", "keep": [stable id], "release": [{"id", "serial", "wwn", "size_bytes"}], "no_wipe"}.
-# no_wipe: the released disks failed (a replacement) and are not touched, only their claim goes
+# Input: {"cluster_uuid", "kind", "keep": [stable id], "release": [{"id", "serial", "wwn", "size_bytes"}], "no_wipe",
+#         "nsddevices"}.
+# no_wipe: the released disks failed (a replacement) and are not touched, only their claim goes. nsddevices false:
+# the kind is not told (the disks of a GPFS recovery group are pdisks, no NSDs)
 
 cd $(dirname $0)
 source ../../cloudrc
@@ -21,10 +23,12 @@ function stc_main()
     stc_lock "$kind-$uuid"
     mapfile -t keep < <(jq -r '.keep[]?' <<<"$input")
     nowipe=$(jq -r '.no_wipe // false' <<<"$input")
-    if backend_load "$kind" && declare -F backend_disks_resolved >/dev/null; then
+    # "nsddevices": false: the disks are pdisks of a GPFS recovery group, never NSDs (stc_resolve_disks.sh)
+    if backend_load "$kind" && declare -F backend_disks_resolved >/dev/null && [ "$(jq -r '.nsddevices == false' <<<"$input")" != "true" ]; then
         backend_disks_resolved "$uuid" "${keep[@]}" || stc_fail "the $kind part of releasing the disks failed"
     fi
-    for row in $(jq -c '.release[]?' <<<"$input"); do
+    # A row a line (a serial may hold a space); read on fd 3, the commands in the loop keep their stdin
+    while read -r row <&3; do
         id=$(jq -r .id <<<"$row")
         rm -f $run_dir/storage/$uuid/claimed-$(echo -n "$id" | md5sum | cut -c1-16)
         if [ "$nowipe" = "true" ]; then
@@ -34,6 +38,10 @@ function stc_main()
         # A shared LUN another host of the cluster wipes (shared-storage-design.md §7.10)
         if [ "$(jq -r '.shared == true' <<<"$row")" = true ]; then
             echo "not wiping $id: a shared LUN another host wipes"
+            # The partition maps kpartx made here on the NSD would stay, on a partition table the wipe removes
+            if disk_identity "$id" "$(jq -r '.serial // ""' <<<"$row")" "$(jq -r '.wwn // ""' <<<"$row")" "$(jq -r '.size_bytes // 0' <<<"$row")"; then
+                drop_partition_maps $identity_path
+            fi
             continue
         fi
         if ! disk_identity "$id" "$(jq -r '.serial // ""' <<<"$row")" "$(jq -r '.wwn // ""' <<<"$row")" "$(jq -r '.size_bytes // 0' <<<"$row")"; then
@@ -46,7 +54,7 @@ function stc_main()
         stc_progress 50 "wiping $id ($path)"
         wipe_disk $path || stc_fail "wiping $id ($path) failed"
         wiped=$((wiped + 1))
-    done
+    done 3< <(jq -c '.release[]?' <<<"$input")
     stc_result "$(jq -cn --argjson w $wiped '{wiped: $w}')"
 }
 

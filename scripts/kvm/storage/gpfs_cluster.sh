@@ -169,26 +169,36 @@ function do_teardown()
         stc_result '{"removed": false}'
         return 0
     fi
+    offline=$(jq -r '.offline[]?' <<<"$input" | xargs)
     stc_progress 10 "unmounting"
     $gpfs_bin/mmumount all -a
     teardown_ece "$input"
     for fs in $(jq -r '.filesystems[]?' <<<"$input"); do
-        $gpfs_bin/mmlsfs $fs >/dev/null 2>&1 || continue
+        # Defined in the configuration: mmlsfs <fs> fails on a file system that is busy (a deletion was stopped), which
+        # must not be taken for one that is gone
+        $gpfs_bin/mmlsfs all -T 2>/dev/null | grep -q "^File system attributes for /dev/$fs:" || continue
         stc_progress 30 "deleting file system $fs"
-        $gpfs_bin/mmdelfs $fs || stc_fail "mmdelfs $fs failed"
+        # The disks of a member offline can not be marked available: without -p tsdelfs waits on them for good, and
+        # GPFS refuses to start them again while tsdelfs runs
+        gpfs_delfs $fs ${offline:+-p} || stc_fail "mmdelfs $fs failed"
     done
     list=""
     for nsd in $(jq -r '.nsds[]?' <<<"$input"); do
-        gpfs_nsd_exists $nsd && list="${list:+$list;}$nsd"
+        gpfs_nsd_defined $nsd && list="${list:+$list;}$nsd"
     done
     if [ -n "$list" ]; then
         stc_progress 50 "deleting the NSDs"
-        $gpfs_bin/mmdelnsd "$list" || stc_fail "mmdelnsd failed"
+        if ! $gpfs_bin/mmdelnsd "$list"; then
+            # The label on a disk of a member offline can not be cleared; what counts is that the NSDs are gone
+            [ -n "$offline" ] || stc_fail "mmdelnsd failed"
+            for nsd in ${list//;/ }; do
+                gpfs_nsd_defined $nsd && stc_fail "mmdelnsd failed: $nsd is still defined"
+            done
+        fi
     fi
     stc_progress 70 "stopping GPFS"
     $gpfs_bin/mmshutdown -a
     if ! $gpfs_bin/mmdelnode -a; then
-        offline=$(jq -r '.offline[]?' <<<"$input" | xargs)
         [ -n "$offline" ] || stc_fail "mmdelnode failed"
         # Every host drops the configuration of the cluster when it leaves, the ones offline now once they are back
         echo "mmdelnode -a failed with members offline ($offline): the hosts drop the cluster when they leave"
@@ -271,8 +281,34 @@ function do_remove()
         stc_progress 50 "taking $ip out of the quorum"
         $gpfs_bin/mmchnode --nonquorum -N $ip || stc_fail "mmchnode --nonquorum failed"
     fi
+    # An expel (a fence) outlives the node: GPFS keeps the address on its list after mmdelnode, and the host could never
+    # join this cluster again. A host removed online (GPFS stopped on it above) has it lifted while it is still a node.
+    # One removed offline keeps it until it is no node: it may be alive behind a partition, and a failed mmdelnode must
+    # not leave it in the cluster unfenced. The fence lift that follows the removal takes the address off the list
+    if [ "$offline" != "true" ]; then
+        local name
+        name=$(gpfs_daemon_name $ip)
+        if [ -n "$name" ]; then
+            gpfs_expelled "$name" $ip
+            case $? in
+                0)
+                    stc_progress 65 "lifting the expel of $name"
+                    timeout 600 $gpfs_bin/mmexpelnode -r -N $name || stc_fail "mmexpelnode -r -N $name failed"
+                    ;;
+                1) ;;
+                *) stc_fail "mmexpelnode -l failed" ;;
+            esac
+        fi
+    fi
     stc_progress 70 "deleting node $ip"
-    $gpfs_bin/mmdelnode -N $ip || stc_fail "mmdelnode failed"
+    # A callback mmvdisk left from a server add names every server, this one too: mmdelnode refuses it
+    gpfs_drop_add_callbacks
+    if [ "$offline" = "true" ]; then
+        # mmdelnode makes sure GPFS is stopped on the node first and refuses one it can not reach without --force
+        echo yes | $gpfs_bin/mmdelnode -N $ip --force || stc_fail "mmdelnode --force failed"
+    else
+        $gpfs_bin/mmdelnode -N $ip || stc_fail "mmdelnode failed"
+    fi
     stc_result '{"removed": true}'
 }
 
@@ -334,13 +370,14 @@ function gpfs_daemon_name()
 }
 
 # gpfs_expelled <node name> <address>: whether a node is on the list of the nodes expelled by mmexpelnode, whose lines
-# are "<address> (<node name>)" under a dashed line; 0 when it is, 1 when not, 2 when the list could not be read
+# are "<address> (<node name>)" under a dashed line (the address only once the node is gone); an empty name matches by
+# the address alone. 0 when it is, 1 when not, 2 when the list could not be read
 function gpfs_expelled()
 {
     local out
     out=$(timeout 60 $gpfs_bin/mmexpelnode -l 2>/dev/null) || return 2
     awk -v n="$1" -v ip="$2" '
-        f && NF && $1 != "(Empty)" { name = $2; gsub(/[()]/, "", name); if ($1 == ip || name == n) found = 1 }
+        f && NF && $1 != "(Empty)" { name = $2; gsub(/[()]/, "", name); if ($1 == ip || (n != "" && name == n)) found = 1 }
         /^---/ { f = 1 }
         END { exit !found }' <<<"$out"
 }
@@ -386,8 +423,18 @@ function do_unfence()
     [[ "$ip" =~ ^[0-9.]+$ ]] || stc_fail "invalid address $ip"
     name=$(gpfs_daemon_name $ip)
     if [ -z "$name" ]; then
-        # Removed from the cluster: GPFS forgot its expel with it
-        echo "$ip is not a node of this cluster (any more): nothing to let back in"
+        # Removed from the cluster: GPFS keeps the address on its expel list after mmdelnode. An online removal lifts
+        # the expel first (do_remove); an offline one leaves it to this, lifted by the address
+        gpfs_expelled "" $ip
+        case $? in
+            0)
+                stc_progress 30 "letting $ip join again"
+                timeout 600 $gpfs_bin/mmexpelnode -r -N $ip ||
+                    stc_fail "$ip is no node of this cluster any more but still expelled: mmexpelnode -r -N $ip failed"
+                ;;
+            1) echo "$ip is not a node of this cluster (any more) and not expelled: nothing to let back in" ;;
+            *) stc_fail "mmexpelnode -l failed" ;;
+        esac
         stc_result "$(jq -cn --arg a "$ip" '{address: $a}')"
         return 0
     fi
