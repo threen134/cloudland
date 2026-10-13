@@ -113,7 +113,7 @@ func (a *StorageClusterAdmin) Import(ctx context.Context, req *StorageClusterImp
 
 // storageForgetStep removes what CloudLand put on a host of a cluster it stops using (the pool lists, the probes),
 // leaving the storage alone: the deletion of an imported cluster
-var storageForgetStep = &storageStepDef{Script: "stc_forget.sh", OnlineOnly: true,
+var storageForgetStep = &storageStepDef{Script: "stc_forget.sh", OnlineOnly: true, SkipOffline: true,
 	Input: func(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
 		cluster, _, _, err := storageClusterOfTask(db, task)
 		if err != nil {

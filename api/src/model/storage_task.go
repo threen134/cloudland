@@ -36,6 +36,8 @@ const (
 	StorageRunRunning    = "running"
 	StorageRunFailed     = "failed"
 	StorageRunSucceeded  = "succeeded"
+	// A host offline when a step that skips such hosts started (storageStepDef.SkipOffline); nothing was sent to it
+	StorageRunSkipped = "skipped"
 )
 
 type StorageTask struct {

@@ -305,12 +305,16 @@ func (a *HyperAdmin) AllocateHostID(ctx context.Context) (hostID int32, err erro
 	// A host id is never given again: hosts are deleted for good, but volumes kept for adoption still name the old
 	// id (and the pool disks carry it in their tags), so the id of a deleted host must not come back with a new one.
 	// The ids ever used are taken from the hosts and from everything that remembers a host, deleted rows included.
+	// The disk and pool rows of a deleted host stay soft deleted under unique (hostid, ...) indexes: a host given its
+	// id again could save neither its built-in pool nor a disk scan.
 	var maxID int32
 	for _, q := range []*gorm.DB{
 		db.Model(&model.Hyper{}).Select("COALESCE(MAX(hostid), 0)"),
 		db.Unscoped().Model(&model.Volume{}).Select("COALESCE(MAX(hyper), 0)"),
 		db.Unscoped().Model(&model.Instance{}).Select("COALESCE(MAX(hyper), 0)"),
 		db.Unscoped().Model(&model.HyperDisk{}).Select("COALESCE(MAX(owner_hostid), 0)"),
+		db.Unscoped().Model(&model.HyperDisk{}).Select("COALESCE(MAX(hostid), 0)"),
+		db.Unscoped().Model(&model.HyperStoragePool{}).Select("COALESCE(MAX(hostid), 0)"),
 	} {
 		var id int32
 		if err = q.Row().Scan(&id); err != nil {

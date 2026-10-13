@@ -46,6 +46,20 @@ var gpfsECEChangeSteps = map[string]map[string]*storageStepDef{
 
 // gpfsECEChangeTaskPlan: the change plans of an erasure code cluster; what does not touch the recovery group (roles,
 // keys, the upgrade) is planned as for the replica layout
+// gpfsECEReplaceable: without a slot map a pdisk is replaced only once GNR marked it for replacement (mmaddpdisk
+// --replace; mmvdisk finds the new disk by the slot of the old one, which is not known). A missing pdisk is never
+// marked, a failed one once the failed pdisks of its array reach the replace threshold (2 by default); the other ways
+// round it (deleting the pdisk, a dead state forced with the dangerous options) GNR refuses or IBM does not support
+func gpfsECEReplaceable(scope *StorageTaskScope) error {
+	for _, d := range scope.Disks {
+		if d.Status == model.StorageDiskRemoving && !strings.Contains(d.State, "replace") {
+			return planError("GNR has not marked pdisk %s for replacement (%s): without a slot map only a marked pdisk is replaced. "+
+				"Bring the disk back, or take its server out of the recovery group and add it again", d.Name, d.State)
+		}
+	}
+	return nil
+}
+
 func gpfsECEChangeTaskPlan(task string, scope *StorageTaskScope) ([]*StorageStepPlan, error) {
 	nodes := scope.Nodes
 	admins := gpfsWorkingAdmins(nodes)
@@ -104,9 +118,8 @@ func gpfsECEChangeTaskPlan(task string, scope *StorageTaskScope) ([]*StorageStep
 			plan = append(plan, step("ece_remove_server", a, admins, 7*24*time.Hour))
 		}
 		plan = append(plan, step("remove_node", a, admins, 30*time.Minute))
-		if !scope.Offline {
-			plan = append(plan, step("leave", n, leaving, 30*time.Minute))
-		}
+		// Online only: an offline removal skips it and the host does it once it is back (storageRecordSkippedHosts)
+		plan = append(plan, step("leave", n, leaving, 30*time.Minute))
 		return plan, nil
 	case StorageTaskReplaceDisk:
 		newHost := gpfsDiskHosts(scope.Disks, model.StorageDiskClaiming)
@@ -260,6 +273,37 @@ func gpfsECEReplaceInput(ctx context.Context, db *gorm.DB, task *model.StorageTa
 	_, rg, _ := gpfsECENames(cluster)
 	return map[string]interface{}{"action": "replace", "cluster_uuid": cluster.UUID, "recovery_group": rg, "pdisk": old.Name,
 		"ip": ips[fresh.Hostid], "device": device, "wwn": fresh.WWN, "slot_map": !gpfsParamsOf(cluster).NoSlotMap}, nil
+}
+
+// ReactivatesFailedDisks: in the erasure code layout no pdisk leaves on its own and a working one is never replaced,
+// so a pdisk an aborted replacement left failed has no other way back than GNR reporting it up
+func (gpfsBackend) ReactivatesFailedDisks(cluster *model.StorageCluster) bool {
+	return cluster.Layout == model.StorageLayoutECE
+}
+
+// StrayClaimChecks: in the erasure code layout the disk of a stray claim is checked by its WWN to be no pdisk before it
+// is wiped: an abort after a replacement went through leaves the new pdisk with a record that looks stray
+func (gpfsBackend) StrayClaimChecks(cluster *model.StorageCluster, nodes []*model.StorageClusterNode) []*StorageStepPlan {
+	if cluster.Layout != model.StorageLayoutECE {
+		return nil
+	}
+	return []*StorageStepPlan{{Name: "ece_claim_free", Scope: model.StorageStepScopeAdmin, Hostids: gpfsWorkingAdmins(nodes), Timeout: 10 * time.Minute}}
+}
+
+// gpfsECEClaimFreeInput: the WWN of the stray claim and the recovery group it must be no pdisk of
+func gpfsECEClaimFreeInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
+	cluster, _, disks, err := storageClusterOfTask(db, task)
+	if err != nil {
+		return nil, err
+	}
+	id := storageTaskInt(task, "disk_id")
+	for _, d := range disks {
+		if d.ID == id {
+			_, rg, _ := gpfsECENames(cluster)
+			return map[string]interface{}{"action": "claim_free", "cluster_uuid": cluster.UUID, "recovery_group": rg, "wwn": d.WWN}, nil
+		}
+	}
+	return nil, fmt.Errorf("the disk of the task is not in the cluster")
 }
 
 // gpfsECESetsOf are the vdisk sets of a cluster as recorded: the data sets in the order they were made, then the

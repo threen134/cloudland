@@ -14,10 +14,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// StoragePendingCleanup is what a host still has to remove of a storage cluster deleted while it was offline
-// (shared-storage-design.md §7.6, §8.6): the deletion went on without it, and the leave it missed runs on it once it
-// is back. The input of that leave is made when the cluster is deleted, from records that go with the cluster. One
-// live row per host and cluster; it goes once the leave succeeded, or with the host
+// StoragePendingCleanup is what a host still has to remove of a storage cluster it left while it was offline
+// (shared-storage-design.md §7.5, §7.6, §8.6): the cluster was deleted, or the host removed from it, without it, and
+// the leave it missed runs on it once it is back. The input of that leave is made when the task ends, from records
+// that go with the cluster or the host. One live row per host and cluster; it goes once the leave succeeded, or with
+// the host
 type StoragePendingCleanup struct {
 	Model
 	Hostid      int32  `gorm:"index"`

@@ -17,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"api/src/dbs"
@@ -53,8 +54,9 @@ func init() {
 	})
 }
 
-// storageRecordSkippedHosts records what the hosts the leave (or forget) step of a cluster deletion skipped still have
-// to do. Called by the finish of the deletion, before the records of the cluster go
+// storageRecordSkippedHosts records what the hosts the leave (or forget) step of a cluster deletion, or of the removal
+// of a host that was offline, skipped still have to do. Called by the finish, before the records of the cluster or of
+// the host go
 func storageRecordSkippedHosts(ctx context.Context, tx *gorm.DB, task *model.StorageTask, cluster *model.StorageCluster) error {
 	kind := storageTaskKindOf(task)
 	if kind == nil {
@@ -94,7 +96,7 @@ func storageRecordSkippedHosts(ctx context.Context, tx *gorm.DB, task *model.Sto
 			if err = tx.Clauses(clause.OnConflict{DoNothing: true}).Create(row).Error; err != nil {
 				return err
 			}
-			logger.Ctx(ctx).Infof("Host %d was offline when storage cluster %s was deleted: it runs the %s it missed once it is back", h, cluster.Name, step.Name)
+			logger.Ctx(ctx).Infof("Host %d was offline when it left storage cluster %s (%s): it runs the %s it missed once it is back", h, cluster.Name, task.Kind, step.Name)
 		}
 	}
 	return nil
@@ -112,6 +114,18 @@ func storageCleanupOf(db *gorm.DB, task *model.StorageTask) (*model.StoragePendi
 	return row, p, nil
 }
 
+// diskIDOfHostOnly: whether a disk identifier names a disk only on its host (disk_stable_id): a loop device's backing
+// file, a kernel name, or a link that is no identity of the disk (dm-name-mpatha, by-path); WWNs, EUIs and the model
+// and serial ones (ata-, scsi-, nvme-) name the disk wherever it is seen
+func diskIDOfHostOnly(id string) bool {
+	for _, p := range []string{"wwn-", "nvme-eui.", "ata-", "scsi-", "nvme-"} {
+		if strings.HasPrefix(id, p) {
+			return false
+		}
+	}
+	return true
+}
+
 // storageCleanupInput is the input recorded when the cluster was deleted, less the disks claimed again since: a disk
 // another storage cluster took is not the deleted cluster's to wipe any more (the host joins none while its cleanup
 // waits, so only after the wipe list was made by hand)
@@ -127,9 +141,20 @@ func storageCleanupInput(ctx context.Context, db *gorm.DB, task *model.StorageTa
 	if wipe, ok := in["wipe"].([]interface{}); ok {
 		keep := []interface{}{}
 		for _, w := range wipe {
+			// A shared LUN is never wiped here, the host only drops its partition maps: kept whoever claims it now
+			if shared, _ := w.(map[string]interface{})["shared"].(bool); shared {
+				keep = append(keep, w)
+				continue
+			}
 			id, _ := w.(map[string]interface{})["id"].(string)
 			var n int64
-			db.Model(&model.StorageClusterDisk{}).Where("hostid = ? AND disk_id = ?", hostid, id).Count(&n)
+			// A disk known by an identifier of the disk itself (a WWN, a serial) is the same disk on any host: a shared
+			// LUN claimed through another host is claimed. A loop file or a device name is only this host's
+			q := db.Model(&model.StorageClusterDisk{}).Where("disk_id = ?", id)
+			if diskIDOfHostOnly(id) {
+				q = q.Where("hostid = ?", hostid)
+			}
+			q.Count(&n)
 			if n == 0 {
 				keep = append(keep, w)
 			}

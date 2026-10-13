@@ -334,6 +334,18 @@ func checkStorageRemoval(db *gorm.DB, backend StorageBackend, cluster *model.Sto
 	return nil
 }
 
+// storageStrayClaimChecker is a backend with checks of its own, run on the cluster before a stray claim (a claim the
+// records say never made it into the storage) is given back and wiped: the steps to run first
+type storageStrayClaimChecker interface {
+	StrayClaimChecks(cluster *model.StorageCluster, nodes []*model.StorageClusterNode) []*StorageStepPlan
+}
+
+// storageDiskReactivator is a backend with layouts where a disk an aborted replacement left failed can not be cleared
+// any other way (no disk leaves on its own): the health check makes it active again once the storage reports it up
+type storageDiskReactivator interface {
+	ReactivatesFailedDisks(cluster *model.StorageCluster) bool
+}
+
 // storageClusterMaintainer is a backend that has something to do for its ready clusters every minute, besides the
 // tasks (the GPFS disks of a host that came back)
 type storageClusterMaintainer interface {

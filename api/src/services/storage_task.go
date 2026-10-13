@@ -85,8 +85,15 @@ type storageStepDef struct {
 	// before it (device names resolved just before disks are written)
 	RetryFrom string
 	// OnlineOnly: a nodes step that runs on the hosts online when it starts and skips the others, for work a host
-	// that is away catches up on later by itself (the pool lists, §9.2)
+	// that is away catches up on later by itself (the pool lists, §9.2). It fails when none is online
 	OnlineOnly bool
+	// SkipOffline: an OnlineOnly step whose finish records what the hosts it missed have to do once they are back
+	// (storageRecordSkippedHosts: the leave of a removal or a deletion). An offline host gets a skipped run, and the
+	// step succeeds with every host offline instead of failing
+	SkipOffline bool
+	// MembersOnly: a nodes step for the hosts that stay in the cluster: those leaving it (a removal running beside the
+	// task) are left out when it starts
+	MembersOnly bool
 	// Control: a step clapi does itself instead of a script on the hosts (moving the instances off a host before it
 	// is upgraded). Called outside the transactions of the engine when the step starts, at each move of the task and
 	// each round of the worker, until it is done; it must do nothing twice. An error fails the step, so does the
@@ -210,7 +217,44 @@ func parseHostids(raw string) (ids []int32) {
 }
 
 func storageRunTerminal(status string) bool {
-	return status == model.StorageRunSucceeded || status == model.StorageRunFailed
+	return status == model.StorageRunSucceeded || status == model.StorageRunFailed || status == model.StorageRunSkipped
+}
+
+// skipOfflineRuns records a skipped run for each host of a starting step that is not among the online ones, so the
+// task shows what was not done there; how many
+func skipOfflineRuns(tx *gorm.DB, step *model.StorageTaskStep, online []int32) (n int, err error) {
+	up := map[int32]bool{}
+	for _, h := range online {
+		up[h] = true
+	}
+	for _, h := range parseHostids(step.Hostids) {
+		if up[h] {
+			continue
+		}
+		if err = skipStorageRun(tx, step, h); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
+// skipStorageRun records that a step was not run on a host that is offline
+func skipStorageRun(tx *gorm.DB, step *model.StorageTaskStep, hostid int32) error {
+	now := time.Now()
+	return createStorageRun(tx, step, hostid, &model.StorageTaskRun{Status: model.StorageRunSkipped,
+		Message: "skipped: the host is offline, it does this once it is back", Progress: 100, StartedAt: now, UpdatedAt: now})
+}
+
+// createStorageRun records the next attempt of a step on a host: the run gets the step, the host and its attempt number
+func createStorageRun(tx *gorm.DB, step *model.StorageTaskStep, hostid int32, run *model.StorageTaskRun) error {
+	var attempt int32
+	if err := tx.Model(&model.StorageTaskRun{}).Where("step_id = ? AND hostid = ?", step.ID, hostid).
+		Select("COALESCE(MAX(attempt), 0)").Scan(&attempt).Error; err != nil {
+		return err
+	}
+	run.StepID, run.Hostid, run.Attempt = step.ID, hostid, attempt+1
+	return tx.Create(run).Error
 }
 
 func truncate(s string, n int) string {
@@ -403,6 +447,21 @@ func advanceStorageTaskOnce(ctx context.Context, taskID int64) (sends []*storage
 		switch cur.Status {
 		case model.StorageStepPending:
 			hosts, msg := storageStepHosts(tx, cur, def)
+			if def != nil && def.SkipOffline && def.OnlineOnly && cur.Scope != model.StorageStepScopeAdmin {
+				skipped, err := skipOfflineRuns(tx, cur, hosts)
+				if err != nil {
+					return err
+				}
+				if len(hosts) == 0 && skipped > 0 {
+					// Every host is offline (the one host of an offline removal): the finish records what they missed
+					now := time.Now()
+					if err := tx.Model(cur).Updates(map[string]interface{}{"status": model.StorageStepSucceeded, "started_at": &now, "finished_at": &now}).Error; err != nil {
+						return err
+					}
+					again = true
+					return nil
+				}
+			}
 			if len(hosts) == 0 {
 				return failStorageStep(tx, task, cur, msg)
 			}
@@ -525,6 +584,25 @@ func workStorageControls(ctx context.Context) {
 // runs on those only), the first online host of an admin step
 func storageStepHosts(tx *gorm.DB, step *model.StorageTaskStep, def *storageStepDef) (hosts []int32, msg string) {
 	ids := parseHostids(step.Hostids)
+	if def != nil && def.MembersOnly && len(ids) > 0 {
+		leaving := []int32{}
+		if err := tx.Model(&model.StorageClusterNode{}).
+			Where("cluster_id = (SELECT cluster_id FROM storage_tasks WHERE id = ?) AND hostid IN ? AND status = ?", step.TaskID, ids, model.StorageNodeLeaving).
+			Pluck("hostid", &leaving).Error; err != nil {
+			return nil, "the hosts leaving the cluster could not be read: " + err.Error()
+		}
+		gone := map[int32]bool{}
+		for _, h := range leaving {
+			gone[h] = true
+		}
+		kept := []int32{}
+		for _, id := range ids {
+			if !gone[id] {
+				kept = append(kept, id)
+			}
+		}
+		ids = kept
+	}
 	if step.Scope != model.StorageStepScopeAdmin {
 		if def == nil || !def.OnlineOnly {
 			return ids, "the step has no host"
@@ -550,14 +628,8 @@ func startStorageRuns(ctx context.Context, tx *gorm.DB, task *model.StorageTask,
 	hosts []int32) (sends []*storageDispatch, err error) {
 	now := time.Now()
 	for _, h := range hosts {
-		var attempt int32
-		if err = tx.Model(&model.StorageTaskRun{}).Where("step_id = ? AND hostid = ?", step.ID, h).
-			Select("COALESCE(MAX(attempt), 0)").Scan(&attempt).Error; err != nil {
-			return nil, err
-		}
-		run := &model.StorageTaskRun{StepID: step.ID, Hostid: h, Attempt: attempt + 1, Status: model.StorageRunDispatched,
-			Dispatches: 1, StartedAt: now, UpdatedAt: now}
-		if err = tx.Create(run).Error; err != nil {
+		run := &model.StorageTaskRun{Status: model.StorageRunDispatched, Dispatches: 1, StartedAt: now, UpdatedAt: now}
+		if err = createStorageRun(tx, step, h, run); err != nil {
 			return nil, err
 		}
 		command, buildErr := storageRunCommand(ctx, tx, task, step, def, run)
@@ -827,6 +899,26 @@ func RetryStorageTask(ctx context.Context, taskID int64) (err error) {
 				hosts, _ = storageStepHosts(tx, cur, def)
 			}
 		}
+		if def.SkipOffline && def.OnlineOnly && cur.Scope != model.StorageStepScopeAdmin {
+			// A host that went offline is skipped as at the start (its finish records what it missed); with every
+			// host offline the step ends at the next move of the task, its runs all ended
+			online := []int32{}
+			for _, h := range hosts {
+				if _, up := hostOnline(tx, h); up {
+					online = append(online, h)
+				} else if err := skipStorageRun(tx, cur, h); err != nil {
+					return err
+				}
+			}
+			if len(online) == 0 && len(hosts) > 0 {
+				now := time.Now()
+				if err := tx.Model(cur).Updates(map[string]interface{}{"status": model.StorageStepRunning, "finished_at": nil, "started_at": &now}).Error; err != nil {
+					return err
+				}
+				return tx.Model(task).Updates(map[string]interface{}{"status": model.StorageTaskRunning, "message": ""}).Error
+			}
+			hosts = online
+		}
 		if len(hosts) == 0 {
 			return NewCLError(ErrStorageTaskState, "No host to run the step on: "+cur.Name, nil)
 		}
@@ -954,13 +1046,23 @@ func workStorageRuns(ctx context.Context) {
 			continue
 		}
 		reason := ""
+		timedOut := false
 		if step.TimeoutSec > 0 && now.Sub(run.StartedAt) > time.Duration(step.TimeoutSec)*time.Second {
 			reason = fmt.Sprintf("timed out after %s", time.Duration(step.TimeoutSec)*time.Second)
+			timedOut = true
 		} else if _, online := hostOnline(db, run.Hostid); !online && now.Sub(run.UpdatedAt) > storageRunOfflineAfter {
 			reason = "the host is offline"
 		}
 		if reason != "" {
 			failStorageRun(ctx, run.ID, reason)
+			if timedOut {
+				// The job would go on, holding the lock of its cluster and acting after the task moved on (a retry
+				// waits on that lock): it is stopped like the job of an aborted task
+				command := fmt.Sprintf("%s/stc_kill.sh '%d' '%s'", storageScriptDir, run.ID, ShellEscape("stopped: the step "+reason))
+				if err := HyperExecute(ctx, fmt.Sprintf("inter=%d", run.Hostid), command); err != nil {
+					logger.Ctx(ctx).Warningf("Failed to stop storage run %d on host %d: %v", run.ID, run.Hostid, err)
+				}
+			}
 			continue
 		}
 		if now.Sub(run.UpdatedAt) < storagePollEvery {

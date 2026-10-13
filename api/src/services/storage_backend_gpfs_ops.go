@@ -121,9 +121,8 @@ func gpfsChangeTaskPlan(task string, scope *StorageTaskScope) ([]*StorageStepPla
 			plan = append(plan, step("remove_disks", a, admins, 24*time.Hour))
 		}
 		plan = append(plan, step("remove_node", a, admins, 30*time.Minute))
-		if !scope.Offline {
-			plan = append(plan, step("leave", n, leaving, 30*time.Minute))
-		}
+		// Online only: an offline removal skips it and the host does it once it is back (storageRecordSkippedHosts)
+		plan = append(plan, step("leave", n, leaving, 30*time.Minute))
 	case StorageTaskRebalance:
 		plan = append(plan, step("rebalance", a, admins, 7*24*time.Hour))
 	case StorageTaskReplaceDisk:
@@ -201,12 +200,14 @@ func init() {
 		Steps: map[string]*storageStepDef{
 			"remove_disks":  {Script: "gpfs_fs.sh", Input: gpfsRemoveDisksInput},
 			"release_disks": {Script: "stc_release_disks.sh", Input: gpfsReleaseDisksInput},
+			// A stray claim of the erasure code layout is checked to be no pdisk first (StrayClaimChecks)
+			"ece_claim_free": {Script: "gpfs_ece.sh", Input: gpfsECEClaimFreeInput},
 		}})
 	registerStorageTaskKind("gpfs:"+StorageTaskRemoveNode, &storageTaskKind{Slot: storageSlotStructural, Finish: gpfsRemoveNodeFinish,
 		Steps: withSAN(withECE(StorageTaskRemoveNode, map[string]*storageStepDef{
 			"remove_disks": {Script: "gpfs_fs.sh", Input: gpfsRemoveDisksInput},
 			"remove_node":  {Script: "gpfs_cluster.sh", Input: gpfsRemoveNodeInput},
-			"leave":        {Script: "stc_leave.sh", Input: gpfsLeaveInput},
+			"leave":        {Script: "stc_leave.sh", Input: gpfsLeaveInput, OnlineOnly: true, SkipOffline: true},
 		}))})
 	registerStorageTaskKind("gpfs:"+StorageTaskRebalance, &storageTaskKind{Slot: storageSlotStructural,
 		Steps: map[string]*storageStepDef{"rebalance": {Script: "gpfs_fs.sh", Input: gpfsRebalanceInput}}})
@@ -388,6 +389,9 @@ func gpfsReleaseDisksInput(ctx context.Context, db *gorm.DB, task *model.Storage
 	if err != nil {
 		return nil, err
 	}
+	if storageTaskBool(task, "stray") {
+		return gpfsStrayReleaseInput(db, task, cluster, disks, hostid)
+	}
 	keep := []string{}
 	release := []*storageDiskIdentity{}
 	removing := map[int32]bool{}
@@ -411,7 +415,9 @@ func gpfsReleaseDisksInput(ctx context.Context, db *gorm.DB, task *model.Storage
 			keep = append(keep, d.DiskID)
 		}
 	}
-	return map[string]interface{}{"cluster_uuid": cluster.UUID, "kind": cluster.Kind, "keep": keep, "release": release}, nil
+	// The disks of the erasure code layout are pdisks, never NSDs: no nsddevices exit (as the resolve step)
+	return map[string]interface{}{"cluster_uuid": cluster.UUID, "kind": cluster.Kind, "keep": keep, "release": release,
+		"nsddevices": cluster.Layout != model.StorageLayoutECE}, nil
 }
 
 func gpfsRemoveNodeInput(ctx context.Context, db *gorm.DB, task *model.StorageTask, step *model.StorageTaskStep, hostid int32) (interface{}, error) {
@@ -534,7 +540,7 @@ func gpfsExpandFinish(ctx context.Context, tx *gorm.DB, task *model.StorageTask,
 		Update("status", model.StorageNodeActive).Error; err != nil {
 		return err
 	}
-	// A new host sees no pool until its first report; the next round of pool lists reaches it
+	// A new host sees no pool until its first report (one it made already is kept); the next round of pool lists reaches it
 	pools, err := sharedPoolsOfCluster(tx, cluster.ID)
 	if err != nil {
 		return err
@@ -542,8 +548,7 @@ func gpfsExpandFinish(ctx context.Context, tx *gorm.DB, task *model.StorageTask,
 	now := time.Now()
 	for _, n := range joined {
 		for _, p := range pools {
-			if err := upsertSharedPoolRow(tx, n.Hostid, p, &SharedPoolReport{Pool: p.UUID, Status: model.HyperPoolUnavailable,
-				Reason: "joined the cluster: waiting for its first report"}, now); err != nil {
+			if err := joinedSharedPoolRow(tx, n.Hostid, p, now); err != nil {
 				return err
 			}
 		}
@@ -568,6 +573,9 @@ func gpfsRemoveDiskFinish(ctx context.Context, tx *gorm.DB, task *model.StorageT
 	if err := tx.Take(disk, storageTaskInt(task, "disk_id")).Error; err != nil {
 		return nil
 	}
+	if storageTaskBool(task, "stray") {
+		return gpfsStrayFinish(tx, task, disk, succeeded)
+	}
 	// The disk and the records of the same LUN on its other hosts (the shared disk layout) that left with it
 	same := tx.Model(&model.StorageClusterDisk{}).Where("cluster_id = ? AND disk_id = ? AND (id = ? OR status = ?)", disk.ClusterID, disk.DiskID,
 		disk.ID, model.StorageDiskRemoving)
@@ -591,6 +599,71 @@ func gpfsRemoveDiskFinish(ctx context.Context, tx *gorm.DB, task *model.StorageT
 	return nil
 }
 
+// gpfsStrayAdopted: the pdisk a stray claim turned out to be (the claim_free check of the erasure code layout found
+// its WWN among the pdisks: an abort after the replacement went through), empty when it is in no pdisk
+func gpfsStrayAdopted(db *gorm.DB, task *model.StorageTask) string {
+	results, err := storageStepResults(db, task.ID, "ece_claim_free")
+	if err != nil {
+		return ""
+	}
+	for _, raw := range results {
+		r := struct {
+			Pdisk string `json:"pdisk"`
+		}{}
+		if json.Unmarshal(raw, &r) == nil && r.Pdisk != "" {
+			return r.Pdisk
+		}
+	}
+	return ""
+}
+
+// gpfsStrayReleaseInput: the release of a stray claim gives back that disk only (wiped), whatever else of the host is
+// being removed; when the check found it is a pdisk after all, the claim that goes is the one of the failed disk it
+// replaced, under that pdisk's name, not wiped (it can not be read)
+func gpfsStrayReleaseInput(db *gorm.DB, task *model.StorageTask, cluster *model.StorageCluster, disks []*model.StorageClusterDisk,
+	hostid int32) (interface{}, error) {
+	id := storageTaskInt(task, "disk_id")
+	adopted := gpfsStrayAdopted(db, task)
+	keep := []string{}
+	release := []*storageDiskIdentity{}
+	for _, d := range disks {
+		if d.Hostid != hostid {
+			continue
+		}
+		switch {
+		case adopted == "" && d.ID == id:
+			release = append(release, storageClusterDiskIdentity(d, true))
+		case adopted != "" && d.ID != id && d.Name == adopted && d.Status == model.StorageDiskFailed:
+			release = append(release, storageClusterDiskIdentity(d, true))
+		default:
+			keep = append(keep, d.DiskID)
+		}
+	}
+	// Taken for the pdisk only in place of the failed disk it replaced: another record of a working disk of that
+	// name is a state no aborted replacement leaves, nothing is changed then
+	if adopted != "" && len(release) == 0 {
+		return nil, fmt.Errorf("the disk is pdisk %s of the recovery group, which no failed record of this host has: the records are not changed", adopted)
+	}
+	return map[string]interface{}{"cluster_uuid": cluster.UUID, "kind": cluster.Kind, "keep": keep, "release": release,
+		"no_wipe": adopted != "", "nsddevices": cluster.Layout != model.StorageLayoutECE}, nil
+}
+
+// gpfsStrayFinish: a released stray claim goes; one that is a pdisk after all takes the pdisk's name and is active, and
+// the record of the failed disk it replaced goes. Aborted: nothing was taken out of the storage, the claim stays
+func gpfsStrayFinish(tx *gorm.DB, task *model.StorageTask, disk *model.StorageClusterDisk, succeeded bool) error {
+	if !succeeded {
+		return tx.Model(disk).Updates(map[string]interface{}{"status": model.StorageDiskFailed, "reason": "giving the claim back was aborted; remove it again"}).Error
+	}
+	if p := gpfsStrayAdopted(tx, task); p != "" {
+		if err := tx.Where("cluster_id = ? AND hostid = ? AND name = ? AND id <> ? AND status = ?", disk.ClusterID, disk.Hostid, p, disk.ID, model.StorageDiskFailed).
+			Delete(&model.StorageClusterDisk{}).Error; err != nil {
+			return err
+		}
+		return tx.Model(disk).Updates(map[string]interface{}{"name": p, "status": model.StorageDiskActive, "reason": "", "state": ""}).Error
+	}
+	return tx.Delete(disk).Error
+}
+
 // gpfsRemoveNodeFinish: the host and its disks are out of the cluster; it has no row of the cluster's pools any more
 func gpfsRemoveNodeFinish(ctx context.Context, tx *gorm.DB, task *model.StorageTask, succeeded bool) error {
 	cluster, _, _, err := storageClusterOfTask(tx, task)
@@ -601,6 +674,11 @@ func gpfsRemoveNodeFinish(ctx context.Context, tx *gorm.DB, task *model.StorageT
 	if !succeeded {
 		return tx.Model(&model.StorageClusterNode{}).Where("cluster_id = ? AND hostid = ?", cluster.ID, hostid).
 			Updates(map[string]interface{}{"status": model.StorageNodeError, "reason": "the removal was aborted; remove the host again"}).Error
+	}
+	// A host removed while offline skipped the leave: it stops the storage, drops the keys and the memory it reserved
+	// and wipes the disks once it is back, a cleanup made from the rows still here
+	if err := storageRecordSkippedHosts(ctx, tx, task, cluster); err != nil {
+		return err
 	}
 	if err := tx.Where("cluster_id = ? AND hostid = ?", cluster.ID, hostid).Delete(&model.StorageClusterDisk{}).Error; err != nil {
 		return err

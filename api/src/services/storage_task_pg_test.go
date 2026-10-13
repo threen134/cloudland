@@ -28,7 +28,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var stcSentRe = regexp.MustCompile(`(?s)^inter=(-?\d+) \| /opt/cloudland/scripts/backend/storage/(\w+\.sh) '(\d+)'(?: <<'EOF'\n(.*)\nEOF)?$`)
+var stcSentRe = regexp.MustCompile(`(?s)^inter=(-?\d+) \| /opt/cloudland/scripts/backend/storage/(\w+\.sh) '(\d+)'(?: '[^']*')*(?: <<'EOF'\n(.*)\nEOF)?$`)
 
 type stcSent struct {
 	hostid int32
@@ -373,7 +373,19 @@ func TestStorageTaskPG(t *testing.T) {
 		workStorageRuns(ctx)
 		f.wantTask(timed.ID, model.StorageTaskFailed, "timed out after 1s")
 		f.wantTask(offline.ID, model.StorageTaskFailed, "the host is offline")
-		f.expect("poll", "stc_poll.sh", h2)
+		// The job of the run that timed out is stopped (it would hold its lock and act later); the offline host is
+		// sent nothing; the quiet run is polled
+		got := map[string]int32{}
+		for _, s := range f.sent() {
+			got[s.script] = s.hostid
+			if s.script == "stc_kill.sh" && s.run != ts.run {
+				t.Fatalf("killed run %d, the one that timed out is %d", s.run, ts.run)
+			}
+			f.runs[s.run] = true
+		}
+		if len(got) != 2 || got["stc_kill.sh"] != h1 || got["stc_poll.sh"] != h2 {
+			t.Fatalf("after the worker round: %v", got)
+		}
 		workStorageRuns(ctx)
 		f.expect("one poll out at a time", "")
 		// The host answered the poll: the next one is due once the answer is old

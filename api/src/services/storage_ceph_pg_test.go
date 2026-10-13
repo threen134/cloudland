@@ -148,7 +148,7 @@ func TestStorageCephDeployPG(t *testing.T) {
 	in := sent[0].input
 	labels, _ := in["labels"].([]interface{})
 	if in["action"] != "bootstrap" || in["fsid"] != cluster.UUID || in["mon_ip"] != "10.93.0.1" || in["hostname"] != fmt.Sprintf("h%d", h[0]) ||
-		in["image"] != "quay.io/ceph/ceph:v19.2.3" || in["cluster_network"] != "10.94.0.0/24" || in["single_host"] != false ||
+		in["image"] != "quay.io/ceph/ceph:v19.2.3" || in["cluster_network"] != "10.94.0.0/24" || in["single_host"] != false || in["replicas"] != float64(3) ||
 		len(labels) != 4 || labels[3] != "_admin" {
 		t.Fatalf("bootstrap input %v", in)
 	}
@@ -468,6 +468,19 @@ func TestStorageCephDeployPG(t *testing.T) {
 	}
 	succeed(sent, none)
 	f.wantTask(ntask.ID, model.StorageTaskSucceeded, "")
+	// The leave it skipped waits for it to be back (storage_cleanup.go): its configuration and key are still on it
+	pc := &model.StoragePendingCleanup{}
+	must(t, db.Where("hostid = ? AND cluster_uuid = ? AND step = ?", h[3], c.UUID, "leave").Take(pc).Error)
+	if !strings.Contains(pc.Input, `"kind":"ceph"`) {
+		t.Fatalf("the recorded leave of the host removed offline %s", pc.Input)
+	}
+	// The task shows the leave skipped there, not run
+	skipped := []*model.StorageTaskRun{}
+	must(t, db.Where("step_id IN (SELECT id FROM storage_task_steps WHERE task_id = ? AND name = ?)", ntask.ID, "leave").Find(&skipped).Error)
+	if len(skipped) != 1 || skipped[0].Hostid != h[3] || skipped[0].Status != model.StorageRunSkipped {
+		t.Fatalf("runs of the leave of the host removed offline %+v", skipped)
+	}
+	db.Unscoped().Delete(pc)
 	f.setHostStatus(h[3], 1)
 
 	// Deletion: the orchestrator stops, the hosts remove the daemons and wipe the disks

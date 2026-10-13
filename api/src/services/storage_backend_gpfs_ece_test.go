@@ -41,6 +41,23 @@ func TestGPFSECEPackage(t *testing.T) {
 }
 
 // The parameters of the erasure code layout (shared-storage-design.md §7.9)
+// Without a slot map only a pdisk GNR marked for replacement is replaced (2026-10-12 work-x: a missing pdisk is never
+// marked, mmaddpdisk --replace refuses it, mmdelpdisk refuses to take it out)
+func TestGPFSECEReplaceable(t *testing.T) {
+	scope := func(state string) *StorageTaskScope {
+		return &StorageTaskScope{Disks: []*model.StorageClusterDisk{
+			{Name: "n002p001", State: "ok", Status: model.StorageDiskActive},
+			{Name: "n002p003", State: state, Status: model.StorageDiskRemoving},
+		}}
+	}
+	if err := gpfsECEReplaceable(scope("missing/drained")); err == nil || !strings.Contains(err.Error(), "has not marked pdisk n002p003") {
+		t.Fatalf("a missing pdisk: %v", err)
+	}
+	if err := gpfsECEReplaceable(scope("dead/drained/replace")); err != nil {
+		t.Fatalf("a pdisk marked for replacement: %v", err)
+	}
+}
+
 func TestGPFSECEParams(t *testing.T) {
 	gpfs := storageBackends[model.StorageKindGPFS]
 	for _, c := range []struct {
@@ -275,7 +292,8 @@ func TestGPFSECEChangePlans(t *testing.T) {
 		t.Errorf("remove a server: %s", got)
 	}
 	nodes = append(base(), member(4, "client", model.StorageNodeLeaving))
-	if got, _ = plan(StorageTaskRemoveNode, &StorageTaskScope{Nodes: nodes, Offline: true}); got != "remove_node" {
+	// The leave is planned too: skipped while the host is offline, done once it is back
+	if got, _ = plan(StorageTaskRemoveNode, &StorageTaskScope{Nodes: nodes, Offline: true}); got != "remove_node leave" {
 		t.Errorf("remove a client that is gone: %s", got)
 	}
 	got, hosts = plan(StorageTaskReplaceDisk, &StorageTaskScope{Nodes: base(), Disks: []*model.StorageClusterDisk{disk(2, "removing"), disk(2, "claiming")}})

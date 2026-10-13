@@ -91,7 +91,7 @@ func planMessage(err error) string {
 func storageHostConflict(db *gorm.DB, backend StorageBackend, kind string, clusterID int64, hostid int32, roles []string) (string, error) {
 	// The leave it missed stops GPFS on it and wipes the disks the deleted cluster claimed: it must run first
 	if c := storagePendingCleanupOf(db, hostid); c != nil {
-		return fmt.Sprintf("still has to clean up storage cluster %s, deleted while it was offline: it does so by itself shortly after it is online", c.ClusterName), nil
+		return fmt.Sprintf("still has to clean up storage cluster %s, which it left while it was offline (the cluster was deleted, or the host removed from it): it does so by itself shortly after it is online", c.ClusterName), nil
 	}
 	others := []*model.StorageClusterNode{}
 	err := db.Joins("JOIN storage_clusters c ON c.id = storage_cluster_nodes.cluster_id AND c.deleted_at IS NULL").

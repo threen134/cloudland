@@ -58,6 +58,58 @@ type storageFilesystemMaker interface {
 		params interface{}) (*model.StorageFilesystem, map[string]map[string]interface{}, error)
 }
 
+// storageStrayChecks: the checks before a stray claim is given back, nil when the disk is none or its layout has no
+// such way out. A stray claim is a disk the records say never made it into the storage: failed, never named (the name
+// comes with the finish of the task that added it) and never seen by the health check, such as the new disk of an
+// aborted replacement. Only where no disk leaves on its own (the erasure code layout: it would count as a disk of its
+// server for good) and the backend checks the disk on the cluster first: elsewhere an aborted task may have made the
+// disk an NSD or an OSD already, or it is a shared LUN other hosts serve, and the removal takes it out of the storage
+// first. nodes: for the hosts of the checks (nil when only asking whether the disk is one)
+func storageStrayChecks(backend StorageBackend, cluster *model.StorageCluster, nodes []*model.StorageClusterNode, d *model.StorageClusterDisk) []*StorageStepPlan {
+	if d.Status != model.StorageDiskFailed || d.Name != "" || d.State != "" {
+		return nil
+	}
+	c, ok := backend.(storageStrayClaimChecker)
+	if !ok {
+		return nil
+	}
+	checks := c.StrayClaimChecks(cluster, nodes)
+	if len(checks) == 0 {
+		return nil
+	}
+	return checks
+}
+
+// StorageDiskStray tells whether a disk of a cluster is a stray claim its removal gives back (the API marks it)
+func StorageDiskStray(cluster *model.StorageCluster, d *model.StorageClusterDisk) bool {
+	backend, err := storageBackendOf(cluster.Kind)
+	return err == nil && storageStrayChecks(backend, cluster, nil, d) != nil
+}
+
+// releaseStrayClaim gives a stray claim back to its host: the checks of the kind, then the release step on its host
+// for that disk only (a remove_disk task marked stray; the storage is not touched). The disk is wiped as it was claimed
+// for wiping, unless the checks find it is in the storage after all (gpfsStrayReleaseInput)
+func releaseStrayClaim(ctx context.Context, cluster *model.StorageCluster, disk *model.StorageClusterDisk, checks []*StorageStepPlan) (*model.StorageTask, error) {
+	plan := append(checks, &StorageStepPlan{Name: "release_disks", Scope: model.StorageStepScopeNodes, Hostids: []int32{disk.Hostid}, Timeout: 10 * time.Minute})
+	return startStorageTask(ctx, &storageTaskSpec{ClusterID: cluster.ID, Backend: cluster.Kind, Kind: StorageTaskRemoveDisk, Plan: plan,
+		Params: map[string]interface{}{"disk_id": disk.ID, "stray": true},
+		Prepare: func(tx *gorm.DB) (int64, error) {
+			if err := tx.Model(&model.StorageClusterDisk{}).Where("id = ?", disk.ID).Update("status", model.StorageDiskRemoving).Error; err != nil {
+				return 0, err
+			}
+			return cluster.ID, storageRefreshReserve(tx, cluster)
+		}})
+}
+
+// storageUnsupportedOp refuses an operation the kind of a cluster, or its layout, does not have; a kind without
+// layouts (Ceph) is named alone
+func storageUnsupportedOp(cluster *model.StorageCluster) error {
+	if cluster.Layout == "" {
+		return planError("%s clusters do not support this operation yet", cluster.Kind)
+	}
+	return planError("%s clusters (%s) do not support this operation yet", cluster.Kind, cluster.Layout)
+}
+
 // storageClusterForChange loads a managed, ready cluster with its hosts and disks for an operation of the kind
 func storageClusterForChange(ctx context.Context, uuid string, allowed func(*StorageCapabilities) bool) (cluster *model.StorageCluster,
 	nodes []*model.StorageClusterNode, disks []*model.StorageClusterDisk, backend StorageBackend, err error) {
@@ -68,7 +120,7 @@ func storageClusterForChange(ctx context.Context, uuid string, allowed func(*Sto
 		return
 	}
 	if !allowed(storageClusterCapabilities(backend, cluster)) {
-		err = planError("%s clusters (%s) do not support this operation yet", cluster.Kind, cluster.Layout)
+		err = storageUnsupportedOp(cluster)
 		return
 	}
 	if cluster.Mode != model.StorageModeManaged {
@@ -379,7 +431,8 @@ func (a *StorageClusterAdmin) RemoveDisk(ctx context.Context, uuid, diskUUID str
 	if err := requireSystemAdmin(ctx); err != nil {
 		return nil, err
 	}
-	cluster, nodes, disks, backend, err := storageClusterForChange(ctx, uuid, func(c *StorageCapabilities) bool { return c.RemoveDisk })
+	// The layout is checked below: a stray claim goes in any layout
+	cluster, nodes, disks, backend, err := storageClusterForChange(ctx, uuid, func(*StorageCapabilities) bool { return true })
 	if err != nil {
 		return nil, err
 	}
@@ -391,6 +444,12 @@ func (a *StorageClusterAdmin) RemoveDisk(ctx context.Context, uuid, diskUUID str
 	}
 	if disk == nil {
 		return nil, NewCLError(ErrStorageDiskNotAllowed, "The disk is not in the cluster", nil)
+	}
+	if checks := storageStrayChecks(backend, cluster, nodes, disk); checks != nil {
+		return releaseStrayClaim(ctx, cluster, disk, checks)
+	}
+	if !storageClusterCapabilities(backend, cluster).RemoveDisk {
+		return nil, storageUnsupportedOp(cluster)
 	}
 	params, err := backend.ParseParams([]byte(cluster.Params))
 	if err != nil {

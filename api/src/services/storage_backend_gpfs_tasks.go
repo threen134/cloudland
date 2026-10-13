@@ -136,6 +136,11 @@ func (gpfsBackend) TaskPlan(task string, cluster *model.StorageCluster, scope *S
 		StorageTaskChangeRoles, StorageTaskRotateKeys, StorageTaskUpgrade:
 		switch cluster.Layout {
 		case model.StorageLayoutECE:
+			if task == StorageTaskReplaceDisk && gpfsParamsOf(cluster).NoSlotMap {
+				if err := gpfsECEReplaceable(scope); err != nil {
+					return nil, err
+				}
+			}
 			return gpfsECEChangeTaskPlan(task, scope)
 		case model.StorageLayoutSAN:
 			return gpfsSANChangeTaskPlan(task, cluster, scope)
@@ -178,7 +183,7 @@ func init() {
 		Steps: map[string]*storageStepDef{
 			"teardown": {Script: "gpfs_cluster.sh", Input: gpfsTeardownInput},
 			// A host offline leaves when it is back (storageRecordSkippedHosts)
-			"leave":  {Script: "stc_leave.sh", Input: gpfsLeaveInput, OnlineOnly: true},
+			"leave":  {Script: "stc_leave.sh", Input: gpfsLeaveInput, OnlineOnly: true, SkipOffline: true},
 			"forget": storageForgetStep,
 		},
 		Finish: gpfsDeleteFinish,

@@ -2598,6 +2598,11 @@ definitions:
         type: string
       status:
         type: string
+      stray:
+        description: |-
+          A claim that never made it into the storage (the new disk of an aborted replacement) in a layout where no disk
+          leaves on its own: removing it gives it back (the erasure code layout)
+        type: boolean
     type: object
   apis.StorageClusterHealthResponse:
     properties:

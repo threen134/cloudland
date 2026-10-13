@@ -283,6 +283,10 @@ func TestStorageGPFSECEDeployPG(t *testing.T) {
 	failed := diskNamed("n002p002")
 	must(t, f.db.Model(&model.StorageClusterDisk{}).Where("id = ?", failed.ID).Updates(map[string]interface{}{"state": "missing", "checked_at": time.Now()}).Error)
 	newWWN := wwn(h[1], 8)
+	// Without a slot map only a pdisk GNR marked for replacement is replaced: a missing one never is
+	_, err = StorageClusters.ReplaceDisk(ctx, cluster.UUID, failed.UUID, &StorageDiskPlan{DiskID: "wwn-" + newWWN})
+	wantCodeMsg(t, err, ErrStorageInvalidPlan, "has not marked pdisk n002p002 for replacement")
+	must(t, f.db.Model(&model.StorageClusterDisk{}).Where("id = ?", failed.ID).Updates(map[string]interface{}{"state": "dead/drained/replace", "checked_at": time.Now()}).Error)
 	rep, err := StorageClusters.ReplaceDisk(ctx, cluster.UUID, failed.UUID, &StorageDiskPlan{DiskID: "wwn-" + newWWN})
 	must(t, err)
 	sent = f.expect("replace resolve", "stc_resolve_disks.sh", h[1])

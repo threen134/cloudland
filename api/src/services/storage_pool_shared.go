@@ -376,6 +376,29 @@ func upsertSharedPoolRow(tx *gorm.DB, hostid int32, pool *model.StoragePool, r *
 	return tx.Unscoped().Save(row).Error
 }
 
+// joinedSharedPoolRow gives a host that just joined a cluster its row of a pool of the cluster, unavailable until it
+// reports. A report that came in before the task finished (the pool lists reach the joining hosts too) is kept: the
+// host reports again only when something changes or 5 minutes later, so overwriting it hid a ready pool for 5 minutes
+func joinedSharedPoolRow(tx *gorm.DB, hostid int32, pool *model.StoragePool, now time.Time) error {
+	waiting := &SharedPoolReport{Pool: pool.UUID, Status: model.HyperPoolUnavailable, Reason: "joined the cluster: waiting for its first report"}
+	row := &model.HyperStoragePool{}
+	// Under the lock a report takes too (upsertSharedPoolRow): one committed in between is seen
+	err := tx.Unscoped().Clauses(clause.Locking{Strength: "UPDATE"}).Where("hostid = ? AND pool_id = ?", hostid, pool.ID).Take(row).Error
+	if err == nil {
+		if !row.DeletedAt.Valid {
+			return nil
+		}
+		return upsertSharedPoolRow(tx, hostid, pool, waiting, now)
+	}
+	if err != gorm.ErrRecordNotFound {
+		return err
+	}
+	// No row yet: a report inserting it at the same moment wins
+	row = &model.HyperStoragePool{Hostid: hostid, PoolID: pool.ID, Status: model.HyperPoolUnavailable, Reason: waiting.Reason,
+		ReportedStatus: waiting.Status, ReportedReason: waiting.Reason, CheckedAt: &now, Layout: pool.Driver}
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(row).Error
+}
+
 // recordSharedPoolCapacity keeps the capacity of a pool as a host that reaches it reported it
 func recordSharedPoolCapacity(tx *gorm.DB, pool *model.StoragePool, r *SharedPoolReport, now time.Time) error {
 	if r.Status != model.HyperPoolReady || r.Size <= 0 {
@@ -523,7 +546,7 @@ func recordSharedPoolChecks(tx *gorm.DB, task *model.StorageTask, pool *model.St
 // every host its pool list. A kind that imports clusters registers the steps of both, its plan picks
 func registerSharedPoolTasks(kind string, steps map[string]map[string]*storageStepDef) {
 	for task, defs := range steps {
-		defs["sync_pools"] = &storageStepDef{Script: "stc_pools.sh", Input: sharedPoolsSyncInput, OnlineOnly: true}
+		defs["sync_pools"] = &storageStepDef{Script: "stc_pools.sh", Input: sharedPoolsSyncInput, OnlineOnly: true, MembersOnly: true}
 		registerStorageTaskKind(kind+":"+task, &storageTaskKind{Slot: storageSlotPool, Steps: defs, Finish: sharedPoolTaskFinish})
 	}
 }
@@ -544,7 +567,8 @@ func SyncSharedPools(ctx context.Context) {
 		}
 		body, _ := json.Marshal(sharedPoolEntries(pools))
 		nodes := []*model.StorageClusterNode{}
-		db.Where("cluster_id = ?", c.ID).Find(&nodes)
+		// Not to the hosts leaving it: a list arriving after the leave would bring the directory of the cluster back
+		db.Where("cluster_id = ? AND status <> ?", c.ID, model.StorageNodeLeaving).Find(&nodes)
 		for _, n := range nodes {
 			if _, online := hostOnline(db, n.Hostid); !online {
 				continue

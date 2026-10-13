@@ -504,6 +504,26 @@ func HandleStorageHealth(ctx context.Context, hostid int32, clusterUUID string, 
 		for _, item := range report.Disks {
 			diskState[item.Name] = item.State
 		}
+		// A layout where a disk an aborted replacement left failed can not be cleared otherwise (the erasure code one):
+		// it is active again once the storage reports it up. Not on a host that has a failed claim without a name,
+		// which may be the new disk that took the name before the abort
+		reactivate := false
+		if backend, err := storageBackendOf(cluster.Kind); err == nil {
+			if r, ok := backend.(storageDiskReactivator); ok {
+				reactivate = r.ReactivatesFailedDisks(cluster)
+			}
+		}
+		unnamed := map[int32]bool{}
+		if reactivate {
+			hosts := []int32{}
+			if err := tx.Model(&model.StorageClusterDisk{}).Where("cluster_id = ? AND name = '' AND status = ?", cluster.ID, model.StorageDiskFailed).
+				Pluck("hostid", &hosts).Error; err != nil {
+				return err
+			}
+			for _, h := range hosts {
+				unnamed[h] = true
+			}
+		}
 		alarmed := map[string]bool{}
 		for _, d := range disks {
 			state, reported := diskState[d.Name]
@@ -511,7 +531,12 @@ func HandleStorageHealth(ctx context.Context, hostid int32, clusterUUID string, 
 				keep["disk:"+d.Name] = true
 				continue
 			}
-			if err := tx.Model(&model.StorageClusterDisk{}).Where("id = ?", d.ID).Updates(map[string]interface{}{"state": truncate(state, 32), "checked_at": &now}).Error; err != nil {
+			updates := map[string]interface{}{"state": truncate(state, 128), "checked_at": &now}
+			if reactivate && d.Status == model.StorageDiskFailed && state == "up" && !unnamed[d.Hostid] {
+				updates["status"], updates["reason"] = model.StorageDiskActive, ""
+				d.Status = model.StorageDiskActive
+			}
+			if err := tx.Model(&model.StorageClusterDisk{}).Where("id = ?", d.ID).Updates(updates).Error; err != nil {
 				return err
 			}
 			// A shared LUN is one disk however many hosts serve it: one condition

@@ -116,7 +116,7 @@ func storageClusterForRemote(ctx context.Context, uuid string, allowed func(*Sto
 		return
 	}
 	if !allowed(storageClusterCapabilities(backend, cluster)) {
-		err = planError("%s clusters (%s) do not support this operation yet", cluster.Kind, cluster.Layout)
+		err = storageUnsupportedOp(cluster)
 		return
 	}
 	if cluster.Mode != model.StorageModeManaged {
@@ -337,7 +337,7 @@ func syncRemotePoolLists(ctx context.Context, owner, access *model.StorageCluste
 	}
 	body, _ := json.Marshal(sharedPoolEntries(pools))
 	nodes := []*model.StorageClusterNode{}
-	db.Where("cluster_id = ?", access.ID).Find(&nodes)
+	db.Where("cluster_id = ? AND status <> ?", access.ID, model.StorageNodeLeaving).Find(&nodes)
 	for _, n := range nodes {
 		if _, online := hostOnline(db, n.Hostid); !online {
 			continue

@@ -218,10 +218,10 @@ func TestStorageCephMonsChangePlan(t *testing.T) {
 	if got := names(plan); got != "remove_host[1] mon_addrs[1] client_refresh[1 3 4] leave[2]" {
 		t.Fatalf("a mon host leaving: %s", got)
 	}
-	// Gone for good: no leave on it
+	// Gone for good: the leave is planned too, skipped while the host is offline and done once it is back
 	plan, err = cephBackend{}.TaskPlan(StorageTaskRemoveNode, cluster, &StorageTaskScope{Nodes: nodes, Offline: true})
 	must(t, err)
-	if got := names(plan); got != "remove_host[1] mon_addrs[1] client_refresh[1 3 4]" {
+	if got := names(plan); got != "remove_host[1] mon_addrs[1] client_refresh[1 3 4] leave[2]" {
 		t.Fatalf("a mon host gone for good: %s", got)
 	}
 	// A client leaving: no refresh

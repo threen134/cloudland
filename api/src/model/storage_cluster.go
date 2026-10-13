@@ -146,7 +146,7 @@ type StorageClusterDisk struct {
 	Status    string `gorm:"type:varchar(16)"`
 	Reason    string `gorm:"type:varchar(512)"`
 	// What the storage software reports for the disk (gpfs availability, ceph up/down), from the health watchdog
-	State     string `gorm:"type:varchar(32)"`
+	State     string `gorm:"type:varchar(128)"` // a GNR pdisk state is a list of words, "replace" last
 	CheckedAt *time.Time
 }
 
@@ -197,5 +197,9 @@ func init() {
 			}
 		}
 		return nil
+	})
+	// GNR pdisk states run longer than 32 characters ("dead/systemDrain/noRGD/noVCD/replace"): cut off, "replace" got lost
+	dbs.AutoUpgrade("storage_cluster_disk_state_128", func(db *gorm.DB) error {
+		return db.Exec("ALTER TABLE storage_cluster_disks ALTER COLUMN state TYPE varchar(128)").Error
 	})
 }

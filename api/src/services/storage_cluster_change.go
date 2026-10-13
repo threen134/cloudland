@@ -71,8 +71,11 @@ func (a *StorageClusterAdmin) ReplaceDisk(ctx context.Context, uuid, diskUUID st
 		return nil, planError("The health check has not seen disk %s yet: wait a minute", label)
 	case time.Since(*old.CheckedAt) > storageReplaceFreshness:
 		return nil, planError("The health check last saw disk %s %s ago: wait for a fresh check", label, time.Since(*old.CheckedAt).Round(time.Minute))
-	case old.State == "up":
+	case old.State == "up" && storageClusterCapabilities(backend, cluster).RemoveDisk:
 		return nil, planError("Disk %s works (the storage reports it up): remove it the normal way, its data moves first, then add the new disk", label)
+	case old.State == "up":
+		// No single disk leaves this layout (the erasure code one): only a failed disk is replaced
+		return nil, planError("Disk %s works (the storage reports it up): only a failed disk is replaced", label)
 	}
 	if newDisk == nil || newDisk.DiskID == "" {
 		return nil, planError("No new disk is given")

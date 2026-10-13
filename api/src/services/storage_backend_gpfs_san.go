@@ -383,9 +383,8 @@ func gpfsSANChangeTaskPlan(task string, cluster *model.StorageCluster, scope *St
 			}
 		}
 		plan = append(plan, step("remove_node", a, admins, 30*time.Minute))
-		if !scope.Offline {
-			plan = append(plan, step("leave", n, leaving, 30*time.Minute))
-		}
+		// Online only: an offline removal skips it and the host does it once it is back (storageRecordSkippedHosts)
+		plan = append(plan, step("leave", n, leaving, 30*time.Minute))
 		return plan, nil
 	case StorageTaskReplaceDisk:
 		return nil, planError("A LUN of the shared disk layout is not replaced: the array protects its data; add a LUN and remove this one")

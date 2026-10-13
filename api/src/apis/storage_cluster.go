@@ -180,6 +180,9 @@ type StorageClusterDiskResponse struct {
 	// What the storage software reports for the disk (gpfs availability, ceph up/down) and when it was seen
 	State     string `json:"state,omitempty"`
 	CheckedAt string `json:"checked_at,omitempty"`
+	// A claim that never made it into the storage (the new disk of an aborted replacement) in a layout where no disk
+	// leaves on its own: removing it gives it back (the erasure code layout)
+	Stray bool `json:"stray,omitempty"`
 }
 
 // StorageClusterHealthResponse is the last health report of a cluster and the alarms it raised (§14)
@@ -622,7 +625,7 @@ func storageClusterResponse(ctx context.Context, cluster *model.StorageCluster, 
 	for _, d := range disks {
 		resp.Disks = append(resp.Disks, &StorageClusterDiskResponse{ID: d.UUID, Hypervisor: hosts.get(d.Hostid), DiskID: d.DiskID, Serial: d.Serial,
 			Role: d.Role, Name: d.Name, Media: d.Media, SizeBytes: d.SizeBytes, Attrs: rawAttrs(d.Attrs), Status: d.Status, Reason: d.Reason,
-			State: d.State, CheckedAt: formatTimePtr(d.CheckedAt)})
+			State: d.State, CheckedAt: formatTimePtr(d.CheckedAt), Stray: services.StorageDiskStray(cluster, d)})
 	}
 	return resp
 }

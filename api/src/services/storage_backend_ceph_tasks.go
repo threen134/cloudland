@@ -196,9 +196,8 @@ func (cephBackend) TaskPlan(task string, cluster *model.StorageCluster, scope *S
 				}
 			}
 		}
-		if !scope.Offline {
-			plan = append(plan, step("leave", n, leaving, 30*time.Minute))
-		}
+		// Online only: an offline removal skips it and the host does it once it is back (storageRecordSkippedHosts)
+		plan = append(plan, step("leave", n, leaving, 30*time.Minute))
 		return plan, nil
 	}
 	return nil, planError("Ceph clusters have no task %s", task)
@@ -234,7 +233,7 @@ func init() {
 		Steps: map[string]*storageStepDef{
 			"teardown": {Script: "ceph_cluster.sh", Input: cephActionInput("teardown")},
 			// A host offline leaves when it is back (storageRecordSkippedHosts)
-			"leave":  {Script: "stc_leave.sh", Input: gpfsLeaveInput, OnlineOnly: true},
+			"leave":  {Script: "stc_leave.sh", Input: gpfsLeaveInput, OnlineOnly: true, SkipOffline: true},
 			"forget": storageForgetStep,
 		},
 		Finish: gpfsDeleteFinish,
@@ -270,7 +269,7 @@ func init() {
 			"remove_host":    {Script: "ceph_cluster.sh", Input: cephRemoveHostInput},
 			"mon_addrs":      cephMonAddrsStep,
 			"client_refresh": {Script: "ceph_client.sh", Input: cephClientInput("setup"), Done: cephClientSetupDone},
-			"leave":          {Script: "stc_leave.sh", Input: gpfsLeaveInput},
+			"leave":          {Script: "stc_leave.sh", Input: gpfsLeaveInput, OnlineOnly: true, SkipOffline: true},
 		}})
 }
 
@@ -592,8 +591,9 @@ func cephBootstrapInput(ctx context.Context, db *gorm.DB, task *model.StorageTas
 	}
 	in := map[string]interface{}{"action": "bootstrap", "cluster_uuid": cluster.UUID, "fsid": info.Fsid, "mon_ip": ips[hostid],
 		"hostname": names[hostid], "labels": cephOrchLabels(self), "image": info.Image, "cluster_network": p.ClusterNetwork,
-		"single_host": orch == 1}
-	// cephadm keeps the login of a private registry and uses it on every host it pulls the image on
+		"single_host": orch == 1, "replicas": cephReplicas(p)}
+	// cephadm keeps the login of a private registry and logs in every host it adds after bootstrap; the bootstrap host
+	// is logged in by the install step and bootstrap itself, into root's docker configuration the mgr pulls with
 	login, err := cephRegistryLogin(cluster)
 	if err != nil {
 		return nil, err
@@ -1062,8 +1062,7 @@ func cephExpandFinish(ctx context.Context, tx *gorm.DB, task *model.StorageTask,
 	now := time.Now()
 	for _, n := range joined {
 		for _, p := range pools {
-			if err := upsertSharedPoolRow(tx, n.Hostid, p, &SharedPoolReport{Pool: p.UUID, Status: model.HyperPoolUnavailable,
-				Reason: "joined the cluster: waiting for its first report"}, now); err != nil {
+			if err := joinedSharedPoolRow(tx, n.Hostid, p, now); err != nil {
 				return err
 			}
 		}
