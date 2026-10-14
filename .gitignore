@@ -114,3 +114,6 @@ deploy/dns/conf.d/upstream.conf
 deploy/docker/.env_103
 .ibm_cloudkey
 .ibm_cloud.env
+
+# Local secrets (login credentials etc.), never commit
+/private/
