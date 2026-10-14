@@ -11,7 +11,7 @@ clapi 侧另由 PostgreSQL 测试覆盖：`TestStorageGPFSECEDeployPG`（假 cla
 
 **2026-10-07 两种跑法都跑过**（执行记录 `test-items/runs/2026-10-07-cb4c8250+ECE模拟盘.md`）：A（试验虚拟机）ECE-02（本机界面）、03、04、05、08 通过；B（物理机端到端，删了 gpfs1）ECE-03、05、06、07、08 通过、公网界面只读检查通过。共修了 8 个问题（回归点 1–9）。之后按代码审查又修了 7 处（回归点 10–16），只在沙箱里验证（PostgreSQL、WSL `stc-test9.sh` 26 项、本机界面 24 项），**没有在 work-x 上整套重跑**。已知限制：非 IBM 硬件上 `ess_config_mismatch` 消不掉，集群健康一直 warning。
 
-**2026-10-07 第二轮**（设计 §7.9「运维」、§16 S7「第二轮」）：运维在代码层面实现，新增用例 ECE-09–18，**都还没在真实节点上执行**（标「未执行」，括号里是设计 §16 S7 的实验编号）；只有沙箱覆盖：PostgreSQL `TestStorageGPFSECEDeployPG`（在部署好的集群上依次换盘、加服务器、加盘、移除服务器，核对升级与完成升级的输入）、单元 `TestGPFSECEChangePlans` / `TestGPFSECEReadiness` / `TestGPFSECEDeploySets`、WSL `stc-test15.sh`（40 项）、本机界面 `pw/stc-ui-s7.js`（参数与载荷、详情页）。
+**2026-10-07 第二轮**（设计 §7.9「运维」、§16 S7「第二轮」）：运维在代码层面实现，新增用例 ECE-09–18（括号里是设计 §16 S7 的实验编号）。**2026-10-11 / 12 在 work-01–04 上用 LIO 模拟盘跑了一部分**（纠删码集群 gece，执行记录 `runs/2026-10-10-b017569d+work-04实验.md`）：ECE-09、10、11 通过，ECE-12 部分通过（GNR 已标记替换的成功路径造不出来），ECE-13 只能验证拒绝（仲裁数改不了，用户决定不做），ECE-17 第 1 步通过；修的问题见回归点 23–34。ECE-14、15、18 要按新参数重建集群，ECE-17 第 2、3 步要先删 gece，ECE-16 要 LSI / NVMe 实体机，都还没做。沙箱覆盖：PostgreSQL `TestStorageGPFSECEDeployPG`（在部署好的集群上依次换盘、加服务器、加盘、移除服务器，核对升级与完成升级的输入）、单元 `TestGPFSECEChangePlans` / `TestGPFSECEReadiness` / `TestGPFSECEDeploySets`、WSL `stc-test15.sh`（40 项）、本机界面 `pw/stc-ui-s7.js`（参数与载荷、详情页）。
 
 ## 设计约定（判定预期的依据）
 
@@ -123,12 +123,16 @@ clapi 侧另由 PostgreSQL 测试覆盖：`TestStorageGPFSECEDeployPG`（假 cla
 - 客户端：只有 `add_node`，恢复组不动。
 - 均衡期间 I/O 不中断。
 
+> 2026-10-12：gece（work-01–03 各 5 块 256 GiB LIO 盘，4+2p）加 work-04。第一次在 `ece_add_servers` 失败（回归点 23），修后重试：均衡 3.5 小时（LIO 上约 30–60 MB/s，向 work-04 搬约 875 GB），回调做完 `--complete-node-add`；日志组 9 个、纠删码卷 8 个成员、`efs1` 1.3T → 1.8T，work-04 的盘名 `n004p001`–`005`。写入探测（每 2 秒 4 MiB + fsync）全程 0 失败，`--complete-node-add` 前后两次 3.6–3.9 秒的慢写。第 2 步加客户端 2 分钟，节点类仍是三台。
+
 ## ECE-10 移除服务器（2026-10-12 work-04 通过，E1）
 
 1. 移除 ECE-09 加的服务器（集群剩 3 台以上）
 2. 集群只剩 3 台时再移除一台
 
 **预期**：步骤 `ece_remove_server → remove_node → leave`；`ece_remove_server` 依次 `mmvdisk filesystem delete … -N <节点> --confirm`、`mmvdisk recoverygroup delete … -N <节点> --confirm`，等它的物理盘全部不在、它离开节点类（由 `recoverygroup delete` 移出，不调 `nodeclass delete`）；`remove_node` 在 `mmdelnode` 前删掉加服务器留下的 `RG<n>CompletNodeAdd` 回调（日志「deleted the callback … of a finished server add」，`mmlscallback` 为空）；节点的盘被擦并归还；第 2 步接口 400（恢复组至少 3 台）
+
+> 2026-10-12：纠删码卷成员迁出几十秒，`recoverygroup delete -N` 排空约 875 GB 用了 2 小时 16 分；`remove_node` 第一次被 `RG001CompletNodeAdd` 回调挡住（回归点 24），修后成功。之后 3 台、15 块盘、7 个日志组、`efs1` 回到 1.3T，work-04 干净。写入探测 0 失败，只在排空结束、日志组从 work-04 切到 work-01 时停了 21 秒（VCD 日志恢复，GNR 的正常行为）。第 2 步 400 的是仲裁数（「2 given」，三台都是仲裁节点），这条规则先于「恢复组至少 3 台」触发。
 
 ## ECE-11 加盘（2026-10-12 work-x 通过，E2）
 
@@ -139,6 +143,8 @@ clapi 侧另由 PostgreSQL 测试覆盖：`TestStorageGPFSECEDeployPG`（假 cla
 - 第 1 步：步骤 `resolve_disks`（所有服务器）`→ ece_resize`。`mmvdisk recoverygroup resize` 之后，新纠删码卷 `cl<ID>_vs2`，占用 = 集群占用比例 − 阵列已用比例（定义不下时每次少 5 个百分点），建好后 `mmvdisk filesystem add` 进文件系统；集群详情「纠删码卷」显示两个卷。
 - 非 IBM 认可的拓扑升级时 resize 可能被拒（记录原文）。实测 LIO 盘「ECE 5 HDD → ECE 6 HDD」没被拒。
 - 第 2 步：接口 400（每台服务器的盘数要相同）。
+
+> 2026-10-12：只给两台加 400「Every recovery group server needs the same number of disks」；三台各加 1 块，`resolve_disks → ece_resize` 2 分钟，新纠删码卷 `cl16_vs2`（6 个成员、每个 63 GiB），`efs1` 1.3T → 1.7T，新盘名 `n00Xp006`，健康 30/30。
 
 ## ECE-12 换盘（2026-10-12 work-x 部分通过，E3）
 
@@ -157,13 +163,17 @@ clapi 侧另由 PostgreSQL 测试覆盖：`TestStorageGPFSECEDeployPG`（假 cla
 - 第 5 步：纠删码集群的残留认领（`failed`、没有名字、健康看护没见过）在接口里带 `stray: true`，也能「移除磁盘」：先在管理节点 `ece_claim_free` 按 WWN 核对（日志「the disk (…) is no pdisk of cl<ID>_rg」），再只对这一块 `release_disks` 擦盘、删记录，服务器上不写 `nsddevices`；之前它会一直算作这台服务器的盘，让之后的换盘都卡在「Every recovery group server needs the same number of disks」。核对发现它其实是物理盘 P 时改为认领（记录改名 P、active，旧盘的失败记录不擦、删除；P 没有失败记录时这一步失败、不改记录）——这条只有 PG 测试。副本 / SAN / Ceph 布局里 failed 无名的记录不算残留认领，移除照常先把盘从存储里拿出来。
 - 步骤超时时节点上的作业被结束（`stc_kill.sh`），不会占着集群锁继续跑。
 
+> 2026-10-12：第 1、3、4、5 步通过；第 2 步按原流程三次失败（回归点 27），改成计划阶段 400 后真机验证通过，「GNR 已标记替换」的成功路径没有真机验证（LIO 只能造 missing、造不出 dead）。删掉 LUN 后约 1 小时排空；盘消失时写入停了 55 秒（GNR 诊断期间发往它的 I/O 要等超时）。LUN 加回来 16 秒后 GNR 恢复成 `ok`，平台记录恢复成 `active`（回归点 33）。残留认领：给 gece 插一条 lio8 的认领，接口标 `stray: true`，移除时 `claim_free` 解析真实的 `mmlspdisk`（18 块）判定不是物理盘，只在 work-02 擦了 lio8，没写 `nsddevices`。
+
 ## ECE-13 改角色（2026-10-12 只能验证拒绝：仲裁数改不了，用户决定不做）
 
 1. 给一台服务器加 / 去掉 `quorum`（仲裁仍为奇数）、去掉 `nsd`
 
 **预期**：仲裁 / 管理照副本模式改（`mmchnode`）；`nsd` 跟着盘走，改不了（有盘的节点仍带 `nsd`）
 
-## ECE-14 滚动升级与完成升级（未执行，E4）
+> 2026-10-12：3 个仲裁节点的集群里正向改法做不了：给 work-04 加仲裁 400「4 given」，去掉 work-03 的仲裁 400「2 given」，给 work-04 加管理 400「An admin host must also be a quorum host」，角色列表为空 400。仲裁数必须奇数、改角色一次一台，和 TC-21 CEPH-17 是同一个问题，2026-10-12 用户决定不做（设计 §6.3）。现在只验证这几种拒绝。
+
+## ECE-14 滚动升级与完成升级（未执行：要用旧版纠删码包重建集群再升级，E4）
 
 1. 上传更新的纠删码版安装包，发起升级
 2. 让一个阵列处在 rebuild（拔一块盘）时发起升级
@@ -180,7 +190,7 @@ clapi 侧另由 PostgreSQL 测试覆盖：`TestStorageGPFSECEDeployPG`（假 cla
 - 第 4 步：挂起前写了 `run/storage/<集群>/rg-suspended`；重试时这台的 GPFS 停着、`mmvdisk` 问不到，按标记 `--resume`（不是 `mmstartup`），恢复后标记删掉、物理盘全部回来。
 - 第 5 步：步骤失败「recovery group … is not ready for a server to go: the pdisks of … can not be read」，不挂起（代码审查前查询失败被当作可以）。
 
-## ECE-15 混合介质（未执行，E5）
+## ECE-15 混合介质（未执行：要每台另有固态盘、重建集群，E5）
 
 1. 每台 4 块 HDD + 2 块 SSD（或 NVMe）部署
 
@@ -190,13 +200,15 @@ clapi 侧另由 PostgreSQL 测试覆盖：`TestStorageGPFSECEDeployPG`（假 cla
 - 文件系统建在两个卷上，放置规则 `RULE 'default' SET POOL 'data'`（`mmlspolicy`）；新文件进 data 池。
 - 集群详情显示「元数据 3WayReplication」与两个纠删码卷。
 
-## ECE-16 槽位映射自动生成（未执行，E6）
+## ECE-16 槽位映射自动生成（未执行：要 LSI / NVMe 实体机，E6）
 
 1. 实体机（LSI 控制器后的 SAS 盘或 NVMe），参数 `slot_mode`、`slot_range`，不勾 `no_slot_map`
 
 **预期**：`ece_slots` 在缺映射的服务器上执行 `ecedrivemapping --mode <模式> --slotrange <min> <max> --force`，不交互；已有映射的服务器不动；之后每台都有 `slotmap.yaml`（lmr）或 `<厂商>_<型号>.edf`（nvme），结果 `slot_check: on`
 
-## ECE-17 就绪检查（未执行，E8）
+## ECE-17 就绪检查（第 1 步 2026-10-12 work-04 通过，第 2、3 步未执行，E8）
+
+> 2026-10-12：work-04 加入 gece 时的预检：`ece_memory` ok 31761 MiB、`ece_cores` ok 64 cores、`ece_network` warn「bond0 runs at 2000 Mbit/s; IBM supports … 25000 Mbit/s」、`ece_bare_metal` ok。第 2、3 步要单独预检一个新集群，四台都在 gece 里，计划校验先拒「work-01 is in another GPFS cluster already」，要等 gece 删掉。
 
 1. 在 work-x 物理机上预检一个纠删码集群（每台 64 线程、31 GB、bond 网卡）
 2. 同上，勾 `ece_strict`
@@ -207,7 +219,7 @@ clapi 侧另由 PostgreSQL 测试覆盖：`TestStorageGPFSECEDeployPG`（假 cla
 - 第 2 步：低于支持要求的项变 fail，预检失败。
 - 第 3 步：预检步骤失败，消息「the memory of the recovery group servers differs by more than 10%」。
 
-## ECE-18 8+2p / 8+3p 与大块（未执行，E7）
+## ECE-18 8+2p / 8+3p 与大块（未执行：要按新参数重建集群，E7）
 
 1. 每台足够多的盘（8+2p 至少 12 块且 ≥10+2，8+3p ≥11+2），`block_size` 16M
 
@@ -237,3 +249,18 @@ clapi 侧另由 PostgreSQL 测试覆盖：`TestStorageGPFSECEDeployPG`（假 cla
 20. `stc_resolve_disks.sh` 不读 `in_use`，在用盘只能靠本机的认领标记跳过查空（2026-10-07 代码审查；现在读 `in_use`，只核对身份、不擦除）
 21. 滚动升级时 `mmvdisk` 查询失败或超时被当作「恢复组可以停下一台」；本机 GPFS 停着时「是否已挂起」查不到，走了 `mmstartup`、物理盘保持挂起（2026-10-07 代码审查；查询失败当作没准备好，挂起前记标记、恢复后删掉，查不到又没有标记时不猜，ECE-14 第 4、5 步核对）
 22. 单一介质的纠删码集群也显示元数据纠删码（2026-10-07 代码审查；只在建了 `cl<ID>_vsm` 时显示）
+
+2026-10-11 / 12 work-04 实验与之后两轮代码审查修掉的（执行记录 `runs/2026-10-10-b017569d+work-04实验.md`，第 N 条 / R / S 是记录里的编号）：
+
+23. 纠删码集群加不了服务器：`server configure` 之后 `mmvdisk nodeclass add` 被拒「A node class with has a recovery group cannot be modified」；就算加进去了，`recoverygroup add` 会先剔除已在节点类里的节点，恢复组永远扩不到新服务器；`mmchconfig -N <类>` 与拓扑检查 `--node-class` 都盖不到还不在类里的新服务器；移除服务器最后的 `nodeclass delete -N` 同样被拒（第 17 条）。现在只 `server configure`，由 `recoverygroup add` 把节点放进类；`mmchconfig` 与拓扑检查用 `-N <类>,<新节点>`；移除改为等节点自己离开类（ECE-09、ECE-10）
+24. 纠删码集群加过服务器之后，所有服务器都移除不了：mmvdisk 加服务器时在每台服务器上注册 `RG<n>CompletNodeAdd` 回调，只有它自己执行 `--complete-node-add` 时才删掉自己；我们代为执行后回调一直留着，`mmdelnode` 拒绝回调里的任何节点（第 18 条）。`gpfs_drop_add_callbacks` 在加服务器结束时与 `mmdelnode` 前都删掉这类回调（ECE-10，日志「deleted the callback … of a finished server add」）
+25. 在节点类里却没有物理盘的服务器移除不了：只在有物理盘时才 `recoverygroup delete -N`（第一轮代码审查 R5）。现在只要还在节点类里就执行
+26. `mmvdisk server list` 读失败被当成「没有已配置的服务器」，重试会对已服务恢复组的服务器再 `server configure --recycle one`（第一轮代码审查 R10）。现在读不出来就失败
+27. 没有槽位映射时换盘的流程整个是错的：`pdisk replace --prepare` 没有位置时报「Location of pdisk … is not known」；直接 `mmaddpdisk --replace` 被拒「not supported by recovery groups under management of mmvdisk」；带上 `--class-mode vdisk` 后又被拒「not currently scheduled for replacement」——GNR 只替换它标记了替换的盘，`missing` 的盘永远不标记（降低替换门槛、`--diagnose` 都不行，删掉排空的盘再加新盘被 vcd 备用盘挡住）（第 19 条）。现在没有槽位映射时只换 GNR 已标记的盘：clapi 计划阶段检查（`gpfsECEReplaceable`，没标记 400 并给出出路），脚本对没标记的盘直接失败、不等待，`mmaddpdisk` 带 `--class-mode vdisk`，不再调 `--prepare`；拒绝替换正常盘时提示「only a failed disk is replaced」（ECE-12 第 2、3 步，单元 `TestGPFSECEReplaceable`）
+28. `mmaddpdisk` 成功后新盘 10 分钟内没到 `ok`，重试走进「GNR 没标记」分支、永远失败（第二轮代码审查 S7）。物理盘已在新设备上就算换过了，接着等它变 `ok`
+29. 盘的状态存库截断到 32 个字符，GNR 的 `replace` 在最后（如 `dead/systemDrain/noRGD/noVCD/replace` 37 个字符），计划阶段看不到标记（第二轮代码审查 S8）。列宽改成 128（`AutoUpgrade` 显式 `ALTER`）
+30. 中止一次换盘后那台服务器再也换不了盘：新盘的认领留成 `failed`、没有名字，纠删码不能单独移除盘，它一直算作这台服务器的盘，之后的换盘都卡在「Every recovery group server needs the same number of disks」（第 21 条）。现在纠删码的残留认领（接口 `stray: true`）能移除：先在管理节点 `claim_free` 按 WWN 核对不是物理盘，再只释放这一块（不动这台主机上别的 `removing` 盘，S3）；移除残留认领只对纠删码开放，副本 / SAN / Ceph 加盘或加节点中止后的同类记录照常走正规移除，否则会擦掉已是 NSD / OSD 或别的节点在用的 LUN（S1、S2）；移除时重算内存预留（S10）。PG `TestStorageStrayClaimPG`（ECE-12 第 5 步）
+31. 中止发生在 `mmaddpdisk` 成功之后：残留认领其实已是物理盘 P，核对拒绝、健康恢复被无名记录挡住，没有出路（第二轮代码审查 S6）。`claim_free` 返回 `{"pdisk": P}` 时 clapi 把这条记录改名为 P、恢复 active，被替换的旧盘失败记录只去掉认领（不擦）并删除；P 没有失败记录时这一步失败、不改记录（只有 PG 测试：真机上造它要两条同盘记录）
+32. 纠删码集群的 `release_disks` 写出 `nsddevices`：`stc_release_disks.sh` 无条件调 GPFS 钩子，在服务器上写出只列本地盘、以 `return 0` 结尾的 `nsddevices`，关掉 GPFS 自带的设备发现（第 22 条）。输入带 `nsddevices: false`，脚本照 `resolve_disks` 的判断（ECE-12 第 5 步，服务器上没有 `nsddevices`）
+33. 中止换盘后旧盘的记录永远是 `failed`，而纠删码既不能移除盘、也不能换正常的盘（第 23 条）。存储报告这块盘 `up` 时健康看护把它恢复成 `active`、清掉原因，同一台服务器上还有无名的失败认领时不动；只经后端可选接口 `storageDiskReactivator`，只有纠删码实现，不再用「不支持移除盘」代表纠删码（S14）（ECE-12 第 4 步）
+34. 步骤超时后节点上的作业没有被结束，换盘作业超时 2 小时后还在等、占着集群锁（第 20 条）。同 TC-20 回归点 38

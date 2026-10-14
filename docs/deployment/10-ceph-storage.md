@@ -73,7 +73,7 @@ Ceph 是第二种共享存储：云硬盘是 Ceph 集群里的 RBD 镜像，能�
 - 管理节点上的管理员配置在 `/var/lib/ceph/<fsid>/config/`，排查时 `ceph --conf /var/lib/ceph/<fsid>/config/ceph.conf --keyring /var/lib/ceph/<fsid>/config/ceph.client.admin.keyring -s`（cephadm 另外也会写 `/etc/ceph/ceph.conf`）
 - `authorized_keys` 里集群的 SSH 公钥只有一行，带 `from=`（管理节点与 mgr 节点）；cephadm bootstrap 自己写的那一行不带限制，部署时已删掉
 
-**私有仓库与混合发行版**（2026-10-07 第二轮，未在真机验证）：填了私有仓库时每台节点先 `docker login` 再拉镜像，bootstrap 带仓库登录信息。跑守护进程的节点要是同一个发行版；纯客户端可以是另一个（比如 26.04 的客户端加入 24.04 的集群），但它的 `ceph-common` 不能比集群镜像旧。
+**私有仓库与混合发行版**（2026-10-07 第二轮；私有仓库 2026-10-11 在测试环境验证过，混合发行版还没验证）：填了私有仓库时每台节点先 `docker login` 再拉镜像，bootstrap 带仓库登录信息。跑守护进程的节点要是同一个发行版；纯客户端可以是另一个（比如 26.04 的客户端加入 24.04 的集群），但它的 `ceph-common` 不能比集群镜像旧。
 
 **镜像版本**：容器镜像的 Ceph 不能比节点上的 `ceph-common` 新，否则新版本生成的密钥旧客户端读不出来（实测 20.2.4 的镜像配 20.2.0 的客户端，密钥报 `Malformed input`），安装步骤会拒绝。留空时用的就是节点上 Ceph 的同版本镜像；**不要用 `:v19`、`:v20` 这种浮动标签**。
 

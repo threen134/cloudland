@@ -2,9 +2,11 @@
 
 优先级 **P2** · GPFS 的第三种布局（SAN 共享 LUN 做 NSD）与两个 GPFS 集群之间的远程挂载 · 约 120 min
 
-2026-10-07 按 `docs/architecture/plan/shared-storage-design.md` §7.10、§7.11（S7 第二轮）写的用例。两项都在代码层面实现，**一条都还没在真实节点上执行**：
+2026-10-07 按 `docs/architecture/plan/shared-storage-design.md` §7.10、§7.11（S7 第二轮）写的用例。两项都在代码层面实现，当时没有真实环境：
 - SAN 要 FC / iSCSI / 多路径的共享 LUN（work-x 没有）。
 - 远程挂载要两个平台部署的 GPFS 集群（一台节点只能属于一个 GPFS 集群，work-x 三台只够一个三节点集群，或一个两节点 + 一个单节点测试集群）。
+
+**2026-10-11 work-04 加入后在 work-01–04 上跑过**（执行记录 `runs/2026-10-10-b017569d+work-04实验.md`，环境见下面「测试环境」）：SAN-01–07 通过（SAN-02 只做了一部分），RMT-01、02、04、05、06 通过，RMT-03、RMT-07 SKIP（挂载方集群只有一台）；修的问题见回归点 7–14。
 
 每条用例的标题后括号里是设计 §16 S7 的实验编号。
 
@@ -47,8 +49,14 @@
 
 - SAN：要一台 iSCSI target（或 FC 阵列）给三台节点同时导出 2–3 个 LUN，节点上装 `multipath-tools` 并能看到 `/dev/mapper/mpathX`。可以用一台不在集群里的机器跑 `targetcli` 导出文件做的 LUN 给三台节点（iSCSI 登录 + 多路径），**要用户同意**。
 - 远程挂载：两个 GPFS 集群，例如 work-01 + work-02 两节点（仲裁 1 台，测试布局）与 work-03 单节点测试集群；**要先删 gpfs1 并重建，要用户同意**。
+- ⚠️ **各节点的 iSCSI 发起端名字（`/etc/iscsi/initiatorname.iscsi`）必须唯一**：IBM 镜像四台相同。target 按发起端名字配 ACL，同名的发起端区分不开，各节点的会话会互相冲突。2026-10-10 改成了 `iqn.2026-10.local.cloudland:<主机名>`（原文件备份 `/root/initiatorname.iscsi.bak-20261010`），改后重启 `iscsid`。
+- 2026-10-11 实际用的环境：
+  - SAN：work-04 上的 LIO iSCSI target（`iqn.2026-10.local.cloudland.work-04:san`，`10.191.202.21` 的 3260、3261 两个门户形成两条路径，`/var/lib/cl-ece/san/` 下 20 GiB 文件做的 LUN a / b，SAN-04 时加 LUN c）。work-02、03、04 登录并装 `multipath-tools`，看到 `mpatha` / `mpathb`；SAN-04 时 work-01 也登录。集群 gsan。写入探测 work-03 `/root/w4-sanio.sh`。
+  - 远程挂载：A = 三台的 gpfs1（work-01–03），B = work-04 的单节点测试集群 gpfsb，B 挂 A 的 `fs1`、`fs2`。
 
-## SAN-01 扫描与分类（未执行，E10）
+## SAN-01 扫描与分类（2026-10-11 work-x 通过，E10）
+
+> 2026-10-11：先把各节点的 iSCSI 发起端名字改成唯一的（见「测试环境」）。三台 `mpatha` / `mpathb` 是 `shared`、标识相同；路径 sdX 是 `in_use`「a path of multipath device」。
 
 1. 三台节点登录同一组 iSCSI LUN（每个 LUN 两条路径，`multipathd` 合成多路径设备），扫描磁盘
 
@@ -56,7 +64,9 @@
 - 每台的磁盘列表有 `mpathX`（状态「疑似共享」，标识 `wwn-0x…` 在三台上相同）。
 - 下层的 `sdX` 是「使用中」，说明「a path of multipath device mpathX」。
 
-## SAN-02 参数与认领校验（未执行，E10）
+## SAN-02 参数与认领校验（2026-10-11 work-x 部分通过：第 2、4 步没测，E10）
+
+> 2026-10-11：本地盘 400、`data_replicas: 2` 400。第 2 步要 9 台节点，第 4 步要另一个 SAN 集群认领过的 LUN，都没测（PG `TestStorageGPFSSANPG` 覆盖）。
 
 1. `layout: san` 加一块本地盘
 2. 一个 LUN 勾在 9 台节点下
@@ -65,7 +75,9 @@
 
 **预期**：都是 400（本地盘「no shared LUN」、「at most 8 servers」、「one copy」、「belongs to storage cluster」）
 
-## SAN-03 部署（未执行，E10）
+## SAN-03 部署（2026-10-11 work-x 通过，E10）
+
+> 2026-10-11：第一次预检失败（回归点 8），修后部署成功；`create_cluster` 有一次偶发的 CCR 失败，重试即过。查空只在最小节点；`cl15s1` 服务器 work-03、04、02（轮转），`cl15s2` 服务器 work-03、04；`nsddevices` 报 `dmm`；故障组 1、各一份；三台都挂上。
 
 1. 向导选「GPFS 共享磁盘（SAN）」，LUN a 勾在三台下、LUN b 勾在两台下，部署
 
@@ -77,7 +89,9 @@
 - 每台的 `/var/mmfs/etc/nsddevices` 列出 `dm-N dmm`。
 - `mmlsnsd -X` 显示各台都看到两个 NSD；文件系统在所有节点挂上。
 
-## SAN-04 加节点：已有 LUN 与新 LUN（未执行，E10）
+## SAN-04 加节点：已有 LUN 与新 LUN（2026-10-11 work-x 通过，界面「不给擦除」没看，E10）
+
+> 2026-10-11：加 work-01（hostid 最小）：LUN a「identity only」，只建 LUN c，`mmchnsd` 在线把 LUN a 改成四台服务器；LUN a 带 `wipe` 400；期间写入 363 次 0 失败。界面上 LUN a 不给「擦除」这条没在浏览器里看（本机 `pw/stc-ui-s7.js` 覆盖）。
 
 1. 第四台节点登录 LUN a 和一个新 LUN c，加入集群（两块都勾上）；**第四台的 hostid 要比 LUN a 现有的服务器都小**（或先用一台 hostid 小的节点做这一步），在 LUN a 上勾「擦除」试一次再取消
 2. 对 LUN a 直接调接口带 `wipe: true`
@@ -90,7 +104,9 @@
 - `add_disks` 只加 LUN c。
 - 第 2 步：400「LUN … holds data of this cluster already: it can not be wiped」。
 
-## SAN-05 移除节点（未执行，E10）
+## SAN-05 移除节点（2026-10-11 work-x 通过，E10）
+
+> 2026-10-11：第一次 LUN c 擦不掉（回归点 9），修后：`mmchnsd` 去掉 work-01，LUN c `mmdeldisk`；LUN a 不擦、LUN c 擦。
 
 1. 移除 SAN-04 的节点
 
@@ -99,17 +115,23 @@
 - LUN c 只由它服务，`mmdeldisk`（数据先迁走）。
 - `leave` 时 LUN a 不擦（标 `shared`），LUN c 擦。
 
-## SAN-06 移除 LUN（未执行，E10）
+## SAN-06 移除 LUN（2026-10-11 work-x 通过，E10）
+
+> 2026-10-11：删一行两行都走，`mmdeldisk` 一次，只有 work-03 擦（盘上原有的 kpartx 映射由回归点 9 的修复处理）。
 
 1. 磁盘列表里移除 LUN b 在任一节点上的那一行
 
 **预期**：两台上的记录都进入移除；`mmdeldisk` 一次；只有最小节点擦盘；两条记录都删掉
 
-## SAN-07 删除集群（未执行，E10）
+## SAN-07 删除集群（2026-10-11 work-x 通过，E10）
 
-**预期**：每个 LUN 只擦一次（最小节点），其余节点 `leave` 时跳过
+**预期**：每个 LUN 只擦一次（最小节点），其余节点 `leave` 时跳过；没擦盘的节点也去掉本机按旧分区表建的 kpartx 映射（回归点 10）
 
-## RMT-01 建远程挂载（未执行，E11）
+> 2026-10-11：LUN a 只由 work-02 擦一次；整个 SAN 测试期间写入 62883 次 0 失败（9.5 小时）。当时没擦盘的节点上留着 kpartx 映射，2026-10-12 修了（回归点 10），没有 SAN 环境了，修复没在真机复测。
+
+## RMT-01 建远程挂载（2026-10-11 work-x 通过，E11）
+
+> 2026-10-11（A = gpfs1，B = gpfsb）：挂自己、挂 Ceph 集群、不存在的文件系统都 400（选 Ceph 时报错的括号是空的，回归点 13）；四步在 A、B、A、B 上 63 秒；`mmlsmount fs1 -L` 列出 B 的节点；重复挂载 400。Cipher list 的结果执行记录里没有单独记。
 
 1. 集群 A 的「文件系统」标签「远程挂载到其他集群」：选 `fs1`、挂载方选 B
 2. 挂载方已有同名文件系统时再建；选自己；选 Ceph 集群
@@ -120,7 +142,9 @@
 - 结束后 B 的所有节点挂着 `/gpfs/fs1`（`mmlsmount fs1 -L` 列出两边的节点），两边的「远程挂载」列表都有这条（「由 B 挂载」/「挂载自 A」），状态「已挂载」。
 - 第 2 步：400（同名或同挂载点、自己）；Ceph 集群不在下拉里。
 
-## RMT-02 挂载方节点使用所属方的池（未执行，E11）
+## RMT-02 挂载方节点使用所属方的池（2026-10-11 work-x 通过，E11）
+
+> 2026-10-11：第一次 B 的节点上迟到的池清单把 A 的集群目录建回来，指标以 A 的名义多报了节点和 B 的 `fsb`（回归点 7），修后：gp1 在 work-04 上 ready；gp1 的卷挂到 work-04 的云服务器；gp1 系统盘的云服务器 work-04 ↔ work-01 热迁移各 10 秒、`shared: true`。
 
 1. A 的 `fs1` 上有共享池 `p1`；等 5 分钟（或挂载完成时）
 2. 在 B 的一台节点上用 `p1` 建卷挂给云服务器、用 `p1` 放系统盘建云服务器；把云服务器在 A、B 的节点之间热迁移
@@ -129,7 +153,9 @@
 - 第 1 步：B 的节点上有 `run/storage/<A 的 uuid>/shared_pools.json` 和 `remote` 标记文件，`p1` 在 B 的节点上「可用」；B 的节点不生成 `cloudland_storage_<A 的 uuid>.prom`，A 的「节点」曲线只数 A 自己的成员。
 - 第 2 步：建卷、系统盘克隆、热迁移都正常；路径两边相同（同挂载点）。
 
-## RMT-03 挂载方节点宕机（未执行，E11）
+## RMT-03 挂载方节点宕机（2026-10-11 SKIP：挂载方集群只有一台，E11）
+
+> 四台机器里 A 占了三台，B 只有 work-04 一台，没有别的管理节点执行隔离。要两个各 2 台以上的集群（等 gece 删掉后用四台各建一个两节点集群）。
 
 1. B 的一台节点上有用 `p1` 的云服务器，断电这台
 
@@ -138,13 +164,17 @@
 - 被隔离后它不能再访问 `/gpfs/fs1`（核对 A 上 `mmlsmount` 不再列它）。
 - 云服务器在别的节点启动、数据完好。
 
-## RMT-04 拒绝（未执行，E11）
+## RMT-04 拒绝（2026-10-11 work-x 通过，E11）
+
+> 2026-10-11：删集群 A、删 `fs1` 时先撞上「还有池」的检查；删掉 gp2 后删 `fs2` 报「Other clusters mount file system fs2」；有云服务器在用时取消挂载 409。
 
 1. 删除集群 A；删除 A 的 `fs1`；B 的节点上的云服务器还用着 `p1` 的卷时取消挂载
 
 **预期**：都拒绝（删集群「remote mount(s) … first」，删文件系统「Other clusters mount file system fs1」，取消 409）
 
-## RMT-05 取消远程挂载（未执行，E11）
+## RMT-05 取消远程挂载（2026-10-11 work-x 通过，E11）
+
+> 2026-10-11：两边都没有对方（`mmremotecluster`、`mmauth`），列表空，B 上的池清单是 `[]`。
 
 1. 迁走 / 删掉 B 上用 `p1` 的云服务器后，在 A 的列表里「取消远程挂载」
 
@@ -153,7 +183,9 @@
 - 结束后 B 的节点不再挂 `/gpfs/fs1`，`mmremotecluster show` 与 A 的 `mmauth show` 都没有对方。
 - B 的节点上 `p1` 的行删除、收到空清单。
 
-## RMT-07 挂载方集群的节点退出（未执行，E11）
+## RMT-07 挂载方集群的节点退出（2026-10-11 SKIP：同 RMT-03，E11）
+
+> 挂载方集群只有一台，移除它就是删集群，没测。节点侧离开时清空远程池清单（回归点 11）在 TC-25 ECE-10 移除 work-04 时用预置的清单真机验证过；所属方池记录随移除删掉只有 PG `TestStorageRemoteMountPG` 覆盖。
 
 1. 远程挂载就绪、B 的一台节点 H 上 `p1` 可用时，把 H 从 B 移除
 
@@ -161,7 +193,9 @@
 - H 在 `p1` 上的记录随移除删掉（不再停在「可用」），之后建卷、疏散、迁移都不会选 H 放 `p1` 的盘。
 - H 收到所属方 A 的空池清单，`run/storage/<A 的 uuid>/` 下的池清单变空、`p1` 的探测停止。
 
-## RMT-06 同一对集群两个文件系统（未执行，E11）
+## RMT-06 同一对集群两个文件系统（2026-10-11 work-x 通过，E11）
+
+> 2026-10-11：只取消 `fs1` 后 B 仍认得 A、只剩 `fs2`，A 只授权 `fs2`。
 
 1. A 的 `fs1`、`fs2` 都远程挂到 B，然后只取消 `fs1`
 
@@ -169,7 +203,7 @@
 
 ## 回归点
 
-两项都没在真实环境跑过。沙箱里发现并修掉的：节点脚本在 `$( )` 里调 `stc_fail` 时失败消息丢失，改为直接调用、用全局变量返回结果。
+沙箱里发现并修掉的：节点脚本在 `$( )` 里调 `stc_fail` 时失败消息丢失，改为直接调用、用全局变量返回结果。
 
 2026-10-07 `/code-review` 修掉的（都没在真机上验证；设计 §16 S7「第二轮的代码审查修复」）：
 
@@ -179,6 +213,19 @@
 4. **挂载方集群的节点退出后，它在所属方池上的记录永远停在「可用」**：退出收尾一起删、并发空清单（RMT-07）
 5. **挂载方节点用所属方的 uuid 报本机集群的指标**：远程挂载的池清单带 `remote` 标记，指标脚本跳过（RMT-02 核对所属方的「节点」曲线只算自己的成员）
 6. **SAN 布局在预检就失败**（2026-10-07 设计复查）：预检输入里共享 LUN 的身份不带标记，节点的 `check_disks` 把 `shared` 判为不能用，SAN 的部署和带 LUN 的加节点一定停在预检。现在带 `shared: true`，节点只核对身份和没被挂载（多路径设备的某条路径判 `in_use`，不通过）；SAN-03 的预检全部通过即为修好。PostgreSQL `TestStorageGPFSSANPG`、WSL `stc-test16.sh` 已核对
+
+> 1–6 的真机情况（2026-10-11）：1、2 在 SAN-04 通过（LUN a「identity only」、带 `wipe` 400）；6 在 SAN-03 通过（另修了回归点 8 之后）；3 的 Cipher list 没单独记；4 没测（RMT-07 SKIP）；5 不够，见回归点 7。
+
+2026-10-11 / 12 work-04 实验与之后两轮代码审查修掉的（执行记录 `runs/2026-10-10-b017569d+work-04实验.md`，第 N 条 / R / S 是记录里的编号）：
+
+7. **节点离开集群后，迟到的池清单把集群目录建回来**，指标脚本以所属方的名义上报（远程挂载后 2 分钟里 A 的节点数多了、多出 B 的 `fsb`）（第 8 条）。同 TC-20 回归点 37（池清单不再发给 `leaving` 的节点，`leave` 留 `.left-<uuid>` 标记）；RMT-02
+8. **SAN 的多路径 LUN 预检必然失败**：`lsblk` 对 dm 设备不给 WWN，身份核对读到空（第 12 条）。`disk_identity` 退回 udev 的 `DM_WWN` / `ID_WWN`；SAN-03
+9. **SAN 的 LUN 擦不掉**：NSD 有分区表，multipathd 用 kpartx 建的分区映射占着多路径设备，`wipefs` 报 busy（第 13 条）。`wipe_disk` 对 mpath 设备先 `kpartx -d`；SAN-05、SAN-06
+10. **删 SAN 集群后，没擦盘的节点上留着按旧分区表建的 kpartx 映射**（2026-10-12）。`leave` 与 `release_disks` 遇到由别的节点擦的共享 LUN，核对身份后也去掉本机的分区映射（`storage_lib.sh` 的 `drop_partition_maps`，`wipe_disk` 共用）；离线移除的节点回来补清理时，`shared` 的行一律保留在清单里，否则被留下的节点认领着就走不到这一步（第二轮代码审查 S12）。没有 SAN 环境了，没在真机复测；SAN-07
+11. **离线移除的节点回来后，经本集群远程挂载得到的别的集群的池清单没人清**，探测一直跑、clapi 一直记日志（第一轮代码审查 R2）。GPFS `backend_leave` 把本机所有带 `remote` 标记的清单置空（停探测）后删掉（一台主机只属于一个 GPFS 集群）；TC-25 ECE-10 用预置的清单真机验证；RMT-07
+12. **「移除残留认领」原来对所有布局开放**：SAN 加节点中止后，加入中节点那几条「只核对身份」的 LUN 记录看起来就是残留认领，移除会擦掉别的节点正在用的 LUN（第二轮代码审查 S1）。只对纠删码开放（`storageStrayChecks`），SAN 照常走正规移除；同 TC-25 回归点 30，PG `TestStorageStrayClaimPG`
+13. **远程挂载选 Ceph 集群的报错是「ceph clusters () do not support this operation yet」，括号是空的**（2026-10-12）。没有布局的类型不带括号（`storageUnsupportedOp`，单元 `TestStorageUnsupportedOp`）；RMT-01 第 2 步
+14. **补清理的擦盘清单会误擦经另一台节点认领的共享 LUN**（第一轮代码审查 R4）。同 TC-20 回归点 44
 
 ## 清理
 

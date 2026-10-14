@@ -4,6 +4,8 @@
 
 2026-10-03 按 `docs/architecture/plan/shared-storage-design.md` 的 S3 实施后写的用例（设计 §16 S3 的验收）。**同日在 work-01 / 02 / 03（Ubuntu 24.04，Ceph 19.2.3）上跑过**（用户同意在 work-x 上装 Ceph，D3），三台的 `sdb` 被 GPFS 集群 `gpfs1` 占着，测试盘用回环盘；结果、修掉的问题与收尾时的环境见 `runs/2026-10-03-0778bb2a+Ceph.md`。运维说明见 `docs/deployment/10-ceph-storage.md`。
 
+**2026-10-10 – 12 在 work-01–04 上补测**（work-04 是第 4 台）：CEPH-10、CEPH-16 通过；CEPH-17 做不了（mon 集合建好后改不了，用户决定不做）；CEPH-18 仍未执行（要 26.04 节点）。修的问题见回归点 27–31；执行记录 `runs/2026-10-10-b017569d+work-04实验.md`。
+
 ## 设计约定（判定预期的依据）
 
 - **软件**：不上传安装包。各节点从发行版源装 `ceph-common qemu-block-extra`，守护进程节点再加 `cephadm lvm2` 并拉镜像；镜像默认 `quay.io/ceph/ceph:v<节点 ceph-common 的版本>`，比节点新的镜像安装步骤拒绝。一个集群的节点必须是同一个发行版（预检的 Done 钩子检查）
@@ -120,6 +122,8 @@
 **预期**：加节点后 `ceph orch host ls` 有它，OSD `up`；移除后 `host drain` 完成、`host ls` 没有它、节点干净；离线移除时它的 OSD 被 purge，Ceph 用其余副本恢复
 
 > work-x：SKIP（没有第 4 台；三台都是 mon，移除任一台被布局规则拒绝）
+>
+> 2026-10-11（work-04 是第 4 台）：通过。加 OSD 节点 3 分 50 秒，osd.3 `up`、预留 1536 MiB、OOM 与启动顺序两个 drop-in 都在；移除客户端 20 秒、节点干净；离线移除：不满 30 分钟 400，满 30 分钟（第二次用改 `offline_at` 模拟）`remove_host` 成功，节点回来后补清理把 OSD 容器、逻辑卷、预留、客户端配置都清掉（回归点 27）
 
 ## CEPH-11 导入外部集群
 
@@ -173,25 +177,31 @@
 
 > 本机 5173：模拟 41/41、真实数据只读 17/17 通过
 
-## CEPH-16 私有镜像仓库（未执行，E13）
+## CEPH-16 私有镜像仓库（2026-10-11 work-x 通过，E13）
 
 2026-10-07 第二轮实现（设计 §8.1）；PostgreSQL `TestStorageCephRegistryMonsPG`、WSL `stc-test12.sh`（16 项）。
 
 1. 向导参数填 `registry`（如 `registry.local:5000`）、用户、口令，镜像写 `registry.local:5000/ceph/ceph:v19.2.3`
 2. 镜像不以仓库开头；给了仓库不给口令
 3. 部署
+4. 删除集群（带卸载软件包）
 
 **预期**：
 - 第 2 步：400（镜像必须以仓库地址开头；有仓库就要口令）。
-- 第 3 步：确认页的参数汇总里 `registry_password` 是 `******`（回归点 26）；口令加密进 `secrets`、不在参数里（集群详情、任务输入都看不到明文）；安装步骤 `docker login --password-stdin` 后拉镜像，bootstrap 带 `--registry-json`（600 权限的临时文件，之后删除）；部署成功。
+- 第 3 步：确认页的参数汇总里 `registry_password` 是 `******`（回归点 26）；口令加密进 `secrets`、不在参数里（集群详情、任务输入都看不到明文）；安装步骤 `docker login --password-stdin` 后拉镜像，bootstrap 带 `--registry-json`（600 权限的临时文件，之后删除）；部署成功，`create_osds` 不卡（回归点 28）。凭据只在 `/root/.docker/config.json`（不在 `/home/cland/.docker`），四个守护进程的镜像都来自私有仓库（cephadm 解析成仓库摘要）。
+- 第 4 步：节点已登出这个仓库（本机没有别的集群用它时），仓库路径下的镜像与 cephadm 都删掉（回归点 29、30）。
 
-## CEPH-17 mon 变化后刷新客户端（未执行，E13）
+> 2026-10-11：work-01 上临时起 `registry:2`（HTTPS 自签证书 + htpasswd，`10.191.202.40:5000`），推 `ceph/ceph:v19.2.3`。第一次部署卡在 `create_osds`（回归点 28），修后 ceph2（work-04 单节点测试形态）6 分钟部署完，第 2–4 步都符合预期；确认页的遮挡没在浏览器里看（接口与参数核对过）。测试仓库与证书已清理。
+
+## CEPH-17 mon 变化后刷新客户端（做不了：mon 集合建好后改不了，2026-10-12 用户决定不做，E13）
 
 1. 加一台带 `mon` 角色的节点；把一台的 `mon` 角色去掉（改角色）；移除一台 mon 节点
 
 **预期**：每个任务最后有 `mon_addrs`（读出新的 mon 地址，纯 IPv4）与 `client_refresh`（每个客户端重写 `/etc/ceph/<集群>.conf` 的 `mon_host`）；之后所有客户端的配置里 mon 地址与 `ceph mon dump` 一致，云服务器的 RBD 盘照常读写
 
-## CEPH-18 混合发行版（未执行，E13）
+> 2026-10-11：做不了。mon 数必须奇数，加节点、改角色、移除节点都一台一台来：3 个 mon 时加第 4 个 400「needs an odd number … 4 given」，去掉一个剩 2 个同样 400，坏掉的 mon 节点也离线移除不了。2026-10-12 用户决定不做（设计 §6.3）；GPFS 的仲裁节点同样（TC-25 ECE-13）。`mon_addrs` / `client_refresh` 只有 PG `TestStorageCephRegistryMonsPG` 覆盖。现在只验证这几种拒绝。
+
+## CEPH-18 混合发行版（未执行：要 26.04 节点，E13）
 
 1. 守护进程节点都是 24.04（19.2）时，加一台 26.04 的纯客户端
 2. 让一台守护进程节点是 26.04
@@ -249,6 +259,11 @@ WSL 真 Ceph 单节点端到端 `TestStorageCephWSL` 已核对第 1、2 条和�
 | 24 | 移除盘 / 主机只按全部介质数主机，SSD 池的副本可能无处可放；不看剩余容量，数据可能永远迁不完（2026-10-07 设计复查） | `CheckRemoval` 按池的介质数主机，`removal_room` 按设备类算剩余容量；CEPH-19 第 3 步 |
 | 25 | 有主机离线时删除集群卡在 `leave`；离线主机一离线就能离线移除（2026-10-07 设计复查） | 同 TC-20 回归点 30、31；CEPH-19 第 5、6 步 |
 | 26 | 创建向导确认页明文显示私有仓库口令 `registry_password`（2026-10-07 设计复查） | 参数汇总遮住键名以 password / secret / token / `_key` 结尾的值；CEPH-16 第 3 步，`stc-ui-rev1007.js` |
+| 27 | 离线移除后节点回来，OSD 容器与逻辑卷、内存预留、信任行、客户端配置都还在；加节点后共享池最多 5 分钟显示不可用（2026-10-11 work-04 实验第 2、5 条） | 同 TC-20 回归点 33、35（两种存储共用：移除节点的计划带 `leave`，离线主机记 `skipped` 与待补清理，回来后补清理；`joinedSharedPoolRow` 不覆盖已有上报）；PG `TestStorageCephDeployPG` 核对离线移除的 `leave` 记 `skipped` 运行；CEPH-10 |
+| 28 | 私有仓库的集群部署必然卡在建 OSD（10 分钟后「no OSD showed up」）：mgr 以 root 经 SSH 拉镜像、读 `/root/.docker`，而安装步骤与 bootstrap 的 `docker login` 在 cloudlet 的 `sudo -E` 下执行，`HOME` 是 `/home/cland`，凭据写错了地方；mgr 拉不到镜像就睡 60 秒、从不刷新主机，`orch daemon add osd` 什么也不做（cephadm 19.2.3 的 bootstrap 先加本机、后存凭据）（2026-10-11 第 15 条） | `ceph_install.sh` 的登录与拉取、`ceph_cluster.sh` 的 bootstrap 都用 `DOCKER_CONFIG=/root/.docker`；CEPH-16 第 3 步 |
+| 29 | 删掉私有仓库的集群后，仓库凭据与镜像一直留在节点上（2026-10-11 第 16 条） | 安装步骤把仓库地址与镜像记进集群运行目录（不含口令），`backend_leave` 在本机没有别的集群用同一仓库时 `docker logout`；带卸载软件包时删这个镜像（原来只删 `quay.io/ceph/ceph:*`）；CEPH-16 第 4 步 |
+| 30 | 集群升级换了镜像后，卸载只删安装时那个镜像（2026-10-12 第一轮代码审查 R13） | 删安装时记下的镜像所在仓库路径下的全部镜像（去掉 `@摘要`，只在最后一段带冒号时去掉标签，`仓库:5000/ceph/ceph` 不会截错） |
+| 31 | 单节点测试形态的集群一直 `HEALTH_WARN TOO_FEW_OSDS`：cephadm bootstrap 用完整配置建第一个 mon，`--single-host-defaults` 写的 `osd_pool_default_size = 2` 留在 mon 自己的配置文件里，压过 configure 步骤的 `config set`（2026-10-12）；第一版修复设了副本数 1 却没先允许单副本池（`.mgr` 池在 bootstrap 时建），三副本时写配置的块退出码为 1 被当成失败（第二轮代码审查 S11） | clapi 把副本数传给 bootstrap（`replicas`），脚本写 `bootstrap.conf` 经 `--config` 先定好 `osd_pool_default_size` / `min_size`，副本数 1 时同时写 `mon_allow_pool_size_one`、`mon_warn_on_pool_no_redundancy = false`。work-04 单节点 ceph3：`HEALTH_OK`、平台健康 healthy、`osd_pool_default_size` 为 1 |
 
 ## 清理
 
