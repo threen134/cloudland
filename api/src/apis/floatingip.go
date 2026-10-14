@@ -245,7 +245,7 @@ func (v *FloatingIpAPI) Delete(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
-	err = floatingIpAdmin.Delete(ctx, floatingIp)
+	err = floatingIpAdmin.DeleteOwned(ctx, floatingIp)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to delete floating ip %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to delete", err)

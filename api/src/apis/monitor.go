@@ -1,37 +1,29 @@
 package apis
 
 import (
-	"api/src/services"
-	"api/src/utils/tracing"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	. "api/src/common"
+	"api/src/services"
+	"api/src/utils/tracing"
+
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
-	"gorm.io/gorm"
 )
 
 type MonitorAPI struct{}
 
 var monitorAPI = &MonitorAPI{}
 
-type cacheItem struct {
-	uuid       string
-	instanceID int
-}
-
 var (
-	cacheSize   = 10
-	cacheExpire = 30 * time.Minute
-	cacheList   = make([]cacheItem, 0, cacheSize)
-	lastAccess  time.Time
 	// Prometheus API path
 	PrometheusQueryPath      = "/api/v1/query"
 	PrometheusQueryRangePath = "/api/v1/query_range"
@@ -234,27 +226,68 @@ type TrafficResponse struct {
 	} `json:"data"`
 }
 
-func getInstanceIDFromCache(uuid string) (int, bool) {
-	if time.Since(lastAccess) > cacheExpire {
-		cacheList = cacheList[:0]
-		return 0, false
+// resolveMonitoredInstances maps instance UUIDs to their libvirt domain names. Each instance must be
+// readable by the caller (its organization and role, like GET /instances/:id); an instance that does not
+// exist and one the caller may not read get the same 404, so the metrics reveal nothing about others.
+func resolveMonitoredInstances(c *gin.Context, uuids []string) (domains []string, domainToUUID map[string]string, ok bool) {
+	// Counted on the raw list: the traffic endpoint runs one query per entry, repeated or not
+	if len(uuids) > maxMonitoredItems {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": fmt.Sprintf("At most %d instances per request", maxMonitoredItems)})
+		return nil, nil, false
 	}
+	// One query for all of them; the result keeps one domain per requested UUID, in order, since the traffic
+	// endpoint pairs id[i] with network[i]
+	ids, err := services.ReadableInstanceIDs(c.Request.Context(), uuids)
+	if err != nil {
+		logger.Ctx(c).Errorf("Monitored instances %v not readable: %v", uuids, err)
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "Instance not found"})
+		return nil, nil, false
+	}
+	domainToUUID = make(map[string]string, len(uuids))
+	for _, uuid := range uuids {
+		uuid = strings.TrimSpace(uuid)
+		id, found := ids[uuid]
+		if !found {
+			c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "Instance not found"})
+			return nil, nil, false
+		}
+		domain := "inst-" + strconv.FormatInt(id, 10)
+		domains = append(domains, domain)
+		domainToUUID[domain] = uuid
+	}
+	return domains, domainToUUID, true
+}
 
-	for _, item := range cacheList {
-		if item.uuid == uuid {
-			lastAccess = time.Now()
-			return item.instanceID, true
+// metricLabelRe is what device names and host names may contain: they go into a PromQL label matcher,
+// so quotes, braces and regex alternation must not get through
+var metricLabelRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+
+const maxMonitoredItems = 50
+
+// promRegexAlternation joins names that passed metricLabelRe into the value of a PromQL =~ matcher. The only
+// regex metacharacter they can hold is '.', escaped so that each name matches itself and nothing else (`\\.` in
+// the PromQL string is `\.` in the regex)
+func promRegexAlternation(values []string) string {
+	escaped := make([]string, len(values))
+	for i, v := range values {
+		escaped[i] = strings.ReplaceAll(v, ".", `\\.`)
+	}
+	return strings.Join(escaped, "|")
+}
+
+// validMetricLabels refuses any value that is not a plain device or host name
+func validMetricLabels(c *gin.Context, field string, values []string) bool {
+	if len(values) > maxMonitoredItems {
+		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": fmt.Sprintf("At most %d %s values per request", maxMonitoredItems, field)})
+		return false
+	}
+	for _, v := range values {
+		if !metricLabelRe.MatchString(v) {
+			c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": fmt.Sprintf("Invalid %s: %q", field, v)})
+			return false
 		}
 	}
-	return 0, false
-}
-func addToCache(uuid string, instanceID int) {
-	if len(cacheList) >= cacheSize {
-		cacheList = cacheList[1:]
-	}
-
-	cacheList = append(cacheList, cacheItem{uuid, instanceID})
-	lastAccess = time.Now()
+	return true
 }
 
 func parseUnixTime(timeStr string) (int64, error) {
@@ -298,7 +331,7 @@ func (api *MonitorAPI) getRangeQuery(metricType string, instanceIDs []string, de
 		if metricType == "cpu" {
 			deviceFilter = uuidFilter
 		} else {
-			deviceFilter = strings.Join(deviceIDs, "|")
+			deviceFilter = promRegexAlternation(deviceIDs)
 		}
 		logger.Info("Device filter: %s", deviceFilter)
 		finalQuery = fmt.Sprintf(query, uuidFilter, deviceFilter)
@@ -337,31 +370,17 @@ func (api *MonitorAPI) GetTraffic(c *gin.Context) {
 		return
 	}
 
+	if !validMetricLabels(c, "network", request.Network) {
+		return
+	}
 	if len(request.ID) != len(request.Network) {
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "The number of instance IDs and network interfaces must be the same"})
 		return
 	}
 
-	var instanceIDs []string
-	for _, uuid := range request.ID {
-		logger.Ctx(c).Debug("Attempting to convert UUID: %s\n", uuid)
-		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
-			instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
-			continue
-		}
-		instanceID, err := services.GetDBIndexByInstanceUUID(c, uuid)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-				return
-			}
-			logger.Ctx(c).Errorf("failed to get instance: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
-			return
-		}
-		logger.Ctx(c).Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
-		instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
-		addToCache(uuid, instanceID)
+	instanceIDs, _, ok := resolveMonitoredInstances(c, request.ID)
+	if !ok {
+		return
 	}
 
 	// validate time params
@@ -435,31 +454,9 @@ func (api *MonitorAPI) GetCPU(c *gin.Context) {
 	}
 
 	// convert UUID to index ID, build reverse domain→uuid map
-	var instanceIDs []string
-	domainToUUID := make(map[string]string)
-	for _, uuid := range request.ID {
-		logger.Ctx(c).Debug("Attempting to convert UUID: %s\n", uuid)
-		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
-			domain := "inst-" + strconv.Itoa(instanceID)
-			instanceIDs = append(instanceIDs, domain)
-			domainToUUID[domain] = uuid
-			continue
-		}
-		instanceID, err := services.GetDBIndexByInstanceUUID(c, uuid)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-				return
-			}
-			logger.Ctx(c).Errorf("failed to get instance: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
-			return
-		}
-		logger.Ctx(c).Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
-		domain := "inst-" + strconv.Itoa(instanceID)
-		instanceIDs = append(instanceIDs, domain)
-		domainToUUID[domain] = uuid
-		addToCache(uuid, instanceID)
+	instanceIDs, domainToUUID, ok := resolveMonitoredInstances(c, request.ID)
+	if !ok {
+		return
 	}
 
 	// validate time params
@@ -528,31 +525,9 @@ func (api *MonitorAPI) GetMemory(c *gin.Context) {
 		return
 	}
 
-	var instanceIDs []string
-	domainToUUID := make(map[string]string)
-	for _, uuid := range request.ID {
-		logger.Ctx(c).Debug("Attempting to convert UUID: %s\n", uuid)
-		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
-			domain := "inst-" + strconv.Itoa(instanceID)
-			instanceIDs = append(instanceIDs, domain)
-			domainToUUID[domain] = uuid
-			continue
-		}
-		instanceID, err := services.GetDBIndexByInstanceUUID(c, uuid)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-				return
-			}
-			logger.Ctx(c).Errorf("failed to get instance: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
-			return
-		}
-		logger.Ctx(c).Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
-		domain := "inst-" + strconv.Itoa(instanceID)
-		instanceIDs = append(instanceIDs, domain)
-		domainToUUID[domain] = uuid
-		addToCache(uuid, instanceID)
+	instanceIDs, domainToUUID, ok := resolveMonitoredInstances(c, request.ID)
+	if !ok {
+		return
 	}
 
 	// validate time params
@@ -630,27 +605,13 @@ func (api *MonitorAPI) GetDisk(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Disk ID is required"})
 		return
 	}
+	if !validMetricLabels(c, "disk", request.Disk) {
+		return
+	}
 
-	var instanceIDs []string
-	for _, uuid := range request.ID {
-		logger.Ctx(c).Debug("Attempting to convert UUID: %s\n", uuid)
-		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
-			instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
-			continue
-		}
-		instanceID, err := services.GetDBIndexByInstanceUUID(c, uuid)
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-				return
-			}
-			logger.Ctx(c).Errorf("failed to get instance: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
-			return
-		}
-		logger.Ctx(c).Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
-		instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
-		addToCache(uuid, instanceID)
+	instanceIDs, _, ok := resolveMonitoredInstances(c, request.ID)
+	if !ok {
+		return
 	}
 
 	// validate time params
@@ -715,6 +676,14 @@ func (api *MonitorAPI) GetHyperCPU(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Hostname is required"})
 		return
 	}
+	// Host metrics show the load of the whole platform: system admins only
+	if !GetMemberShip(c.Request.Context()).CheckSystemPermission() {
+		c.JSON(http.StatusForbidden, gin.H{"status": "error", "message": "Only system admins can read host metrics"})
+		return
+	}
+	if !validMetricLabels(c, "hostname", request.Hostname) {
+		return
+	}
 
 	start, end, err := validateAndParseTimeParams(request.Start, request.End, request.Step)
 	if err != nil {
@@ -722,7 +691,7 @@ func (api *MonitorAPI) GetHyperCPU(c *gin.Context) {
 		return
 	}
 
-	hostnameFilter := strings.Join(request.Hostname, "|")
+	hostnameFilter := promRegexAlternation(request.Hostname)
 	query := fmt.Sprintf(rangeQueries["host_cpu"], hostnameFilter)
 
 	result, err := queryPrometheus(c.Request.Context(), PrometheusRangeURL, query, fmt.Sprintf("%d", start), fmt.Sprintf("%d", end), request.Step)
@@ -746,6 +715,14 @@ func (api *MonitorAPI) GetHyperMemory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "Hostname is required"})
 		return
 	}
+	// Host metrics show the load of the whole platform: system admins only
+	if !GetMemberShip(c.Request.Context()).CheckSystemPermission() {
+		c.JSON(http.StatusForbidden, gin.H{"status": "error", "message": "Only system admins can read host metrics"})
+		return
+	}
+	if !validMetricLabels(c, "hostname", request.Hostname) {
+		return
+	}
 
 	start, end, err := validateAndParseTimeParams(request.Start, request.End, request.Step)
 	if err != nil {
@@ -753,7 +730,7 @@ func (api *MonitorAPI) GetHyperMemory(c *gin.Context) {
 		return
 	}
 
-	hostnameFilter := strings.Join(request.Hostname, "|")
+	hostnameFilter := promRegexAlternation(request.Hostname)
 	totalQuery := fmt.Sprintf(rangeQueries["host_mem_total"], hostnameFilter)
 	freeQuery := fmt.Sprintf(rangeQueries["host_mem_free"], hostnameFilter)
 

@@ -384,7 +384,7 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/instances/:id", instanceAPI.Get)
 		authGroup.DELETE("/instances/:id", instanceAPI.Delete)
 		authGroup.PATCH("/instances/:id", instanceAPI.Patch)
-		authGroup.GET("/instances/rules", instanceAPI.GetInstanceRuleLinks)
+		authGroup.GET("/instances/rule-links", instanceAPI.GetInstanceRuleLinks)
 
 		authGroup.POST("/instances/:id/set_user_password", instanceAPI.SetUserPassword)
 		authGroup.POST("/instances/:id/console", consoleAPI.Create)

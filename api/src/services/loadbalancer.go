@@ -476,6 +476,10 @@ func (a *LoadBalancerAdmin) Update(ctx context.Context, loadBalancer *model.Load
 			logger.Ctx(ctx).Info("EXIT LoadBalancerAdmin.Update: success")
 		}
 	}()
+	if !GetMemberShip(ctx).CheckResourceOrg(model.OrgWriter, loadBalancer.Owner) {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update the load balancer", nil)
+		return
+	}
 	ctx, db := GetContextDB(ctx)
 	updates := map[string]interface{}{}
 	if loadBalancer.Name != name {

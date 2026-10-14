@@ -19,13 +19,12 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"net/http"
 	"slices"
 	"strconv"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -128,6 +127,10 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckOrgPermission(model.OrgWriter) {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to create instances", nil)
+		return
+	}
 	if image.Status != "available" {
 		err = NewCLError(ErrImageNotAvailable, "Image status not available", nil)
 		logger.Ctx(ctx).Error("Image status not available")
@@ -398,6 +401,40 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 // maxHostnameLength is the longest instance name, the limit of the create and rename requests
 const maxHostnameLength = 32
 
+// disksBusy refuses an operation that takes over the instance's disks (power actions, rescue, reinstall,
+// resize) while another one owns them: a rescue domain, a reinstall or resize script on the node, or a
+// migration copying them. Two of them at once would run two QEMU processes on one disk or rewrite a disk
+// that is being copied. An instance stuck in one of these states (a dropped command, a script that died
+// before its callback) is recovered by a system admin with a forced power action, see Update.
+func disksBusy(instance *model.Instance) error {
+	switch instance.Status {
+	case model.InstanceStatusRescuing, model.InstanceStatusReinstalling, model.InstanceStatusResizing, model.InstanceStatusMigrating:
+		return NewCLError(ErrInstanceInvalidState, fmt.Sprintf("Instance is %s", instance.Status), nil)
+	}
+	return nil
+}
+
+// lockInstanceStatus locks the instance row for the transaction and refreshes instance.Status from it. A check
+// on the instance loaded before the transaction is only a fast refusal: two requests that both passed it are
+// serialized here, and the second one sees the status the first one wrote.
+func lockInstanceStatus(db *gorm.DB, instance *model.Instance) error {
+	row := &model.Instance{}
+	if err := db.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "status").
+		Where("id = ?", instance.ID).Take(row).Error; err != nil {
+		return NewCLError(ErrInstanceNotFound, "Instance not found", err)
+	}
+	instance.Status = row.Status
+	return nil
+}
+
+// lockDisksIdle repeats disksBusy on the status read under the row lock
+func lockDisksIdle(db *gorm.DB, instance *model.Instance) error {
+	if err := lockInstanceStatus(db, instance); err != nil {
+		return err
+	}
+	return disksBusy(instance)
+}
+
 // batchHostnameValid refuses a prefix whose longest name in a batch would pass the limit: count > 1 names the
 // instances <prefix>-1 .. <prefix>-<count>, and a rename later refuses a name longer than the limit
 func batchHostnameValid(prefix string, count int) error {
@@ -429,18 +466,21 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 			logger.Ctx(ctx).Info("EXIT InstanceAdmin.Rescue: success")
 		}
 	}()
+	// Rescue sets a root password on a system that mounts the instance's disks: a writer's action
+	if !GetMemberShip(ctx).CheckResourceOrg(model.OrgWriter, instance.Owner) {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to rescue the instance", nil)
+		return
+	}
+	if err = disksBusy(instance); err != nil {
+		return
+	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
 	}()
-	if instance.Status == "rescuing" {
-		err = NewCLError(ErrInstanceInvalidState, "Instance is already in rescue status", nil)
-		return
-	}
-	if instance.Status == model.InstanceStatusReinstalling {
-		err = NewCLError(ErrInstanceInvalidState, "Instance is reinstalling", nil)
+	if err = lockDisksIdle(db, instance); err != nil {
 		return
 	}
 	if err = refuseWhileWaiting(db, instance); err != nil {
@@ -525,7 +565,19 @@ func (a *InstanceAdmin) EndRescue(ctx context.Context, instance *model.Instance)
 			EndTransaction(ctx, err)
 		}
 	}()
-	if instance.Status != "rescuing" {
+	if !GetMemberShip(ctx).CheckResourceOrg(model.OrgWriter, instance.Owner) {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to end the rescue of the instance", nil)
+		return
+	}
+	if instance.Status != model.InstanceStatusRescuing {
+		err = NewCLError(ErrInstanceInvalidState, "Instance is not in rescue status", nil)
+		return
+	}
+	// Two end-rescue requests, or one racing a power action, are serialized on the row: the second sees shut_off
+	if err = lockInstanceStatus(db, instance); err != nil {
+		return
+	}
+	if instance.Status != model.InstanceStatusRescuing {
 		err = NewCLError(ErrInstanceInvalidState, "Instance is not in rescue status", nil)
 		return
 	}
@@ -595,8 +647,8 @@ func (a *InstanceAdmin) ChangeInstanceStatus(ctx context.Context, instance *mode
 	return
 }
 
-func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, hostname string, action PowerAction, hyperID int) (err error) {
-	logger.Ctx(ctx).Infof("ENTER InstanceAdmin.Update: instanceID=%d, hostname=%s, action=%s, hyperID=%d", instance.ID, hostname, action, hyperID)
+func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, hostname string, action PowerAction, force bool) (err error) {
+	logger.Ctx(ctx).Infof("ENTER InstanceAdmin.Update: instanceID=%d, hostname=%s, action=%s, force=%v", instance.ID, hostname, action, force)
 	defer func() {
 		if err != nil {
 			logger.Ctx(ctx).Errorf("EXIT InstanceAdmin.Update: error=%v", err)
@@ -604,16 +656,31 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, ho
 			logger.Ctx(ctx).Info("EXIT InstanceAdmin.Update: success")
 		}
 	}()
-	if instance.Status == model.InstanceStatusMigrating {
-		err = fmt.Errorf("Instance is not in a valid state")
-		return
-	}
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckResourceOrg(model.OrgWriter, instance.Owner)
 	if !permit {
 		logger.Ctx(ctx).Error("Not authorized to update the instance")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update the instance", nil)
 		return
+	}
+	// A migrating instance is not renamed either; a power action is refused in every disksBusy state, since
+	// starting the instance while a rescue domain or a script owns its disks would run a second QEMU on the same
+	// disk, which nothing locks on a shared (RBD) pool. force lets a system admin recover an instance stuck in
+	// resizing / reinstalling / rescuing (a dropped command or a script that died before its callback, which
+	// the heartbeat never corrects while the VM runs) without editing the database; it is their call that
+	// nothing still owns the disks
+	if force && (string(action) == "" || !memberShip.IsSystemAdmin()) {
+		err = NewCLError(ErrPermissionDenied, "Only system admins can force a power action", nil)
+		return
+	}
+	if instance.Status == model.InstanceStatusMigrating {
+		err = NewCLError(ErrInstanceInvalidState, "Instance is migrating", nil)
+		return
+	}
+	if string(action) != "" && !force {
+		if err = disksBusy(instance); err != nil {
+			return
+		}
 	}
 
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -622,26 +689,20 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, ho
 			EndTransaction(ctx, err)
 		}
 	}()
-	if string(action) != "" {
+	if string(action) != "" && !force {
+		if err = lockDisksIdle(db, instance); err != nil {
+			return
+		}
 		if err = refuseWhileWaiting(db, instance); err != nil {
 			return
 		}
 	}
-	if hyperID != int(instance.Hyper) {
-		permit = memberShip.IsSystemAdmin()
-		if !permit {
-			logger.Ctx(ctx).Error("Not authorized to migrate VM")
-			err = NewCLError(ErrPermissionDenied, "Not authorized to migrate VM", nil)
-			return
-		}
-		// TODO: migrate VM
-	}
 	if instance.Hostname != hostname {
 		instance.Hostname = hostname
-	}
-	if err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{"hostname": instance.Hostname}).Error; err != nil {
-		logger.Ctx(ctx).Error("Failed to save instance", err)
-		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
+		if err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{"hostname": instance.Hostname}).Error; err != nil {
+			logger.Ctx(ctx).Error("Failed to save instance", err)
+			return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
+		}
 	}
 	if string(action) != "" {
 		err = instanceAdmin.ChangeInstanceStatus(ctx, instance, string(action))
@@ -662,19 +723,22 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 			logger.Ctx(ctx).Info("EXIT InstanceAdmin.Resize: success")
 		}
 	}()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, instance.Owner)
+	if !permit {
+		logger.Ctx(ctx).Error("Not authorized to resize the instance")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to resize the instance", nil)
+		return
+	}
+	if err = disksBusy(instance); err != nil {
+		return
+	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
 	}()
-	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckResourceOrg(model.OrgWriter, instance.Owner)
-	if !permit {
-		logger.Ctx(ctx).Error("Not authorized to reinstall the instance")
-		err = fmt.Errorf("Not authorized")
-		return
-	}
 	var bootVolume *model.Volume
 	for _, volume := range instance.Volumes {
 		if volume.Booting {
@@ -688,13 +752,7 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 		return
 	}
 	status := model.InstanceStatusResizing
-	if instance.Status == status {
-		logger.Ctx(ctx).Error("Instance is already resizing")
-		err = NewCLError(ErrInstanceInvalidState, "Instance is already resizing", nil)
-		return
-	}
-	if instance.Status == model.InstanceStatusReinstalling {
-		err = NewCLError(ErrInstanceInvalidState, "Instance is reinstalling", nil)
+	if err = lockDisksIdle(db, instance); err != nil {
 		return
 	}
 	if err = refuseWhileWaiting(db, instance); err != nil {
@@ -737,10 +795,14 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 			logger.Ctx(ctx).Info("EXIT InstanceAdmin.Reinstall: success")
 		}
 	}()
+	if !GetMemberShip(ctx).CheckResourceOrg(model.OrgWriter, instance.Owner) {
+		logger.Ctx(ctx).Error("Not authorized to reinstall the instance")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to reinstall the instance", nil)
+		return
+	}
 	// A reinstall may wait for the copy of its image in a shared pool and run later: another one, or a rescue, in
 	// between would be undone by it
-	if instance.Status == model.InstanceStatusRescuing || instance.Status == model.InstanceStatusReinstalling {
-		err = NewCLError(ErrInstanceInvalidState, fmt.Sprintf("Instance is %s", instance.Status), nil)
+	if err = disksBusy(instance); err != nil {
 		logger.Ctx(ctx).Error("Instance is not in the right state")
 		return
 	}
@@ -757,11 +819,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 			sendImageStorageImport(ctx, baseCopy, importCmd)
 		}
 	}()
-	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckResourceOrg(model.OrgWriter, instance.Owner)
-	if !permit {
-		logger.Ctx(ctx).Error("Not authorized to reinstall the instance")
-		err = NewCLError(ErrPermissionDenied, "Not authorized to reinstall the instance", nil)
+	if err = lockDisksIdle(db, instance); err != nil {
 		return
 	}
 	if err = refuseWhileWaiting(db, instance); err != nil {
@@ -1626,35 +1684,6 @@ func (a *InstanceAdmin) GetInstanceByUUID(ctx context.Context, uuID string) (ins
 	return a.Get(ctx, instance.ID)
 }
 
-func GetDBIndexByInstanceUUID(c *gin.Context, uuid string) (id int, err error) {
-	logger.Ctx(c).Infof("ENTER GetDBIndexByInstanceUUID: uuid=%s", uuid)
-	defer func() {
-		if err != nil {
-			logger.Ctx(c).Errorf("EXIT GetDBIndexByInstanceUUID: error=%v", err)
-		} else {
-			logger.Ctx(c).Infof("EXIT GetDBIndexByInstanceUUID: id=%d", id)
-		}
-	}()
-	db := DB()
-
-	var instance model.Instance
-	if err = db.Model(&model.Instance{}).
-		Select("id").
-		Where("uuid = ?", uuid).
-		First(&instance).Error; err != nil {
-
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Instance not found"})
-			fmt.Printf("Instance not found: %s\n", uuid)
-			return -1, NewCLError(ErrInstanceNotFound, "Instance not found", err)
-		}
-		logger.Ctx(c).Error("Database error for UUID %s: %v", uuid, err)
-		return -1, NewCLError(ErrDatabaseError, "Database error", err)
-	}
-
-	return int(instance.ID), nil
-}
-
 func GetInstanceUUIDByDomain(ctx context.Context, domain string) (uuid string, err error) {
 	logger.Ctx(ctx).Infof("ENTER GetInstanceUUIDByDomain: domain=%s", domain)
 	defer func() {
@@ -1811,4 +1840,37 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	}
 
 	return
+}
+
+// ReadableInstanceIDs maps instance UUIDs to their IDs with one query, for endpoints that need nothing else about
+// the instances (metrics, rule links). Every UUID must name an instance the caller may read: a missing one and one
+// of another organization both answer ErrInstanceNotFound. Empty and repeated UUIDs are ignored.
+func ReadableInstanceIDs(ctx context.Context, uuids []string) (map[string]int64, error) {
+	want := make([]string, 0, len(uuids))
+	seen := make(map[string]bool, len(uuids))
+	for _, u := range uuids {
+		if u = strings.TrimSpace(u); u != "" && !seen[u] {
+			seen[u] = true
+			want = append(want, u)
+		}
+	}
+	ids := make(map[string]int64, len(want))
+	if len(want) == 0 {
+		return ids, nil
+	}
+	ctx, db := GetContextDB(ctx)
+	var rows []*model.Instance
+	if err := db.Select("id", "uuid", "owner").Where("uuid IN ?", want).Find(&rows).Error; err != nil {
+		return nil, NewCLError(ErrDatabaseError, "Failed to query instances", err)
+	}
+	memberShip := GetMemberShip(ctx)
+	for _, row := range rows {
+		if memberShip.CheckResourceOrg(model.OrgReader, row.Owner) {
+			ids[row.UUID] = row.ID
+		}
+	}
+	if len(ids) != len(want) {
+		return nil, NewCLError(ErrInstanceNotFound, "Instance not found", nil)
+	}
+	return ids, nil
 }

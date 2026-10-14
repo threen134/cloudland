@@ -109,7 +109,7 @@ func TestImageStorageWaitGuardPG(t *testing.T) {
 	must(t, waitForImageStorage(db, is1, model.ImageWaitReinstall, inst1.ID, vol1.ID, 8, fmt.Sprintf("inter=%d", h[0]), "/opt/cloudland/scripts/backend/reinstall_vm.sh 'x'"))
 	must(t, db.Model(&model.Instance{}).Where("id = ?", inst1.ID).Update("status", model.InstanceStatusRunning).Error)
 	inst1.Status = model.InstanceStatusRunning
-	wantCode(t, instanceAdmin.Update(ctx, inst1, inst1.Hostname, PowerAction("stop"), int(inst1.Hyper)), ErrInstanceInvalidState, "power action while a reinstall waits")
+	wantCode(t, instanceAdmin.Update(ctx, inst1, inst1.Hostname, PowerAction("stop"), false), ErrInstanceInvalidState, "power action while a reinstall waits")
 	wantCode(t, instanceAdmin.Rescue(ctx, inst1, img1, pw), ErrInstanceInvalidState, "rescue while a reinstall waits")
 	wantCode(t, instanceAdmin.Reinstall(ctx, inst1, img1, pw, nil, 1, 512, 12, 22), ErrInstanceInvalidState, "reinstall while a reinstall waits")
 	wantCode(t, instanceAdmin.Resize(ctx, inst1, 1, 512), ErrInstanceInvalidState, "resize while a reinstall waits")
@@ -118,7 +118,7 @@ func TestImageStorageWaitGuardPG(t *testing.T) {
 		t.Fatalf("commands sent for an instance whose reinstall waits: %v", cmds)
 	}
 	// A rename is no change of what the reinstall does
-	must(t, instanceAdmin.Update(ctx, inst1, inst1.Hostname+"x", PowerAction(""), int(inst1.Hyper)))
+	must(t, instanceAdmin.Update(ctx, inst1, inst1.Hostname+"x", PowerAction(""), false))
 
 	// The copy comes: the waiter no longer fits (the instance is not reinstalling any more), it is dropped, nothing is
 	// sent, its disk and the instance keep the old size, the waiter is gone for good

@@ -125,6 +125,21 @@ func (a *IpGroupAdmin) Delete(ctx context.Context, ipGroup *model.IpGroup) (err 
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the ip group", nil)
 		return
 	}
+	// Subnets and floating IPs name the group by ID: deleting it under them leaves the reference dangling
+	// (the subnet no longer shows up when filtering by group), as deleting a VPC with subnets would
+	var subnets, floatingIps int64
+	if err = db.Model(&model.Subnet{}).Where("group_id = ?", ipGroup.ID).Count(&subnets).Error; err != nil {
+		err = NewCLError(ErrIpGroupDeleteFailed, "Failed to count the subnets of the ip group", err)
+		return
+	}
+	if err = db.Model(&model.FloatingIp{}).Where("group_id = ?", ipGroup.ID).Count(&floatingIps).Error; err != nil {
+		err = NewCLError(ErrIpGroupDeleteFailed, "Failed to count the floating ips of the ip group", err)
+		return
+	}
+	if subnets > 0 || floatingIps > 0 {
+		err = NewCLError(ErrIpGroupInUse, fmt.Sprintf("The ip group is still used by %d subnet(s) and %d floating ip(s)", subnets, floatingIps), nil)
+		return
+	}
 	if err = db.Delete(ipGroup).Error; err != nil {
 		logger.Ctx(ctx).Errorf("DB failed to delete ip group, err=%v", err)
 		err = NewCLError(ErrIpGroupDeleteFailed, "Failed to delete ip group", err)

@@ -530,6 +530,10 @@ func (a *InterfaceAdminService) Create(ctx context.Context, instance *model.Inst
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckResourceOrg(model.OrgWriter, instance.Owner) {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to create interfaces for the instance", nil)
+		return
+	}
 	ifaceLen := len(instance.Interfaces)
 	if ifaceLen >= 8 {
 		err = NewCLError(ErrTooManyInterfaces, "Can not create interfaces more than 8", nil)
@@ -614,6 +618,11 @@ func (a *InterfaceAdminService) Update(ctx context.Context, instance *model.Inst
 			EndTransaction(ctx, err)
 		}
 	}()
+	// Changing security groups, spoofing or addresses of an interface is a writer's action
+	if !GetMemberShip(ctx).CheckResourceOrg(model.OrgWriter, instance.Owner) {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update the interface", nil)
+		return
+	}
 	needUpdate := false
 	needRemoteUpdate := false
 	if iface.Name != name {

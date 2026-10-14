@@ -43,6 +43,7 @@ import { errorMessage } from '../../utils/error'
 import { usageColor } from '../../utils/usageColor'
 import { formatMemory } from '../../utils/format'
 import { isValidHostname } from '../../utils/validation'
+import { isPowerLocked } from '../../utils/status'
 
 const region = useRegionStore()
 
@@ -717,7 +718,7 @@ onUnmounted(() => {
                                     v-if="['stopped', 'shutoff', 'shut_off'].includes(instance.status?.toLowerCase())"
                                     class="dropdown-item"
                                     @click="handleAction(instance, 'start')"
-                                    :disabled="!!actionLoading[instance.id]"
+                                    :disabled="!!actionLoading[instance.id] || isPowerLocked(instance.status)"
                                 >
                                     <Play :size="14" /> {{ t('dashboard.instanceDetail.start') }}
                                 </button>
@@ -725,7 +726,7 @@ onUnmounted(() => {
                                     v-else
                                     class="dropdown-item"
                                     @click="handleAction(instance, 'stop')"
-                                    :disabled="!!actionLoading[instance.id]"
+                                    :disabled="!!actionLoading[instance.id] || isPowerLocked(instance.status)"
                                 >
                                     <Square :size="14" /> {{ t('dashboard.instanceDetail.stop') }}
                                 </button>
@@ -734,6 +735,7 @@ onUnmounted(() => {
                                     @click="handleAction(instance, 'restart')"
                                     :disabled="
                                         !!actionLoading[instance.id] ||
+                                        isPowerLocked(instance.status) ||
                                         !['running', 'active'].includes(instance.status?.toLowerCase())
                                     "
                                 >
@@ -754,6 +756,7 @@ onUnmounted(() => {
                                     @click="handleAction(instance, 'hard_stop')"
                                     :disabled="
                                         !!actionLoading[instance.id] ||
+                                        isPowerLocked(instance.status) ||
                                         ['stopped', 'shutoff', 'shut_off', 'paused'].includes(
                                             instance.status?.toLowerCase()
                                         )
@@ -766,6 +769,7 @@ onUnmounted(() => {
                                     @click="handleAction(instance, 'hard_restart')"
                                     :disabled="
                                         !!actionLoading[instance.id] ||
+                                        isPowerLocked(instance.status) ||
                                         ['stopped', 'shutoff', 'shut_off'].includes(instance.status?.toLowerCase())
                                     "
                                 >
@@ -776,7 +780,9 @@ onUnmounted(() => {
                                     class="dropdown-item"
                                     @click="handleAction(instance, 'pause')"
                                     :disabled="
-                                        !!actionLoading[instance.id] || instance.status?.toLowerCase() !== 'running'
+                                        !!actionLoading[instance.id] ||
+                                        isPowerLocked(instance.status) ||
+                                        instance.status?.toLowerCase() !== 'running'
                                     "
                                 >
                                     <Pause :size="14" /> {{ t('dashboard.instanceDetail.pause') }}
@@ -785,7 +791,7 @@ onUnmounted(() => {
                                     v-else
                                     class="dropdown-item"
                                     @click="handleAction(instance, 'resume')"
-                                    :disabled="!!actionLoading[instance.id]"
+                                    :disabled="!!actionLoading[instance.id] || isPowerLocked(instance.status)"
                                 >
                                     <Play :size="14" /> {{ t('dashboard.instanceDetail.resume') }}
                                 </button>

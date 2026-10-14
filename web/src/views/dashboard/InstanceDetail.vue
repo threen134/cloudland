@@ -57,6 +57,7 @@ import { formatMemory } from '../../utils/format'
 import { ruleText } from '../../utils/placementGroup'
 import { errorMessage } from '../../utils/error'
 import { isValidHostname } from '../../utils/validation'
+import { isPowerLocked } from '../../utils/status'
 
 const route = useRoute()
 const router = useRouter()
@@ -648,7 +649,7 @@ onUnmounted(() => {
                                     v-if="['stopped', 'shutoff', 'shut_off'].includes(instance.status?.toLowerCase())"
                                     class="dropdown-item"
                                     @click="handleAction('start')"
-                                    :disabled="!!actionLoading"
+                                    :disabled="!!actionLoading || isPowerLocked(instance.status)"
                                 >
                                     <span v-if="actionLoading === 'start'" class="loading-spinner small"></span>
                                     <Play v-else :size="14" />
@@ -662,7 +663,7 @@ onUnmounted(() => {
                                     v-else
                                     class="dropdown-item"
                                     @click="handleAction('stop')"
-                                    :disabled="!!actionLoading"
+                                    :disabled="!!actionLoading || isPowerLocked(instance.status)"
                                 >
                                     <span v-if="actionLoading === 'stop'" class="loading-spinner small"></span>
                                     <Square v-else :size="14" />
@@ -675,7 +676,11 @@ onUnmounted(() => {
                                 <button
                                     class="dropdown-item"
                                     @click="handleAction('restart')"
-                                    :disabled="!!actionLoading || instance.status !== 'running'"
+                                    :disabled="
+                                        !!actionLoading ||
+                                        isPowerLocked(instance.status) ||
+                                        instance.status !== 'running'
+                                    "
                                 >
                                     <span v-if="actionLoading === 'restart'" class="loading-spinner small"></span>
                                     <RotateCw v-else :size="14" />
@@ -691,6 +696,7 @@ onUnmounted(() => {
                                     @click="handleAction('hard_stop')"
                                     :disabled="
                                         !!actionLoading ||
+                                        isPowerLocked(instance.status) ||
                                         ['stopped', 'shutoff', 'shut_off', 'paused'].includes(
                                             instance.status?.toLowerCase()
                                         )
@@ -709,6 +715,7 @@ onUnmounted(() => {
                                     @click="handleAction('hard_restart')"
                                     :disabled="
                                         !!actionLoading ||
+                                        isPowerLocked(instance.status) ||
                                         ['stopped', 'shutoff', 'shut_off'].includes(instance.status?.toLowerCase())
                                     "
                                 >
@@ -724,7 +731,11 @@ onUnmounted(() => {
                                     v-if="instance.status?.toLowerCase() !== 'paused'"
                                     class="dropdown-item"
                                     @click="handleAction('pause')"
-                                    :disabled="!!actionLoading || instance.status?.toLowerCase() !== 'running'"
+                                    :disabled="
+                                        !!actionLoading ||
+                                        isPowerLocked(instance.status) ||
+                                        instance.status?.toLowerCase() !== 'running'
+                                    "
                                 >
                                     <span v-if="actionLoading === 'pause'" class="loading-spinner small"></span>
                                     <Pause v-else :size="14" />
@@ -738,7 +749,7 @@ onUnmounted(() => {
                                     v-if="instance.status?.toLowerCase() === 'paused'"
                                     class="dropdown-item"
                                     @click="handleAction('resume')"
-                                    :disabled="!!actionLoading"
+                                    :disabled="!!actionLoading || isPowerLocked(instance.status)"
                                 >
                                     <span v-if="actionLoading === 'resume'" class="loading-spinner small"></span>
                                     <Play v-else :size="14" />

@@ -47,6 +47,9 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 		return nil, err
 	}
 	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckOrgPermission(model.OrgWriter) {
+		return nil, NewCLError(ErrPermissionDenied, "Not authorized to create images", nil)
+	}
 	// The S3 upload loads the image row in its own session: start it only once the row is committed, deferred
 	// before the transaction so that it runs after EndTransaction
 	var startUpload func()
@@ -68,6 +71,11 @@ func (a *ImageAdminService) Create(ctx context.Context, osCode, name, osVersion,
 		if err != nil {
 			logger.Ctx(ctx).Error("DB failed to query instance", err)
 			return nil, NewCLError(ErrInstanceNotFound, "Instance not found", err)
+		}
+		// Capturing copies the instance's disk: the caller (a writer, checked above) must belong to the organization
+		// that owns it. Another organization's instance gets the same answer as a missing one
+		if !memberShip.CheckResourceOrg(model.OrgWriter, instance.Owner) {
+			return nil, NewCLError(ErrInstanceNotFound, "Instance not found", nil)
 		}
 		if instance.Status != model.InstanceStatusShutoff {
 			err = fmt.Errorf("instance [%s] is running, shut it down first before capturing", instance.Hostname)

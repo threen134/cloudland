@@ -27,6 +27,9 @@ type InstanceAPI struct{}
 type InstancePatchPayload struct {
 	Hostname    string      `json:"hostname" binding:"omitempty,min=2,max=32,hostname|fqdn"` // same rule as InstancePayload
 	PowerAction PowerAction `json:"power_action" binding:"omitempty,oneof=stop hard_stop start restart hard_restart pause resume"`
+	// Force (system admins only, with power_action) skips the refusal while the instance is rescuing, reinstalling
+	// or resizing, to recover one stuck there; the admin answers for nothing still owning its disks
+	Force bool `json:"force"`
 }
 
 type InstanceSetUserPasswordPayload struct {
@@ -175,7 +178,7 @@ func (v *InstanceAPI) Patch(c *gin.Context) {
 		hostname = payload.Hostname
 		logger.Ctx(ctx).Debugf("Update hostname to %s", hostname)
 	}
-	err = instanceAdmin.Update(ctx, instance, hostname, payload.PowerAction, int(instance.Hyper))
+	err = instanceAdmin.Update(ctx, instance, hostname, payload.PowerAction, payload.Force)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Patch instance failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)
@@ -876,9 +879,24 @@ func (v *InstanceAPI) GetInstanceRuleLinks(c *gin.Context) {
 		return
 	}
 
-	instanceIDs := strings.Split(instanceIDsStr, ",")
-	for i := range instanceIDs {
-		instanceIDs[i] = strings.TrimSpace(instanceIDs[i])
+	var instanceIDs []string
+	for _, id := range strings.Split(instanceIDsStr, ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			instanceIDs = append(instanceIDs, id)
+		}
+	}
+	if len(instanceIDs) == 0 {
+		ErrorResponse(c, http.StatusBadRequest, "instance_ids parameter is required", nil)
+		return
+	}
+	if len(instanceIDs) > 50 {
+		ErrorResponse(c, http.StatusBadRequest, "At most 50 instance_ids per request", nil)
+		return
+	}
+	// The rule links are looked up by UUID alone: each instance must be readable by the caller first
+	if _, err := services.ReadableInstanceIDs(c.Request.Context(), instanceIDs); err != nil {
+		ErrorResponse(c, http.StatusNotFound, "Instance not found", nil)
+		return
 	}
 
 	// Call routes layer function (no DB operations in API layer)

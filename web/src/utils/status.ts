@@ -60,3 +60,10 @@ export const statusVariant = (status?: string | null): StatusVariant => {
     if (!status) return 'neutral'
     return LOOKUP[status.toLowerCase()] ?? 'pending'
 }
+
+// States in which the server refuses power actions: a rescue domain, a reinstall or resize script, or a migration
+// owns the disks. A system admin recovers an instance stuck in one of them through the API (power_action with
+// force: true)
+const POWER_LOCKED = ['rescuing', 'reinstalling', 'resizing', 'migrating']
+
+export const isPowerLocked = (status?: string | null): boolean => POWER_LOCKED.includes((status ?? '').toLowerCase())

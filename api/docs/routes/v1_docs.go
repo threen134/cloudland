@@ -12652,6 +12652,10 @@ const docTemplatev1 = `{
         "apis.InstancePatchPayload": {
             "type": "object",
             "properties": {
+                "force": {
+                    "description": "Force (system admins only, with power_action) skips the refusal while the instance is rescuing, reinstalling\nor resizing, to recover one stuck there; the admin answers for nothing still owning its disks",
+                    "type": "boolean"
+                },
                 "hostname": {
                     "description": "same rule as InstancePayload",
                     "type": "string",

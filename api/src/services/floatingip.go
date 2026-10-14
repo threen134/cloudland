@@ -852,6 +852,18 @@ func (a *FloatingIpAdminService) Update(ctx context.Context, floatingIp *model.F
 	return floatingIpTemp, nil
 }
 
+// DeleteOwned is DELETE /floating_ips/:id: deleting a floating IP on its own releases the address and drops the
+// record, which is for the organization owning it; the owner of what it is attached to may only detach it
+// (checkDetachable). Deletes cascading from a load balancer or VPN gateway, and the load balancer's floating IP
+// endpoint, call Delete: a system admin may have attached a floating IP of their own organization there, and it
+// must not keep the owner from deleting their load balancer.
+func (a *FloatingIpAdminService) DeleteOwned(ctx context.Context, floatingIp *model.FloatingIp) (err error) {
+	if !GetMemberShip(ctx).CheckResourceOrg(model.OrgWriter, floatingIp.Owner) {
+		return NewCLError(ErrPermissionDenied, "Not authorized to delete the floating ip", nil)
+	}
+	return a.Delete(ctx, floatingIp)
+}
+
 func (a *FloatingIpAdminService) Delete(ctx context.Context, floatingIp *model.FloatingIp) (err error) {
 	logger.Ctx(ctx).Infof("ENTER FloatingIpAdmin.Delete: floatingIpID=%d, uuid=%s", floatingIp.ID, floatingIp.UUID)
 	defer func() {

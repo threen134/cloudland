@@ -215,7 +215,7 @@ func (a *ListenerAdmin) Delete(ctx context.Context, listener *model.Listener, lo
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckResourceOrg(model.OrgReader, listener.Owner)
+	permit := memberShip.CheckResourceOrg(model.OrgWriter, listener.Owner)
 	if !permit {
 		logger.Ctx(ctx).Error("Not authorized to delete the listener")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the listener", nil)

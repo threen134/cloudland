@@ -618,7 +618,7 @@ func (v *InterfaceAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid primary interface", err)
 		return
 	}
-	iface, err := interfaceAdmin.Create(ctx, instance, ifaceInfo.MacAddress, ifaceInfo.IpAddress, ifaceInfo.Inbound, ifaceInfo.Outbound, ifaceInfo.AllowSpoofing, ifaceInfo.SecurityGroups, ifaceInfo.Subnets, ifaceInfo.Count-1)
+	iface, err := interfaceAdmin.Create(ctx, instance, ifaceInfo.IpAddress, ifaceInfo.MacAddress, ifaceInfo.Inbound, ifaceInfo.Outbound, ifaceInfo.AllowSpoofing, ifaceInfo.SecurityGroups, ifaceInfo.Subnets, ifaceInfo.Count-1)
 	if err != nil {
 		logger.Ctx(ctx).Errorf("Failed to create subnet, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create subnet", err)
