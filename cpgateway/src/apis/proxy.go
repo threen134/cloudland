@@ -93,6 +93,22 @@ func forwardToRegion(c *gin.Context, template string, body []byte) {
 		org, orgID, orgUUID = &o, o.ID, o.UUID
 	}
 
+	// Roles come from the database, not from the token: the token lives for hours, and a member
+	// removed or demoted in the meantime (or a demoted system admin) must lose the access at once.
+	// Same rules as login and the org / region switches.
+	orgName, orgRole, isOwner := claims.OrgName, model.OrgRoleNone, false
+	if org != nil {
+		orgName, isOwner = org.Name, org.OwnerUserID == user.ID
+		if user.IsAdmin() {
+			orgRole = model.OrgRoleAdmin
+		} else if m := findActiveMember(c.Request.Context(), user.ID, org.ID); m != nil {
+			orgRole = m.OrgRole
+		} else {
+			common.AbortWithDetail(c, http.StatusForbidden, "User is no longer a member of this organization")
+			return
+		}
+	}
+
 	forwarded := map[string]string{
 		"X-User-ID": strconv.FormatInt(user.ID, 10),
 		// 只传用户名，不传邮箱：用户名创建后不可更改、注销后不可复用，是跨服务引用账号最稳的标识；
@@ -104,10 +120,10 @@ func forwardToRegion(c *gin.Context, template string, body []byte) {
 		// 传 UUID 而非自增主键：两侧组织表的 ID 各自独立，此前靠同步时强行用同一个 ID
 		// 作主键来维持一致，一旦错位，资源会静默挂到别的组织名下且毫无报错
 		"X-Org-UUID":         orgUUID,
-		"X-Org-Name":         claims.OrgName,
-		"X-Org-Role":         strconv.Itoa(claims.OR),
-		"X-Is-Owner":         strconv.FormatBool(claims.IsOwner),
-		"X-System-Role":      strconv.Itoa(claims.SR),
+		"X-Org-Name":         orgName,
+		"X-Org-Role":         strconv.Itoa(int(orgRole)),
+		"X-Is-Owner":         strconv.FormatBool(isOwner),
+		"X-System-Role":      strconv.Itoa(int(user.SystemRole)),
 		"X-Forwarded-Secret": region.InternalSecret,
 	}
 

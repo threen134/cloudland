@@ -146,7 +146,7 @@ func CurrentOrg(write bool) gin.HandlerFunc {
 		}
 		orgRole := model.OrgRoleAdmin
 		if !user.IsAdmin() {
-			member := findActiveMember(user.ID, org.ID)
+			member := findActiveMember(c.Request.Context(), user.ID, org.ID)
 			if member == nil {
 				common.AbortWithDetail(c, http.StatusForbidden, "Not a member of this organization")
 				return

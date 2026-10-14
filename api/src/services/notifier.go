@@ -38,7 +38,7 @@ type AlarmNotifier struct {
 
 func NewAlarmNotifier() *AlarmNotifier {
 	return &AlarmNotifier{
-		client: &http.Client{Timeout: 10 * time.Second},
+		client: newNotifierClient(),
 	}
 }
 

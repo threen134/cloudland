@@ -2,6 +2,7 @@ package apis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -49,21 +50,21 @@ func loadUsersByID(ids []int64) map[int64]*model.User {
 }
 
 // findActiveMember loads the formal membership (see model.ActiveMembers) of a user in an org.
-func findActiveMember(userID, orgID int64) *model.Member {
+func findActiveMember(ctx context.Context, userID, orgID int64) *model.Member {
 	var member model.Member
-	if dbs.DB().Scopes(model.ActiveMembers).Where("user_id = ? AND org_id = ?", userID, orgID).
+	if dbs.DBContext(ctx).Scopes(model.ActiveMembers).Where("user_id = ? AND org_id = ?", userID, orgID).
 		Limit(1).Find(&member).RowsAffected == 0 {
 		return nil
 	}
 	return &member
 }
 
-func isMember(userID, orgID int64) bool {
-	return findActiveMember(userID, orgID) != nil
+func isMember(ctx context.Context, userID, orgID int64) bool {
+	return findActiveMember(ctx, userID, orgID) != nil
 }
 
-func isOrgAdminMember(userID, orgID int64) bool {
-	m := findActiveMember(userID, orgID)
+func isOrgAdminMember(ctx context.Context, userID, orgID int64) bool {
+	m := findActiveMember(ctx, userID, orgID)
 	return m != nil && m.OrgRole >= model.OrgRoleAdmin
 }
 
@@ -182,7 +183,7 @@ func GetOrg(c *gin.Context) {
 		return
 	}
 	me := currentUser(c)
-	if !me.IsAdmin() && !isMember(me.ID, org.ID) {
+	if !me.IsAdmin() && !isMember(c.Request.Context(), me.ID, org.ID) {
 		common.AbortWithDetail(c, http.StatusForbidden, "Not a member of this organization")
 		return
 	}
@@ -205,7 +206,7 @@ func UpdateOrg(c *gin.Context) {
 		return
 	}
 	me := currentUser(c)
-	if !me.IsAdmin() && org.OwnerUserID != me.ID && !isOrgAdminMember(me.ID, org.ID) {
+	if !me.IsAdmin() && org.OwnerUserID != me.ID && !isOrgAdminMember(c.Request.Context(), me.ID, org.ID) {
 		common.AbortWithDetail(c, http.StatusForbidden, "Not enough permissions")
 		return
 	}
@@ -378,7 +379,7 @@ func TransferOwner(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !isMember(newOwner.ID, org.ID) {
+	if !isMember(c.Request.Context(), newOwner.ID, org.ID) {
 		common.AbortWithDetail(c, http.StatusBadRequest, "New owner must be a member of the organization")
 		return
 	}
@@ -398,7 +399,7 @@ func ListMembers(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if me := currentUser(c); !me.IsAdmin() && !isMember(me.ID, org.ID) {
+	if me := currentUser(c); !me.IsAdmin() && !isMember(c.Request.Context(), me.ID, org.ID) {
 		common.AbortWithDetail(c, http.StatusForbidden, "Not a member of this organization")
 		return
 	}
@@ -467,12 +468,16 @@ func AddMember(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if isMember(target.ID, org.ID) {
+	if isMember(c.Request.Context(), target.ID, org.ID) {
 		common.AbortWithDetail(c, http.StatusBadRequest, "User is already a member of this organization")
 		return
 	}
 	role := model.OrgRoleReader
 	if in.OrgRole != nil {
+		if !validOrgRole(*in.OrgRole) {
+			common.AbortValidation(c, "body", errOrgRole)
+			return
+		}
 		role = model.OrgRole(*in.OrgRole)
 	}
 	member := model.Member{UserID: target.ID, OrgID: org.ID, OrgRole: role}
@@ -507,11 +512,18 @@ func memberActionContext(c *gin.Context) (*model.Organization, *model.User, *mod
 	if !ok {
 		return nil, nil, nil, false
 	}
-	if me := currentUser(c); !me.IsAdmin() && !isOrgAdminMember(me.ID, org.ID) {
+	if me := currentUser(c); !me.IsAdmin() && !isOrgAdminMember(c.Request.Context(), me.ID, org.ID) {
 		common.AbortWithDetail(c, http.StatusForbidden, "Not enough permissions")
 		return nil, nil, nil, false
 	}
 	return org, target, nil, true
+}
+
+var errOrgRole = errors.New("org_role must be 1 (reader), 2 (writer) or 3 (admin)")
+
+// validOrgRole reports whether a requested member role is one of the roles a member can hold
+func validOrgRole(role int) bool {
+	return model.OrgRole(role) >= model.OrgRoleReader && model.OrgRole(role) <= model.OrgRoleAdmin
 }
 
 // findMemberOr404 loads a formal membership; pending/expired invitations are managed via the invitation endpoints.
@@ -533,8 +545,17 @@ func UpdateMemberRole(c *gin.Context) {
 	if !bindJSON(c, &in) {
 		return
 	}
+	if !validOrgRole(*in.OrgRole) {
+		common.AbortValidation(c, "body", errOrgRole)
+		return
+	}
 	org, target, _, ok := memberActionContext(c)
 	if !ok {
+		return
+	}
+	// The owner keeps the admin role, like the owner cannot be removed: transfer ownership first
+	if org.OwnerUserID == target.ID {
+		common.AbortWithDetail(c, http.StatusBadRequest, "Cannot change the role of the organization owner. Transfer ownership first.")
 		return
 	}
 	member, ok := findMemberOr404(c, target.ID, org.ID)
@@ -574,8 +595,8 @@ func RemoveMember(c *gin.Context) {
 
 // --- Invitations ---
 
-func canManageInvitations(me *model.User, orgID int64) bool {
-	return me.IsAdmin() || isOrgAdminMember(me.ID, orgID)
+func canManageInvitations(ctx context.Context, me *model.User, orgID int64) bool {
+	return me.IsAdmin() || isOrgAdminMember(ctx, me.ID, orgID)
 }
 
 // POST /orgs/:uuid/invitations
@@ -593,7 +614,7 @@ func CreateInvitation(c *gin.Context) {
 		return
 	}
 	me := currentUser(c)
-	if !canManageInvitations(me, org.ID) {
+	if !canManageInvitations(c.Request.Context(), me, org.ID) {
 		common.AbortWithDetail(c, http.StatusForbidden, "Not enough permissions to invite members")
 		return
 	}
@@ -603,6 +624,10 @@ func CreateInvitation(c *gin.Context) {
 	}
 	role := model.OrgRoleReader
 	if in.OrgRole != nil {
+		if !validOrgRole(*in.OrgRole) {
+			common.AbortValidation(c, "body", errOrgRole)
+			return
+		}
 		role = model.OrgRole(*in.OrgRole)
 	}
 	if in.IsSuperuser {
@@ -627,7 +652,7 @@ func ListInvitations(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !canManageInvitations(currentUser(c), org.ID) {
+	if !canManageInvitations(c.Request.Context(), currentUser(c), org.ID) {
 		common.AbortWithDetail(c, http.StatusForbidden, "Not enough permissions")
 		return
 	}
@@ -672,7 +697,7 @@ func CancelInvitation(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !canManageInvitations(currentUser(c), org.ID) {
+	if !canManageInvitations(c.Request.Context(), currentUser(c), org.ID) {
 		common.AbortWithDetail(c, http.StatusForbidden, "Not enough permissions")
 		return
 	}

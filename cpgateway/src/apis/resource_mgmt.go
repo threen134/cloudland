@@ -19,7 +19,7 @@ func resolveResourceOrg(c *gin.Context) (*model.Organization, bool) {
 	if !ok {
 		return nil, false
 	}
-	if me := currentUser(c); !me.IsAdmin() && !isMember(me.ID, org.ID) {
+	if me := currentUser(c); !me.IsAdmin() && !isMember(c.Request.Context(), me.ID, org.ID) {
 		common.AbortWithDetail(c, http.StatusForbidden, "You are not a member of this organization")
 		return nil, false
 	}

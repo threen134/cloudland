@@ -214,7 +214,8 @@ func UpdateProfile(c *gin.Context) {
 // PUT /users/:uuid/password — users must confirm the old password; SystemAdmin resets others without it.
 func ChangePassword(c *gin.Context) {
 	var in struct {
-		OldPassword *string `json:"old_password" binding:"required"`
+		// Required when changing one's own password; a SystemAdmin resetting someone else's may omit it
+		OldPassword *string `json:"old_password"`
 		NewPassword string  `json:"new_password" binding:"required,min=8,max=64"`
 	}
 	if !bindJSON(c, &in) {
@@ -230,7 +231,7 @@ func ChangePassword(c *gin.Context) {
 		common.AbortWithDetail(c, http.StatusForbidden, "Can only change own password")
 		return
 	}
-	if !(isSystemAdmin && me.ID != user.ID) && !common.VerifyPassword(*in.OldPassword, user.HashedPassword) {
+	if !(isSystemAdmin && me.ID != user.ID) && (in.OldPassword == nil || !common.VerifyPassword(*in.OldPassword, user.HashedPassword)) {
 		common.AbortWithDetail(c, http.StatusBadRequest, "Incorrect old password")
 		return
 	}
@@ -313,7 +314,7 @@ func UpdateUser(c *gin.Context) {
 		if !found {
 			return
 		}
-		if !me.IsAdmin() && !isOrgAdminMember(me.ID, org.ID) {
+		if !me.IsAdmin() && !isOrgAdminMember(c.Request.Context(), me.ID, org.ID) {
 			common.AbortWithDetail(c, http.StatusForbidden, "Not enough permissions")
 			return
 		}

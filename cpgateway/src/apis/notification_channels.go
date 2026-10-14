@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 
@@ -19,9 +19,38 @@ import (
 	"cpgateway/src/services"
 )
 
-var reservedIPv4 = &net.IPNet{IP: net.IPv4(240, 0, 0, 0), Mask: net.CIDRMask(4, 32)}
+// nonPublicPrefixes are ranges a channel must not point to, besides what netip already classifies
+// as private, loopback, link-local, multicast or unspecified.
+// Keep in sync with nonPublicPrefixes in api/src/services/notifier_dial.go: clapi refuses the same
+// ranges on the resolved address when it sends, so a channel saved here must not fail there.
+var nonPublicPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),      // "this network"
+	netip.MustParsePrefix("100.64.0.0/10"),  // carrier-grade NAT
+	netip.MustParsePrefix("192.0.0.0/24"),   // IETF protocol assignments
+	netip.MustParsePrefix("198.18.0.0/15"),  // benchmarking
+	netip.MustParsePrefix("240.0.0.0/4"),    // reserved, includes broadcast
+	netip.MustParsePrefix("64:ff9b::/96"),   // well-known NAT64, maps to any IPv4
+	netip.MustParsePrefix("64:ff9b:1::/48"), // local-use NAT64 (RFC 8215)
+	netip.MustParsePrefix("2002::/16"),      // 6to4, embeds an IPv4 address
+}
 
-// validateWebhookURL requires http(s) and rejects private/internal IP literals (SSRF guard).
+// isPublicAddr reports whether ip is a public unicast address a channel may point to.
+func isPublicAddr(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	if !ip.IsValid() || !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() ||
+		ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+		return false
+	}
+	for _, p := range nonPublicPrefixes {
+		if p.Contains(ip) {
+			return false
+		}
+	}
+	return true
+}
+
+// validateWebhookURL requires http(s) and rejects non-public IP literals (SSRF guard). Host names
+// are checked by clapi on the resolved address when it sends.
 func validateWebhookURL(raw, field string) error {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
@@ -31,11 +60,8 @@ func validateWebhookURL(raw, field string) error {
 	if host == "" {
 		return fmt.Errorf("%s has no valid hostname", field)
 	}
-	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-			ip.IsUnspecified() || reservedIPv4.Contains(ip) {
-			return fmt.Errorf("%s must not point to a private/internal address", field)
-		}
+	if ip, err := netip.ParseAddr(host); err == nil && !isPublicAddr(ip) {
+		return fmt.Errorf("%s must not point to a private/internal address", field)
 	}
 	return nil
 }
@@ -164,9 +190,18 @@ func UpdateChannel(c *gin.Context) {
 	}
 	updates := map[string]interface{}{}
 	if in.Name != nil {
+		if *in.Name == "" {
+			common.AbortValidation(c, "body", errors.New("name must not be empty"))
+			return
+		}
 		updates["name"] = *in.Name
 	}
 	if in.Config != nil {
+		// Same checks as on create: an update must not point the channel at an internal address
+		if err := validateChannel(ch.Type, in.Config); err != nil {
+			common.AbortValidation(c, "body", err)
+			return
+		}
 		cfg, _ := json.Marshal(in.Config)
 		updates["config"] = string(cfg)
 	}

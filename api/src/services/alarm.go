@@ -2841,7 +2841,8 @@ func (a *AlarmOperator) SendNotification(ctx context.Context, notifyURL string, 
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 10 * time.Second}
+	// notifyURL comes from the rule: same public-only client as notification channels
+	client := newNotifierClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
