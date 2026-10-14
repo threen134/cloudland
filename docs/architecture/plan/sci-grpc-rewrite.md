@@ -1,5 +1,7 @@
 # SCI C++ → Go gRPC 重写方案
 
+> **状态（2026-10-14 复查）**：已实施，C++ 的 SCI 与 cland / cloudlet 2026-09-17 已从仓库删除。本文是控制面 → 计算节点下发链路（cland-go / cloudlet-go）的设计依据：§1–§11 是重写方案，§12 是 2026-09-14 的实现修订，§13 是之后的变化，**冲突时以后面的章节为准**。改这条链路的行为时同步改 §13。
+
 ## 1. 背景与动机
 
 当前 CloudLand 控制面与计算节点之间的通信依赖 SCI（Scalable Communication Infrastructure），一套 ~20,000 行 C++ 自定义二进制协议框架，涉及三个独立进程：
@@ -1157,4 +1159,23 @@ deploy/docker/scripts/cloudland-entrypoint.sh
 | 回调转发 | 同步 HTTP POST | 100 worker 异步队列；连接失败或 5xx 最多尝试 3 次 |
 | clapi 调用 | 使用请求 ctx | `context.WithoutCancel` + 30 秒超时，HTTP 客户端断开不影响命令下发 |
 | cland 停止 | 通知 cloudlet 退出 | 不通知，cloudlet 自动重连；仅 `node_removed` 使 cloudlet 退出 |
-| 脚本环境 | `RequestID` | 注入 `SCI_CLIENT_ID` 与 `TRACEPARENT` |
+| 脚本环境 | `RequestID` | 注入 `SCI_CLIENT_ID` 与 `TRACEPARENT`（2026-09-17 改名为 `NODE_ID`，见 §13） |
+
+## 13. 2026-10-14 复查：09-14 之后的变化
+
+按代码核对（`api/src/cland/`、`api/src/cloudlet/`、`api/cmds/cloudlet/`、`proto/cloudland/v1/cloudland.proto`、`api/src/common/clients.go`）。前文 §1–§11 是重写时的方案，§12 是 09-14 的实现修订，**与本节冲突时以本节为准**。proto 的服务与消息在 09-14 之后没有增删。
+
+| 主题 | 之前（前文 / §12） | 现在 | 提交 |
+|------|------|------|------|
+| 命名 | 节点编号环境变量 `SCI_CLIENT_ID`，配置段 `[sci]` | `NODE_ID`（不再兼容旧名），配置段 `[cland]`；上传凭证密钥 `SCI_SHARED_SECRET` 改名 `CAPTURE_UPLOAD_SECRET`（只用于从虚拟机捕获镜像，不用于这条链路） | `7bfded9a`（2026-09-17） |
+| 脚本输出 | 非回调的 stdout 行也作为回调结果转给 clapi | 只有含 `\|:-COMMAND-:\|` 的行经 `CallbackLine` 回传；其他非空行（含合并进来的 stderr）只写 cloudlet 本地日志。心跳 `report_rc.sh` 的输出同样处理（首行资源行只更新调度器） | `4e5f5e14`（2026-09-15） |
+| 命令执行 | `sudo -E bash -c <command>` | 命令放进环境变量 `CLOUDLAND_COMMAND`，以固定包装 `sudo -E bash -c '<取消导出后 eval>'` 执行：sudo 不再把命令（含来宾密码、VNC 密码）记进节点 journal，`/proc/<pid>/cmdline` 也看不到；sudo 丢了环境（sudo-rs 忽略 `-E`）时以 126 退出，而不是什么都不做却返回 0。所以计算节点必须用经典 sudo | `23d9babd`（2026-09-30） |
+| 无目标节点 | `inter=` 为负或为空时静默丢弃并回 ok | cland 分发器返回 `error: no target node`，clapi `HyperExecute` 收到后返回错误（节点离线等其他状态仍只告警） | 2026-09-16 |
+| 节点保活 | 无 | cloudlet 每秒发保留回调 `__cloudlet_alive__`（cland 吞掉、不转发）；cland 每 0.5 秒检查，3 秒收不到就给 clapi 发 `node_liveness.sh '<id>' 'gone'`（恢复时 `ok`）。只给 VPN 网关判断主节点失联用，不改节点的可用状态；clapi 只接受 cland 自己发的这条回调 | `dd248a2e` |
+| 快速上报 | 无 | 节点脚本改写 `/run/cloudland/vpn-report.trigger` 后，cloudlet 250 毫秒内单独执行一次 `report_vpn_status.sh` 并经命令流发出回调（两次之间至少 1 秒，超时 30 秒），不等下一次心跳。不用信号（旧版 cloudlet 收到 SIGUSR1 会退出） | `dd248a2e` |
+| 输出行长度 | — | 一行上限 1 MiB（`maxLineSize`），遇到超长的行，这一行**和之后的全部输出**都丢弃（照样读完，不让子进程卡在写满的管道上），所以回调行要排在可能很长的输出之前；需要回传大数据的脚本 gzip + base64 | — |
+| 移除节点 | §12：仅 `node_removed` 使 cloudlet 退出 | 不变：`NodeRemove` 经命令流下发 `ShutdownRequest{reason: node_removed}`，cloudlet 正常退出且不被 systemd 拉起 | — |
+
+**没变、仍以 §12 为准的**：节点校验端点与 5 分钟刷新、鉴权（未配置 `GRPC_AUTH_TOKEN` 拒绝启动）、会话 ID、串行执行（`CLOUDLET_CONCURRENCY`）、断线立即重连、control 解析与调度、回调转发的重试（最多 3 次，所以 clapi 的回调 handler 要幂等）。
+
+**已知问题**（本文范围内，未修）：clapi → cland、cloudlet ↔ cland 的 gRPC 没有 TLS，令牌与下发的凭据在管理网上是明文（`CLAUDE.md` 待办 A6）；集群共用一对 cland SSH 密钥，`NodeAdd` 把私钥发给每个节点（待办 A1）。

@@ -1,0 +1,3 @@
+# External routes deliberately not tracked by the regression suite: METHOD PATH reason
+# Every entry needs a reason that a reviewer accepted. Routes waiting for a test case belong in
+# route_coverage_baseline.txt instead.

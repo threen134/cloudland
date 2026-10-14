@@ -1,5 +1,7 @@
 # CPGateway Go 迁移方案
 
+> **2026-10-14 复查**：维护中，是控制面网关的设计依据。09-14 之后的变化（组织按 UUID 同步、8 项配额、用户名不可改、列表分页、系统设置增删等）见 §13，**冲突时以 §13 为准**。改网关行为时同步改 §13。
+
 > **实施状态（2026-09-14）**：CPGateway-Go 已按 Python 实现完成功能对齐（接口契约、业务逻辑、权限），面向**全新环境**部署、不做数据迁移，Python `cpgateway/` 代码已移除。以下为实际实现与原方案的主要差异，正文相关章节已同步标注：
 >
 > | 方面 | 原方案 | 实际实现 |
@@ -451,7 +453,7 @@ Authorization: Bearer <JWT>
 → 验证 RS256 签名 + 过期时间
 → 查询 token_revocations 检查吊销
 → 查询 DB 验证 user 存在（404 if missing）
-→ 从 Claims 解析出 MemberShip（user_id, org_id, roles 等）
+→ 从 Claims 解析出 MemberShip（user_id, org_id, roles 等）   ← 2026-10-14 起转发时的角色改为按数据库取，见 §13
 → 注入 context
 ```
 
@@ -1082,3 +1084,34 @@ deploy/docker/scripts/cpgateway-go-entrypoint.sh    # 新增（等待数据库�
 | 端口 | 保持 :8000 vs 用新端口 | **保持 :8000** | 前端零修改 |
 | 邮件库 | net/smtp vs go-mail | **net/smtp**（原建议 go-mail） | 只需 SMTP 发送（465 隐式 TLS / STARTTLS / 明文），无需额外依赖 |
 | SystemSetting | 复用 Mirror vs 新建主表 | **新建主表 + 区域 Mirror 不变** | 网关端需要可读写的主表；区域端继续用 Mirror 接收同步 |
+
+## 13. 2026-10-14 复查：09-14 之后的变化
+
+按 `cpgateway/src/` 核对。前文是迁移方案与 09-14 的实施状态，**与本节冲突时以本节为准**；本节没提到的仍以开头的「实施状态」与 §12 为准。网关的行为约定另见 `CLAUDE.md`「Key Gateway Patterns」「配额」「身份与组织的跨服务传递」。
+
+| 主题 | 09-14 | 现在 | 时间 |
+|------|------|------|------|
+| 目录 | `cpgateway-go/` | `cpgateway/`（模块名、二进制、`Dockerfile.cpgateway`、镜像 `cloudland-cpgateway` 一起改）；前文的 `cpgateway-go` 都指它 | 2026-09-17 |
+| 代理白名单 | 按 Python 路由生成 150 条 | 259 条，其中 78 条只给系统管理员（存储、迁移、放置组、中转网关、VPN、计算节点终端等陆续加入）；新增对外接口要同时加白名单与回归用例（`test-items/scripts/check_route_coverage.py` 在 CI 里查） | 持续 |
+| 组织在区域里的身份 | 推送控制面的自增 ID，区域按 ID upsert | **只按 UUID 对应**：`POST /internal/orgs/sync {uuid, name, slug}`，区域自己分配本地 ID；代理转发 `X-Org-UUID`，网关直接调 clapi 的地方（用量对账等）也必须带；`POST /internal/orgs/delete` 通知区域删组织（区域还有资源时 409）；全量推送顺序为已删组织 → 存活组织 → 系统设置 → 通知渠道；系统组织靠 `org_type=2` 绑定 | 2026-09-16、09-30 |
+| 自助注册的组织 | 不推到区域 | 注册、激活、审批、改名都推到各区域（后台执行，失败不影响本身） | 2026-09-30 |
+| 删组织 | 只改控制面 | 先查各区域用量，有用量 400、不删不推送；同一事务删它的通知渠道并推到区域 | 2026-09-30 |
+| 通知渠道同步 | 推控制面的组织自增 ID | 按 `org_uuid` 同步，区域解析成本地 ID | 2026-09-30 |
+| 配额 | CPU、内存、磁盘、公网 IP | 8 项：再加 VPC、负载均衡、私有镜像、VPN 网关（后 5 项按个数计，0 表示禁止）；按「方法 + 路由模板」匹配规则预扣 / 结算，释放只针对本组织（按 `owner_uuid`）；对账按 `offset` 翻页取全量 | 2026-09-16 起 |
+| 用户名 | 系统管理员可改 | 全局唯一、创建后不可改（改名请求对所有角色 400）、注销后不可复用（唯一索引覆盖已注销用户）；邮箱仍只有系统管理员能改 | 2026-09-16 |
+| 网关自有列表 | 一次返回全部 | 组织、用户、区域、通知渠道、组织成员都是服务端分页 + 搜索：`offset` / `limit`（默认 50、上限 500）/ `query`，返回 `{total, <资源>}` | 2026-09-20 |
+| 系统设置 | Python 时期的全集 | 删了无作用的 `PROJECT_NAME`、`DEFAULT_TRAFFIC_GB`、`SLACK_*`、`CUSTOM_WEBHOOK_*`；新增 `AUDIT_LOG_RETENTION_DAYS`、`HOST_CONSOLE_ENABLED` / `_IDLE_MINUTES` / `_REQUIRE_PASSWORD`、`DEFAULT_VPCS` / `_LOAD_BALANCERS` / `_IMAGES` / `_VPN_GATEWAYS`、`STORAGE_ALERT_DELAY_MINUTES`、`STORAGE_POOL_USAGE_WARN_PERCENT` / `_CRITICAL_PERCENT`；布尔设置必须是 JSON 布尔值；改 `HOST_CONSOLE_REQUIRE_PASSWORD` 要在请求体带当前用户密码 | 2026-09-17 起 |
+| 计算节点终端 | — | `POST /hypers/:uuid/console` 在网关校验登录密码（10 分钟 5 次限流，先占名额再校验）后去掉密码转发 | 2026-09-17 |
+| 迁移接口 | 成员可见 | `/migrations` 只给系统管理员 | 2026-09-30 |
+| 系统管理员删别的组织的资源 | 删除前的 GET 丢了查询串 | `PrepareQuota` 带上原请求的查询串（如 `?all_orgs=true`） | 2026-09-30 |
+| 区域转发密钥轮换 | — | `POST /regions/:uuid/rotate-secret` 只改控制面，区域侧 clapi 的 `CPGATEWAY_SECRET_KEY` 要手工改并重建（部署文档 07 第 10 节，用例 TC-11 ORG-11） | 现状如此 |
+| 转发到区域的身份（§1.8） | 角色从 token 声明解析 | `X-Org-Role`、`X-Is-Owner`、`X-System-Role` 每个请求按数据库重新取（规则同登录与切换组织：系统管理员在任何组织都是管理员，否则取有效成员的角色），不再是成员的直接 403 `User is no longer a member of this organization`。移出成员、降角色、降级系统管理员立即生效，不用等 token 过期 | 2026-10-14（对齐 P1） |
+| 改通知渠道 | §3.4 只写了建 | 改 `config` 时与建一样校验（类型对应的地址必填、只许 http / https、不许内网 IP 字面量），名字不能改成空。区域 clapi 发通知时再按**解析后的地址**拒绝非公网地址（含 CGNAT、NAT64、IPv4 映射），并且不跟随重定向，所以写主机名指向内网服务也发不出去。配了 `HTTP(S)_PROXY` 时照常走代理：允许连代理本身，目标在交给代理前先解析并检查。网关与 clapi 的「非公网地址」是同一份列表（两处 `nonPublicPrefixes`，`TestNonPublicPrefixesMatchClapi` 保证一致）；调整规则的 `notify_url` 用同一个客户端 | 2026-10-14（P2、P3） |
+| 成员角色 | §1.6：OrgAdmin 可改角色 | 改角色、直接添加、邀请都只接受 1（只读）/ 2（编辑）/ 3（管理员），其他值 422；属主的角色不能改（400，先转让，同「不能移除属主」） | 2026-10-14（P4） |
+| 成员列表 | §1.6：OrgAdmin | 组织内任何有效成员都能看（只读成员也能，界面要显示成员）；邀请列表仍只给组织管理员 | 2026-10-14 按实现改设计（P5） |
+| 升为系统管理员 | §1.5 有 `PUT /users/:uuid/promote` | **决定不做**（2026-10-14，P6）：已有用户经系统组织的邀请（`grant_superuser`）接受后成为系统管理员，不另设接口 | — |
+| 管理员重置密码 | §1.5：不需要旧密码 | 一致：系统管理员改别人的密码时 `old_password` 可以不带；改自己的密码必须带对（不带或错都是 400 `Incorrect old password`） | 2026-10-14（P7） |
+| 改密码后的旧会话 | 未写 | 现状：已签发的 token 在过期前（120 分钟）照常可用，改密码不让其他会话下线。要做得先按用户登记 token 才能整体吊销，暂不做 | 2026-10-14 写明现状（P8） |
+| 删区域的检查 | §1.7：所有组织消费量为 0 | 一致，但只看 8 项配额的用量（登录对账时才刷新）：计算节点、存储集群、放置组、中转网关、密钥等不计配额的资源不挡删除，删之前要自己确认区域已清空。删组织同样只看用量（`CLAUDE.md` 待办 H2） | 2026-10-14 写明限制（P9） |
+
+**测试**：`TestPythonParityFlows` 2026-09-30 修好（成员列表按 `{total, members}` 解析、测试库改为每进程一个临时 SQLite 文件），覆盖注册、登录、邀请、用户编辑、代理配额、系统设置等主流程；2026-10-14 对齐时加了 `src/apis/security_roles_test.go`（转发按数据库取角色、成员角色取值与属主、改渠道校验、管理员重置密码），区域侧发通知的地址检查在 `api/src/services/notifier_dial_test.go`；回归用例见 `test-items/TC-11`、`TC-13`、`TC-15`。

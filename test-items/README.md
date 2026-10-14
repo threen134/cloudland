@@ -59,6 +59,16 @@
 - 用户决定不做的功能（见 `CLAUDE.md`「共享存储有意不做的」等）不进这张表；仲裁 / mon 数量的规则只作为「布局规则」的拒绝来追踪。
 - **只追踪对外可用的功能**：clapi 里实现了、但不在 cpgateway 代理白名单里（界面和外部 API 都调不到）的接口不进表，2026-10-14 核对到的有：资源自动调整规则（`/metrics/adjust/*`）、`/metrics/current-alarms` / `history-alarms`、`/metrics/rules/batch`、`/rules/links`、`/openmeter/*`、`/floating_ips/site_attach` / `site_detach`、`/addresses/remark` / `update-lock`。哪天开放了再加行、补用例。
 
+### 接口覆盖检查
+
+`python test-items/scripts/check_route_coverage.py`（GitHub Actions 的 `route-coverage` 任务每个 PR 都跑）列出全部对外接口（cpgateway 自有路由 + 代理白名单），检查每个接口在用例或追踪表里以「方法 + 路径」出现过（如 `` `POST /instances/:id/reinstall` ``，参数可写 `:id` / `<id>` / `{id}` / 实际值，`/api/v1` 前缀可有可无，`.../reinstall` 这种省略写法也算）。
+
+- `scripts/route_coverage_baseline.txt`：**已知缺口**，2026-10-14 建立时 319 个接口里有 113 个没有用例明确写到（同日对齐「权限、组织与配额」补了 13 个，剩 100 个）。按功能域对齐时逐个补用例，补上后**从基线里删掉那一行**（不删检查会失败，提醒基线只减不增）。
+- `scripts/route_coverage_exempt.txt`：有意不追踪的接口，每行要写理由，现在是空的。
+- 新增对外接口而没有用例，检查失败；不要把它加进基线，去写用例。`--report` 打印完整的覆盖 / 缺口表。
+- 只说明「接口被提到」，不说明预期写得对、跑过没有；后两件事看用例的依据与追踪表的结果。
+- 路由只从 `cpgateway/src/apis/routes.go` 与 `proxy_routes.go` 读。脚本认不出的注册写法（`Handle`、`Any`、写在别的文件里）直接报错，要么改成 `routes.go` 里的常规写法，要么教脚本认它；路径参数（`:id`）不会匹配同一位置上兄弟路由的固定段（`batch_attach` 不算覆盖 `:id`）。
+
 ### 2026-10-14 按设计文档与代码的核对
 
 逐个功能域对照了接口路由、服务代码、节点脚本、设计文档与用例（串行，一次一个域）。新补的用例都标「2026-10-14 按代码核对补，未执行」：

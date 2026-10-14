@@ -1,6 +1,8 @@
 # 分布式链路追踪方案（OpenTelemetry + Grafana Tempo）
 
 > **实施状态（2026-09-14）**：阶段 1、2 已实施（含 cpgateway-go 网关埋点）；阶段 3 中数据库、S3、前端埋点已实施，Tempo metrics-generator 与中央 Tempo 未实施。实施与原方案的差异见 §11。
+>
+> **2026-10-14 复查**：维护中，是链路追踪的设计依据。09-14 之后追踪代码只改了命名（`cpgateway-go/` 2026-09-17 改名 `cpgateway/`，`SCI_CLIENT_ID` 改名 `NODE_ID`），机制没变；部署上与正文不同的地方见 §12。冲突时以 §11、§12 为准。
 
 ## 1. 背景
 
@@ -508,3 +510,17 @@ OTEL_RESOURCE_ATTRIBUTES=cloudland.node_id=$NODE_ID,cloudland.zone=$ZONE_NAME
 | Tempo 存储 | 本地卷 | `TEMPO_STORAGE_BACKEND=s3` + `TEMPO_S3_*` 切换到对象存储，`TEMPO_RETENTION` 设置保留时间（配置启用 `-config.expand-env=true`）；开启 `stream_over_http_enabled`，Grafana 12 的 TraceQL 流式搜索复用 3200 端口 | HA 故障切换后仍可查询历史链路 |
 | 计算节点日志 | Promtail 采集脚本日志 | promtail-agent 增加 cloudlet journald 采集（`cloudlet-go.service`），positions 持久化到 `/var/lib/promtail`，日志带 `host`、`node_id` 标签；cloudlet 的资源属性带 `cloudland.node_id`、`cloudland.zone` | 原配置 positions 在容器内，容器重建后会重复推送 |
 | 脚本 | `log_debug` 带 trace | `die` 同时经 `log_debug` 记录失败原因；`create_image.sh` 写入 `image_upload.log` 的行带 `trace=` | `die` 的标准输出由 cloudlet 回传，格式保持不变 |
+
+## 12. 2026-10-14 复查
+
+按代码与 `deploy/docker/docker-compose.yml`、`deploy/docker/scripts/deploy-compute-node.sh` 核对。
+
+| 项 | 正文 / §11 | 现在 |
+|----|-----------|------|
+| 目录与命名 | `cpgateway-go/`、`SCI_CLIENT_ID` | `cpgateway/`（2026-09-17 `07a63a8e`）、`NODE_ID`（`7bfded9a`）；正文里的 `cpgateway-go` 都指现在的 `cpgateway` |
+| 服务导出地址 | §5.4：各服务 `OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4317` | 都先到 Collector（§11 已记）：clapi、alarm-rules-manager `http://otel-collector:4317`，cpgateway `${CPGATEWAY_OTLP_ENDPOINT-http://otel-collector:4317}`，浏览器经网关转发到 `otel-collector:4318`，cland（host 网络）`http://${INTERNAL_IP}:4317`，计算节点 `http://${CONTROLLER_IP}:4317`；Collector 再导出到 `TRACING_BACKEND_ENDPOINT`（默认 `tempo:4317`） |
+| OTLP 端口的绑定 | §5.1：4317 只绑内网 `${INTERNAL_IP}` | ⚠️ Collector 的 4317 与 Loki 的 3100 绑 `${TELEMETRY_LISTEN_IP:-0.0.0.0}`，**默认挂在所有网卡上**，两者都没有鉴权；部署脚本只透传这个变量、不会自动设。Tempo 的 3200 绑 `${INTERNAL_IP}`。待决策：改成默认 `${INTERNAL_IP}` 前要确认多区域 / HA 下远程区域是否要跨主机推送（`CLAUDE.md` 待办 A2） |
+| 服务拓扑与 RED | 阶段 3：Tempo metrics-generator | 由 Collector 的 `span_metrics` / `service_graph` 连接器计算（§11 已记），Tempo metrics-generator 不用，不再计划 |
+| 中央 Tempo | §5.6 | 没实施：每个区域一套 Tempo；compose 留了 `TEMPO_QUERY_URL`、`TRACING_BACKEND_ENDPOINT` 两个变量供以后指向中央 |
+
+本文范围内没有回归用例专门测追踪；`test-items/TC-12` UI-09（错误提示里的 Trace ID）与 `TC-10` ALM-08（追踪告警）覆盖了一部分，改追踪行为时同步改这两条。

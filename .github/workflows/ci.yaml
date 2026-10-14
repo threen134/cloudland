@@ -31,3 +31,15 @@ jobs:
       - run: npm run i18n:check
       - run: npm run lint
       - run: npm run build
+
+  # Every external route (cpgateway's own routes plus the proxy whitelist) needs a regression test
+  # case: fails on a new route without one, and on a known gap that got a case but is still in the
+  # baseline. See docs/architecture/design-code-test-alignment.md §3.4
+  route-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python test-items/scripts/check_route_coverage.py
