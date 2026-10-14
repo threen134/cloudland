@@ -225,6 +225,32 @@ clapi 侧另由 PostgreSQL 测试覆盖：`TestStorageGPFSECEDeployPG`（假 cla
 
 **预期**：`mmvdisk vdiskset define` 带 `--checksum-granularity 32k`（第一版漏了，mmvdisk 拒绝 8M / 16M 不带它的定义）；部署成功
 
+## ECE-19 纠删码集群上的其余能力（2026-10-14 按代码核对补，未执行）
+
+纠删码布局的能力（`LayoutCapabilities`）里有轮换密钥、远程挂载，宕机隔离与 NSD 看护也走 GPFS 的公共代码，但都只在副本集群上测过。在 gece（或重建的纠删码集群）上做。
+
+1. 轮换集群 SSH 密钥（`POST /storage_clusters/:id/rotate_keys {"ssh": true}`）之后，做一次要跨节点的 `mmvdisk` 操作（加一个客户端或 `mmvdisk recoverygroup list --declustered-array`）
+2. 让另一个托管 GPFS 集群远程挂载纠删码集群的文件系统（TC-26 RMT-01 的步骤，所属方换成纠删码集群），在挂载方建卷
+3. 纠删码集群的一台客户端（不是服务器）断电，等疏散（TC-24 REC-03 的步骤）
+4. 删掉 `/opt/cloudland/run/storage/<集群>/disks_up` 时间戳后看一分钟的健康看护日志
+
+**预期**：
+- 第 1 步：三轮轮换完成，`authorized_keys` 只剩新钥匙一行；之后 `mmvdisk` 照常（`gpfs_rsh` 用新钥匙）。
+- 第 2 步：与副本集群相同：挂载方节点上 `/gpfs/efs1` 可用，所属方的池清单推到挂载方，卷可建可挂。
+- 第 3 步：`mmexpelnode` 隔离客户端、云服务器在别的节点启动；恢复组不受影响。服务器断电不在本条（日志组切到别的服务器，见 ECE-10 的观察）。
+- 第 4 步：日志里没有「starting … disks」（纠删码集群跳过 GPFS 拉起 down NSD 的看护，坏盘交给 GNR）。
+
+## ECE-20 SSH 包装下的 mmvdisk（2026-10-14 补，未执行，E9）
+
+平台建的集群是 `adminMode=central`，跨节点命令走 `gpfs_rsh` 包装脚本（集群钥匙、`from=` 限制，设计 §6.6）。部署、加减服务器、加盘这些 `mmvdisk` 操作都在管理节点上经包装跑通过；下面是没单独核对的部分。
+
+1. 在**非管理节点**上执行 `mmvdisk recoverygroup list`、`mmvdisk pdisk list --recovery-group all --not-ok`、`mmlspdisk all`
+2. 在管理节点上执行 `mmvdisk server list -N all`、`mmvdisk recoverygroup list --server`，同时在各节点 `journalctl -u ssh` 看登录来源
+
+**预期**：
+- 第 1 步：非管理节点没有集群钥匙，读命令要么从本地配置答出，要么明确失败（记下哪些能用，平台的节点脚本只能依赖能用的那些）；不应卡住。
+- 第 2 步：跨节点的查询经 `gpfs_rsh` 以集群钥匙登录、来源是管理节点的内网地址，`authorized_keys` 的 `from=` 没有拦下。
+
 ## 回归点
 
 1. LIO 模拟盘上的 DPO 读被拒（`emulate_write_cache` 没开）→ 盘卡在诊断、`--complete-log-format` 挂住（2026-10-07）

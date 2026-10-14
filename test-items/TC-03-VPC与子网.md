@@ -403,6 +403,36 @@ docker exec cloudland-postgres psql -U postgres -d cloudland -Atc "select count(
 
 ---
 
+## NET-10 可用区（2026-10-14 按代码核对补，未执行）
+
+`/zones`（`services/zone.go`）。各用例只把可用区当参数用（`zone0`、LB / VPN / 放置组的可用区下拉），管理本身没有用例。
+
+1. 系统管理员建可用区 `wp-z1`（`default: false`），再建一个 `default: true` 的
+2. 普通成员建、改、删
+3. 删除一个还有计算节点的可用区；删除还有放置组的可用区；删除空的可用区
+4. 把默认可用区改回 `zone0`
+
+**预期**：
+- 第 1 步：200；建默认可用区时原来的默认被取消（全区域只有一个 `default`），之后不指定可用区的创建落在新默认上。
+- 第 2 步：403。
+- 第 3 步：有节点 400「Zone cannot be deleted while hypervisors belong to this zone」；有放置组 409「… placement group(s) belong to it」；空的可以删。
+- 第 4 步：恢复。⚠️ 别在保留环境上把 `zone0` 的默认去掉后忘了改回。
+
+## NET-11 IP 组与字典（2026-10-14 按代码核对补，未执行）
+
+`/ip_groups`、`/dictionaries`（`services/ipgroup.go`、`dictionary.go`）。TC-12 只做了列表冒烟，TC-13 只测了列表过滤的注入。
+
+1. 建 IP 组（带字典类型），给子网指定这个 IP 组（`ip_group`），子网列表按 `ip_group` 过滤
+2. 改 IP 组名称；只读成员改、删
+3. 删除一个还有子网引用的 IP 组
+4. 字典：建（`value` 为空）、改、删；普通成员建
+
+**预期**：
+- 第 1 步：200；子网列表按 IP 组过滤只列出它（原先过滤被覆盖、从未生效，2026-09-17 修过）。
+- 第 2 步：改名 200；只读成员 403。
+- 第 3 步：代码**不检查引用**，直接删除（软删并改名）：记下子网那边 `ip_group` 的显示与之后能否再选（可能需要补引用检查）。
+- 第 4 步：`value` 为空 400「Value cannot be empty」；普通成员建 403（只给系统管理员）。
+
 ## 历史缺陷回归点
 
 | # | 现象 | 根因 | 判定方法 |

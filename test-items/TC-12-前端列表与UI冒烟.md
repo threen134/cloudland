@@ -67,6 +67,9 @@ cd "$TC12" && node tc12-smoke.js 2>&1 | tee smoke.log
 | alarms / vm-alarm-rules / notification-channels | 7 / 4 / 2 | 通知渠道 `notification-channels?limit=500` |
 | alarm-events | 20 | — |
 | settings | 卡片 = 5 | — |
+| transit-gateways（2026-10-14 补） | 新环境上 0 个时是空态 | `transit_gateways?offset=0&limit=20…`（以页面实际请求为准） |
+| storage-clusters（2026-10-14 补，系统管理员） | 两个标签「集群 / 任务」；集群行数 = 现有集群数 | `storage_clusters?…`、`storage_tasks?…` |
+| storage-packages（2026-10-14 补，系统管理员） | 软件包行数 | `storage_packages?…` |
 | ~~audit-logs、quota~~ | **已废弃**（2026-09-28）：前端没有这两条路由（审计日志只有接口 `GET /audit_logs`，配额在组织详情的「配额」标签），访问会被兜底路由送回首页，旧脚本把它们记成 0 行也看不出问题 | |
 
 详情页基线：16 个都有 `.title-bar`、`.detail-header` 里的返回按钮文案是「返回」、页面不横向滚动；带标签页的：云服务器「基本信息 / 资源监控 / 监控与告警」，安全组「安全组规则 N / 关联网卡 N」，VPN 网关「概览 / 站点连接 N / 客户端 N / 监控 / 操作记录」，组织「成员 / 配额」，计算节点「概览 / 存储 / 资源监控」。
@@ -75,7 +78,7 @@ cd "$TC12" && node tc12-smoke.js 2>&1 | tee smoke.log
 
 检查项：
 
-- [ ] 26 个页面都停在自己的路径（没有被送回首页或登录页），行数不为 0（放置组 0 个时的空态除外）
+- [ ] 26 个页面都停在自己的路径（没有被送回首页或登录页），行数不为 0（放置组 0 个时的空态除外）。**2026-10-14 核对**：侧边栏另有中转网关、存储集群、软件包三页（10-01 / 10-02 之后加的），`tc12-smoke.js` 还没加上，跑之前先补进脚本，页面数按 29 算；存储页的深入检查见 `TC-20` SHS-15、`TC-21` CEPH-14，中转网关见 `TC-19`
 - [ ] 没有 `KEYLEAK`（页面上出现 `dashboard.xxx` 这类键名）、没有 `BAD`（4xx/5xx）、`pageerrors: none`
 - [ ] 被拦截的写请求**只有** `POST /api/v1/telemetry/traces`、`POST /api/v1/metrics/instances/{cpu,memory}/his_data`，以及控制台页的两个 `POST …/console`
 - [ ] 列表首次请求都带 `offset=0&limit=20`；服务端排序的页面带 `order`（明细见 UI-03）

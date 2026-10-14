@@ -229,6 +229,17 @@ WSL 真 Ceph 单节点端到端 `TestStorageCephWSL` 已核对第 1、2 条和�
 - 第 5 步：400「offline for N minutes only」。
 - 第 6 步：`leave` 只在在线主机上跑；回来后补清理的 `cephadm rm-cluster` 删掉它上面残留的 mon / OSD 与卷组，盘被擦。
 
+## CEPH-20 部署参数（2026-10-14 按代码核对补，未执行）
+
+真实部署都用默认参数（OSD 内存 1 GiB 是 CEPH-01 的设定，副本 3、没有集群网络）；参数校验只有单元 `TestStorageBackendParams`。
+
+1. 参数校验（预检即可）：`replicas` 给 2 / 4；`osd_memory_target_mib` 给 512 / 70000；`cluster_network` 给 `10.0.0.1`、`fd00::/64`；带不认识的键
+2. 部署时给 `cluster_network`（节点上第二张网卡所在的私网，例如 bond1 上另配的地址段）与 `osd_memory_target_mib: 1536`
+
+**预期**：
+- 第 1 步：都在发任务前 400（123021）：`replicas` 只能是 3（测试布局 1）；内存 896–65536；集群网络必须是 IPv4 网段。
+- 第 2 步：`ceph config get osd cluster_network` 是填的网段，OSD 之间的复制流量走这张网卡（`ceph osd metadata` 的 `back_addr` 在这个网段）；`osd_memory_target` 1536 MiB，每个 OSD 的内存预留 2048 MiB（目标 + 512）。
+
 ## 历史缺陷回归点汇总
 
 | # | 问题 | 怎么验证 |
