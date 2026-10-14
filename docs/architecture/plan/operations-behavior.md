@@ -28,7 +28,7 @@ clapi 只按网关转发来的身份判断（网关每次按数据库取角色�
 
 - **节点告警规则**（`/node-alarm-rules`）、**VM 告警规则**（`/metrics/alarm/{cpu,memory,bw}/rules`，规则组 + 明细 + 关联的云服务器）、**告警事件**（`/alarm/events`）各自独立
 - 事件不是接口创建的：Prometheus 按规则文件判定 → Alertmanager → clapi `POST /api/v1/alerts/process`。clapi 按 `fingerprint` 幂等写入，`labels.owner` 是 clapi 本地组织 ID；没有 owner 的（节点告警）归系统组织；第一次收到就是 resolved 的记成 resolved
-- **回调要带共享令牌**：`Authorization: Bearer <ALERT_WEBHOOK_TOKEN>`。clapi 没配令牌时拒绝所有回调（不放行）；Docker 部署由 Alertmanager 容器启动时把令牌写进 `/data/webhook_token`，`alertmanager.yml` 用 `credentials_file` 引用；部署脚本在为空时生成，HA 两台同步。clapi 的 8255 对整个管理网可达，没有令牌时任何机器都能伪造任意组织的告警并经它的渠道发出去
+- **回调要带共享令牌**：`Authorization: Bearer <ALERT_WEBHOOK_TOKEN>`。clapi 没配令牌时拒绝所有回调（不放行）；Docker 部署由 Alertmanager 容器启动时把令牌写进 `/data/webhook_token`，`alertmanager.yml` 用 `credentials_file` 引用；部署脚本在为空时生成，HA 两台同步。Ansible 部署用 `netconf.yml` 的 `alert_webhook_token`（`build.sh` 生成），写进 clapi 配置的 `[alert] webhook_token` 与 monitor 角色的接收器。clapi 的 8255 对整个管理网可达，没有令牌时任何机器都能伪造任意组织的告警并经它的渠道发出去
 - VPN 网关的告警（`VpnTunnelDown`、`VpnConnectionDown` 等）不经 Prometheus：clapi 直接写事件，推给网关所属组织启用的渠道（`vpn-gateway-plan.md` §9.6）
 - 链路追踪告警带 `source=tracing`，路由到 `platform` 接收器，不进 clapi
 - 事件保留 `ALARM_EVENT_RETENTION_DAYS` 天（默认 30），clapi 后台清理
@@ -52,7 +52,7 @@ Prometheus 加载规则时只要有一个文件坏了就回滚整份规则集，
 
 - 规则组名 `^[a-zA-Z][a-zA-Z0-9_]*$`；明细的 `name` 由界面填「组名_序号」，不参与生成规则
 - 级别 critical / warning / info；带宽规则每条选方向 in / out，阈值 1–100
-- **只能关联本组织的云服务器**：创建时的 `linkedvms` 与 `POST /metrics/alarm/link` 里有读不到的云服务器时整批 400（`INSTANCES_NOT_FOUND`），不写任何关联；解绑不查云服务器（已删除的也要能解绑）
+- **只能关联规则组所属组织的云服务器**：创建时的 `linkedvms` 与 `POST /metrics/alarm/link` 里有读不到、或不属于规则组所属组织的云服务器时整批 400（`INSTANCES_NOT_FOUND`），不写任何关联。按规则组的组织比对而不只看调用方能不能读：系统管理员读得到所有云服务器，但把别的组织的挂进来，那个组织的监控数据会进这个组的告警和通知。解绑不查云服务器（已删除的也要能解绑）
 - 停用的规则组不能再关联云服务器（400 `RULE_GROUP_DISABLED`）
 - 删除规则组在同一个事务里软删明细、关联和组
 
@@ -104,7 +104,7 @@ clapi 启动后在后台重建 VM 告警规则与资源自动调整规则的文�
 ### 4.1 控制节点
 
 - `deploy-control-node.sh` 以 root 执行，按 `COMPOSE_PROFILES` 部署；`GRPC_AUTH_TOKEN`、`CAPTURE_UPLOAD_SECRET`、`VPN_SECRET_KEY`、`ALERT_WEBHOOK_TOKEN` 为空时生成（`VPN_SECRET_KEY` 一旦有密文就不能丢）
-- loki 3100、OTLP 4317（都无鉴权）与 cland 5006 只需对计算节点开放：没显式设置且 `MANAGEMENT_VIP` 在本机时，`TELEMETRY_LISTEN_IP` 设为 `MANAGEMENT_VIP`、`GRPC_LISTEN` 设为 `MANAGEMENT_VIP:5006`；不在本机时保持监听全部地址并提示
+- loki 3100、OTLP 4317（都无鉴权）与 cland 5006 只需对计算节点开放：没显式设置且 `MANAGEMENT_VIP` 等于 `INTERNAL_IP` 时，`TELEMETRY_LISTEN_IP` 设为它、`GRPC_LISTEN` 设为 `<它>:5006`。两者不同（另配的别名或 VIP）时保持监听全部地址并提示：计算节点往 `MANAGEMENT_VIP` 推送，本机 host 网络的服务（如 cland-go 的 OTLP 导出）往 `INTERNAL_IP` 发，只监听一个会断掉另一边
 - 其他对外端口只有 80 / 443；监控栈、clapi 8255、alarm-rules-manager 8256 都绑 `INTERNAL_IP`
 - `REPO_BRANCH` 优先级：显式环境变量 > `.env` > 已有仓库当前分支 > `staging`
 - 所有部署脚本开头写 apt 配置 `DPkg::Lock::Timeout "600"`：新装的系统开机后 unattended-upgrades 占着 dpkg 锁，不等就直接失败
@@ -124,12 +124,13 @@ clapi 启动后在后台重建 VM 告警规则与资源自动调整规则的文�
 
 ### 5.1 状态
 
-0 停用、1 可用、2 维护中、4 部署中、5 部署失败、10 离线（cland 报告失联，带 `offline_at`）。心跳不覆盖管理员设的 0 / 2；离线的节点回来时按 `offline_prior` 恢复 0 / 2，其余按节点上报。
+0 停用、1 可用、2 维护中、4 部署中、5 部署失败、10 离线（cland 报告失联，带 `offline_at`）。心跳不覆盖管理员设的 0 / 2；离线的节点回来时按 `offline_prior` 恢复（0 / 2 是离线前的状态，0 / 1 也可能是离线期间管理员改的），没有记录时按节点上报。节点上报的是它的 `disabled` 标记，与恢复的状态不符（离线期间改过）时 clapi 补发 `update_hyper.sh` 改写标记。
 
 ### 5.2 启用 / 停用与属性
 
 - `PATCH /hypers/:uuid`：`status` 只接受 0 / 1；可用区按 UUID；超分比例 ≥ 1；备注
-- 按当前状态处理启用 / 停用：部署中、部署失败的节点拒绝（400，`ErrHypervisorInvalidState`）；离线的节点不改 status（疏散与隔离靠「10 + offline_at」判断），只记 `offline_prior`，节点回来后按它恢复；其余写入并下发 `update_hyper.sh`
+- 按当前状态处理启用 / 停用：部署中、部署失败的节点拒绝（400，`ErrHypervisorInvalidState`）；离线的节点不改 status（疏散与隔离靠「10 + offline_at」判断），只记 `offline_prior`（按 `status = 10` 条件写，节点恰好在这期间回来时 400，要重试），节点回来后按它恢复并改写节点上的标记（§5.1）；其余写入并下发 `update_hyper.sh`
+- 只写这个接口管的列（状态、备注、可用区、超分比例），不整行保存，免得把心跳刚写的状态覆盖回去
 - 改可用区会重启节点的 cloudlet
 
 ### 5.3 维护
