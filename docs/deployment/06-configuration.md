@@ -46,6 +46,8 @@ CloudLand 采用分层配置策略。对于容器化部署，大部分关键参�
 | `ADMIN_EMAIL` | 管理员邮箱地址。 | `admin@local.com` |
 | `CAPTURE_UPLOAD_SECRET` | 从虚拟机创建镜像时，计算节点把镜像上传回 clapi 所用凭证的签名密钥（启用 S3 时必需）。留空时部署脚本自动生成，HA 备节点沿用主节点的值。 | `openssl rand -hex 32` |
 | `VPN_SECRET_KEY` | VPN 网关凭据（站点连接的预共享密钥、BGP 口令，网关与客户端的 WireGuard 密钥）存库时的加密密钥。留空时部署脚本自动生成，HA 备节点沿用主节点的值；未配置时 VPN 相关接口返回 503。**生成后不要更换、要随数据库一起备份**：换掉或丢失后，已保存的凭据全部解不开，只能逐条重新填写。 | `openssl rand -hex 32` |
+| `ALERT_WEBHOOK_TOKEN` | Alertmanager 调 clapi 告警回调（`/api/v1/alerts/process`）的共享令牌，clapi 与 Alertmanager 两个容器都读它。留空时部署脚本自动生成，HA 备节点沿用主节点的值。**clapi 没有这个值时拒绝所有告警回调，告警事件进不来**：已有环境升级时要先在 `.env` 里补上，再重建 clapi 与 alertmanager。 | `openssl rand -hex 32` |
+| `TELEMETRY_LISTEN_IP`、`GRPC_LISTEN` | loki 3100、OTLP 4317（都无鉴权）与 cland 5006 的监听地址，只需对计算节点开放。单控制节点部署时，没设置且 `MANAGEMENT_VIP` 在本机，部署脚本设为 `MANAGEMENT_VIP`（`GRPC_LISTEN` 为 `MANAGEMENT_VIP:5006`）；HA 要监听漂移的 VIP，保持监听全部地址，必须由外部防火墙挡住公网。 | `10.0.0.5`、`10.0.0.5:5006` |
 
 ### 5. 通知与邮件
 | 变量名 | 说明 | 示例 |
