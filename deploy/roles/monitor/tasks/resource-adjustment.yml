@@ -85,6 +85,10 @@
         - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/resource-adjustment'
           send_resolved: true
           http_config:
+            # clapi refuses the webhook without the shared token (ALERT_WEBHOOK_TOKEN on clapi)
+            authorization:
+              type: Bearer
+              credentials: '{{ alert_webhook_token }}'
             tls_config:
               insecure_skip_verify: true
     marker: "# {mark} ANSIBLE MANAGED BLOCK - Resource Adjustment Receiver"

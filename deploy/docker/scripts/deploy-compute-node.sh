@@ -14,6 +14,10 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# A freshly installed node runs unattended-upgrades right after boot and holds the dpkg lock; apt fails at once
+# (exit 100) unless told to wait. This covers every apt call below and in the scripts this one runs
+echo 'DPkg::Lock::Timeout "600";' > /etc/apt/apt.conf.d/90cloudland-lock-timeout
+
 # 检查操作系统版本（支持 Ubuntu 24.04 / 26.04）
 if [ -f /etc/os-release ]; then
     . /etc/os-release

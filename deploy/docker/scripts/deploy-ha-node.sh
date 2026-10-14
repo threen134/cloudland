@@ -29,6 +29,10 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# A freshly installed node runs unattended-upgrades right after boot and holds the dpkg lock; apt fails at once
+# (exit 100) unless told to wait. This covers every apt call below and in the scripts this one runs
+echo 'DPkg::Lock::Timeout "600";' > /etc/apt/apt.conf.d/90cloudland-lock-timeout
+
 # ============ 0. 系统环境与仓库 ============
 log "0/5 - 准备环境"
 if command -v timedatectl &>/dev/null; then
@@ -61,7 +65,7 @@ log "同步 Prometheus 规则模板..."
 mkdir -p volumes/prometheus/node_templates volumes/prometheus/general_rules volumes/prometheus/rules_enabled
 cp -f ../roles/monitor/templates/*.yml.j2 volumes/prometheus/node_templates/
 
-vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "HA_ROLE" "PEER_IP" "VRRP_INTERFACE" "DB_HOST" "DB_PORT" "GRPC_AUTH_TOKEN" "CAPTURE_UPLOAD_SECRET" "VPN_SECRET_KEY" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP" "REPO_BRANCH" "DEPLOY_SCRIPT_URL")
+vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "HA_ROLE" "PEER_IP" "VRRP_INTERFACE" "DB_HOST" "DB_PORT" "GRPC_AUTH_TOKEN" "CAPTURE_UPLOAD_SECRET" "VPN_SECRET_KEY" "ALERT_WEBHOOK_TOKEN" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP" "REPO_BRANCH" "DEPLOY_SCRIPT_URL")
 
 for var in "${vars[@]}"; do
     val="${!var:-}"
@@ -128,8 +132,9 @@ mkdir -p "$DEPLOY_DIR/volumes/certs"
 # 两台控制节点必须一致的共享密钥，MASTER 未提供时自动生成，BACKUP 始终以 MASTER 的值为准：
 # GRPC_AUTH_TOKEN（计算节点 deploy_command 中只下发一份）、
 # CAPTURE_UPLOAD_SECRET（上传凭证可能由一台 clapi 签发、另一台校验）、
-# VPN_SECRET_KEY（VPN 凭据由任一台 clapi 加密、另一台解密下发）
-SHARED_SECRETS=("GRPC_AUTH_TOKEN" "CAPTURE_UPLOAD_SECRET" "VPN_SECRET_KEY")
+# VPN_SECRET_KEY（VPN 凭据由任一台 clapi 加密、另一台解密下发）、
+# ALERT_WEBHOOK_TOKEN（Alertmanager 与 clapi 可能不在同一台上活动）
+SHARED_SECRETS=("GRPC_AUTH_TOKEN" "CAPTURE_UPLOAD_SECRET" "VPN_SECRET_KEY" "ALERT_WEBHOOK_TOKEN")
 if [[ "$HA_ROLE" == "MASTER" ]]; then
     if [ ! -f "$CLOUDLAND_DIR/deploy/.ssh/cland.key" ]; then
         ssh-keygen -t rsa -f "$CLOUDLAND_DIR/deploy/.ssh/cland.key" -N ""

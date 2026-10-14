@@ -95,6 +95,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 		}
 
 		// Resolve group info by category (alarm / adjust)
+		var owner int64
 		var (
 			groupUUID string
 			ruleID    string
@@ -121,6 +122,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 			groupUUID = adjGroup.UUID
 			ruleID = adjGroup.RuleID
 			groupType = adjGroup.Type
+			owner = adjustGroupOwner(adjGroup)
 			enabled = adjGroup.Enabled
 		} else {
 			var alarmGroup *model.RuleGroupV2
@@ -146,6 +148,20 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 			ruleID = alarmGroup.RuleID
 			groupType = alarmGroup.Type
 			enabled = alarmGroup.Enabled
+			owner = alarmGroup.Owner
+		}
+
+		// The rule group was looked up by UUID across organizations: only its organization's writers change it,
+		// and it only watches instances the caller can read (another organization's metrics would reach its events)
+		if !ruleGroupWritable(c, owner) {
+			return
+		}
+		linkUUIDs := make([]string, 0, len(req.VMLinks))
+		for _, link := range req.VMLinks {
+			linkUUIDs = append(linkUUIDs, link.VMUUID)
+		}
+		if !ruleInstancesReadable(c, linkUUIDs) {
+			return
 		}
 
 		if !enabled {
@@ -354,6 +370,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		}
 
 		// Resolve group info by category (alarm / adjust)
+		var owner int64
 		var (
 			groupUUID string
 			ruleID    string
@@ -379,6 +396,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 			groupUUID = adjGroup.UUID
 			ruleID = adjGroup.RuleID
 			groupType = adjGroup.Type
+			owner = adjustGroupOwner(adjGroup)
 		} else {
 			var group *model.RuleGroupV2
 			if req.RuleID != "" {
@@ -402,6 +420,13 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 			groupUUID = group.UUID
 			ruleID = group.RuleID
 			groupType = group.Type
+			owner = group.Owner
+		}
+
+		// Looked up by UUID across organizations: unlinking silences the group's alarms, a writer's action of its
+		// organization. The instances are not checked, a deleted instance must still be unlinkable
+		if !ruleGroupWritable(c, owner) {
+			return
 		}
 
 		tracing.Logf(c, "Attempting to unlink VMs from %s rule, ruleID: %s", ruleCategory, ruleID)
@@ -628,11 +653,11 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		return
 	}
 
-	ms := common.GetMemberShip(c.Request.Context())
-	if ms.OrgID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid organization context"})
+	// A writer creates rules, only on instances of their organization; region_id goes into the rule file
+	if !ruleWriter(c) || !ruleRegionValid(c, req.RegionID) || !ruleInstancesReadable(c, req.LinkedVMs) {
 		return
 	}
+	ms := common.GetMemberShip(c.Request.Context())
 	safeOwnerCPU := strconv.FormatInt(ms.OrgID, 10)
 	group := &model.RuleGroupV2{
 		Name:     req.Name,
@@ -772,11 +797,11 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid rule name: must start with a letter and contain only alphanumeric characters or underscores"})
 		return
 	}
-	ms := common.GetMemberShip(c.Request.Context())
-	if ms.OrgID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid organization context"})
+	// A writer creates rules, only on instances of their organization; region_id goes into the rule file
+	if !ruleWriter(c) || !ruleRegionValid(c, req.RegionID) || !ruleInstancesReadable(c, req.LinkedVMs) {
 		return
 	}
+	ms := common.GetMemberShip(c.Request.Context())
 	safeOwnerMemory := strconv.FormatInt(ms.OrgID, 10)
 	group := &model.RuleGroupV2{
 		Name:     req.Name,
@@ -1600,6 +1625,11 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /metrics/alarm/active-rules [get]
 func (a *AlarmAPI) GetActiveRules(c *gin.Context) {
+	// Prometheus' rule groups are every organization's VM rules and the node rules
+	if !common.GetMemberShip(c.Request.Context()).IsSystemAdmin() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Only system admins can list the active rules"})
+		return
+	}
 	// Build Prometheus API URL from config
 	apiURL := fmt.Sprintf("http://%s:%d/api/v1/rules", services.GetPrometheusIP(), services.GetPrometheusPort())
 
@@ -1691,11 +1721,15 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid rule name: must start with a letter and contain only alphanumeric characters or underscores"})
 		return
 	}
-	ms := common.GetMemberShip(c.Request.Context())
-	if ms.OrgID == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid organization context"})
+	linkedBW := make([]string, 0, len(req.LinkedVMs))
+	for _, vm := range req.LinkedVMs {
+		linkedBW = append(linkedBW, vm.InstanceID)
+	}
+	// A writer creates rules, only on instances of their organization; region_id goes into the rule file
+	if !ruleWriter(c) || !ruleRegionValid(c, req.RegionID) || !ruleInstancesReadable(c, linkedBW) {
 		return
 	}
+	ms := common.GetMemberShip(c.Request.Context())
 	safeOwnerBW := strconv.FormatInt(ms.OrgID, 10)
 	group := &model.RuleGroupV2{
 		Name:     req.Name,
@@ -2059,6 +2093,9 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /node-alarm-rules [post]
 func (a *AlarmAPI) CreateNodeAlarmRule(c *gin.Context) {
+	if !requireSystemAdminJSON(c) {
+		return
+	}
 	// Bind to a request struct instead of the model: owner is taken from the caller's
 	// membership (like the VM rule handlers do), never from the request body. Binding
 	// the model straight made owner a required client field, so every create from the
@@ -2147,6 +2184,9 @@ func (a *AlarmAPI) CreateNodeAlarmRule(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /node-alarm-rules/{uuid} [patch]
 func (a *AlarmAPI) UpdateNodeAlarmRule(c *gin.Context) {
+	if !requireSystemAdminJSON(c) {
+		return
+	}
 	// Pointers: every field is optional, and `enabled: false` has to be told apart from
 	// "not sent at all"
 	var req struct {
@@ -2189,6 +2229,9 @@ func (a *AlarmAPI) UpdateNodeAlarmRule(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /node-alarm-rules [get]
 func (a *AlarmAPI) GetNodeAlarmRules(c *gin.Context) {
+	if !requireSystemAdminJSON(c) {
+		return
+	}
 	uuid := c.Query("uuid")
 	ruleType := c.Query("rule_type")
 
@@ -2218,6 +2261,9 @@ func (a *AlarmAPI) GetNodeAlarmRules(c *gin.Context) {
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /node-alarm-rules/{uuid} [delete]
 func (a *AlarmAPI) DeleteNodeAlarmRule(c *gin.Context) {
+	if !requireSystemAdminJSON(c) {
+		return
+	}
 	uuid := c.Param("uuid")
 	if uuid == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "uuid parameter is required"})

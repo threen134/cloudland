@@ -9,6 +9,7 @@ package apis
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -113,6 +114,11 @@ type HyperPatchPayload struct {
 // @Produce json
 // @Router /hypers/{uuid} [get]
 func (v *HyperAPI) Get(c *gin.Context) {
+	// The gateway whitelist marks the hypervisor endpoints admin-only; clapi checks it too (alignment 04, O6)
+	if !GetMemberShip(c.Request.Context()).CheckSystemPermission() {
+		ErrorResponse(c, http.StatusForbidden, "Not authorized for this operation", nil)
+		return
+	}
 	uuid := c.Param("uuid")
 	logger.Ctx(c).Infof("API: Get hypervisor with uuid=%s", uuid)
 
@@ -145,6 +151,11 @@ func (v *HyperAPI) Get(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /hypers [get]
 func (v *HyperAPI) List(c *gin.Context) {
+	// The gateway whitelist marks the hypervisor endpoints admin-only; clapi checks it too (alignment 04, O6)
+	if !GetMemberShip(c.Request.Context()).CheckSystemPermission() {
+		ErrorResponse(c, http.StatusForbidden, "Not authorized for this operation", nil)
+		return
+	}
 	offset := c.Query("offset")
 	limit := c.Query("limit")
 	order := c.Query("order")
@@ -263,7 +274,13 @@ func (v *HyperAPI) Patch(c *gin.Context) {
 
 	// Update the hypervisor
 	if err := hyperAdmin.Update(c.Request.Context(), hyper); err != nil {
-		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		status := http.StatusInternalServerError
+		var clErr *CLError
+		if errors.As(err, &clErr) && clErr.Code == ErrHypervisorInvalidState {
+			// A deploying or deploy-failed host can not be enabled or disabled (alignment 04, O8)
+			status = http.StatusBadRequest
+		}
+		ErrorResponse(c, status, "Failed to update hypervisor", err)
 		return
 	}
 

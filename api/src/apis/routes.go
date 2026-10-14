@@ -128,8 +128,9 @@ func Register() (r *gin.Engine) {
 	apiV1 := "/api/v1"
 	v1 := r.Group(apiV1)
 	v1.GET("/version", versionAPI.Get)
-	v1.POST("/alerts/process", notificationAPI.ProcessAlertWebhookV2)
-	v1.POST("/alerts/resource-adjustment", adjustAPI.ProcessResourceAdjustmentWebhook)
+	// Alertmanager webhooks: no JWT, a shared token instead (alignment 04, O4)
+	v1.POST("/alerts/process", alertWebhookAuth(), notificationAPI.ProcessAlertWebhookV2)
+	v1.POST("/alerts/resource-adjustment", alertWebhookAuth(), adjustAPI.ProcessResourceAdjustmentWebhook)
 
 	// Prometheus http_sd_configs endpoint (无需认证，供 Prometheus 自动发现)
 	v1.GET("/prometheus/sd/:exporter", prometheusSDAPI.GetTargets)

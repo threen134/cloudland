@@ -91,6 +91,8 @@ func init() {
 	viper.BindEnv("capture.upload_secret", "CAPTURE_UPLOAD_SECRET")
 	// VPN gateway credentials (IPsec PSKs, WireGuard keys) are encrypted at rest with a key derived from this
 	viper.BindEnv("vpn.secret_key", "VPN_SECRET_KEY")
+	// Alertmanager -> clapi alert webhooks: the shared bearer token, refused when unset
+	viper.BindEnv("alert.webhook_token", "ALERT_WEBHOOK_TOKEN")
 
 	// management_vip 用于 DNS 注册（MinIO/clapi 域名指向控制节点 VIP）
 	viper.BindEnv("management_vip", "MANAGEMENT_VIP")

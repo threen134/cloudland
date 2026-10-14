@@ -173,6 +173,11 @@ func (a *NotificationAPI) BindRuleChannels(c *gin.Context) {
 	if !a.checkRuleGroupAccess(c, req.RuleGroupUUID) {
 		return
 	}
+	// The group is the caller's organization's (or they are a system admin); replacing its channels is a write
+	if !memberShip.CheckOrgPermission(model.OrgWriter) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "rule_group_read_only", "message": "Not authorized to change the alarm rule."})
+		return
+	}
 
 	// 校验渠道归属权（租户级，空数组时跳过）
 	if len(req.ChannelUUIDs) > 0 {

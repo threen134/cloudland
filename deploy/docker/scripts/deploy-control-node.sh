@@ -30,6 +30,10 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# A freshly installed node runs unattended-upgrades right after boot and holds the dpkg lock; apt fails at once
+# (exit 100) unless told to wait. This covers every apt call below and in the scripts this one runs
+echo 'DPkg::Lock::Timeout "600";' > /etc/apt/apt.conf.d/90cloudland-lock-timeout
+
 # 检查操作系统版本（支持 Ubuntu 24.04 / 26.04）
 if [ -f /etc/os-release ]; then
     . /etc/os-release
@@ -114,7 +118,7 @@ mkdir -p volumes/prometheus/node_templates volumes/prometheus/general_rules volu
 cp -f ../roles/monitor/templates/*.yml.j2 volumes/prometheus/node_templates/
 
 # 定义需要注入的环境变量
-vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "ADMIN_EMAIL" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT" "CPGATEWAY_SECRET_KEY" "FEISHU_WEBHOOK_URL" "FEISHU_SECRET" "S3_ENDPOINT" "S3_ACCESS_KEY" "S3_SECRET_KEY" "S3_BUCKET" "S3_REGION" "S3_USE_SSL" "S3_UPLOAD_TIMEOUT_MINUTES" "MINIO_HOSTNAME" "CLAPI_HOSTNAME" "CAPTURE_UPLOAD_SECRET" "VPN_SECRET_KEY" "GRAFANA_ADMIN_PASSWORD" "DNS_UPSTREAM" "MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD" "GRPC_AUTH_TOKEN" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP" "REPO_BRANCH" "DEPLOY_SCRIPT_URL")
+vars=("PUBLIC_IP" "INTERNAL_IP" "MANAGEMENT_VIP" "NETWORK_DEVICE" "DB_LISTEN_IP" "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_DB" "ADMIN_PASSWORD" "ADMIN_EMAIL" "COMPOSE_PROFILES" "DB_HOST" "DB_PORT" "CPGATEWAY_SECRET_KEY" "FEISHU_WEBHOOK_URL" "FEISHU_SECRET" "S3_ENDPOINT" "S3_ACCESS_KEY" "S3_SECRET_KEY" "S3_BUCKET" "S3_REGION" "S3_USE_SSL" "S3_UPLOAD_TIMEOUT_MINUTES" "MINIO_HOSTNAME" "CLAPI_HOSTNAME" "CAPTURE_UPLOAD_SECRET" "VPN_SECRET_KEY" "GRAFANA_ADMIN_PASSWORD" "DNS_UPSTREAM" "MINIO_ROOT_USER" "MINIO_ROOT_PASSWORD" "GRPC_AUTH_TOKEN" "ALERT_WEBHOOK_TOKEN" "GRPC_LISTEN" "TELEMETRY_LISTEN_IP" "REPO_BRANCH" "DEPLOY_SCRIPT_URL")
 
 # 注入环境变量到 .env (如果当前 Shell 环境中有定义)
 for var in "${vars[@]}"; do
@@ -184,6 +188,31 @@ if [ -z "$(grep '^GRPC_AUTH_TOKEN=' .env | cut -d'=' -f2- || true)" ]; then
     sed -i '/^GRPC_AUTH_TOKEN=/d' .env
     echo "GRPC_AUTH_TOKEN=$(openssl rand -hex 32)" >> .env
     log "已生成 GRPC_AUTH_TOKEN 并写入 .env"
+fi
+
+# Alertmanager -> clapi 告警回调的共享令牌：为空时 clapi 拒绝回调（告警事件进不来），同样自动生成
+if [ -z "$(grep '^ALERT_WEBHOOK_TOKEN=' .env | cut -d'=' -f2- || true)" ]; then
+    sed -i '/^ALERT_WEBHOOK_TOKEN=/d' .env
+    echo "ALERT_WEBHOOK_TOKEN=$(openssl rand -hex 32)" >> .env
+    log "已生成 ALERT_WEBHOOK_TOKEN 并写入 .env"
+fi
+
+# loki 3100、OTLP 4317（都无鉴权）与 cland 5006 只需对计算节点开放，计算节点往 MANAGEMENT_VIP 推送 / 连接：
+# 单控制节点上它就在本机，没显式设置时只监听它。不在本机（外部管理的 VIP）时保持监听全部地址并提示
+mgmt_vip=$(grep '^MANAGEMENT_VIP=' .env | cut -d'=' -f2- || true)
+if [ -n "$mgmt_vip" ] && ip -o addr show | awk '{print $4}' | cut -d/ -f1 | grep -qxF "$mgmt_vip"; then
+    if [ -z "$(grep '^TELEMETRY_LISTEN_IP=' .env | cut -d'=' -f2- || true)" ]; then
+        sed -i '/^TELEMETRY_LISTEN_IP=/d' .env
+        echo "TELEMETRY_LISTEN_IP=${mgmt_vip}" >> .env
+        log "loki / OTLP 只监听 ${mgmt_vip}"
+    fi
+    if [ -z "$(grep '^GRPC_LISTEN=' .env | cut -d'=' -f2- || true)" ]; then
+        sed -i '/^GRPC_LISTEN=/d' .env
+        echo "GRPC_LISTEN=${mgmt_vip}:5006" >> .env
+        log "cland-go 只监听 ${mgmt_vip}:5006"
+    fi
+else
+    warn "MANAGEMENT_VIP (${mgmt_vip}) 不在本机，loki 3100 / OTLP 4317 / cland 5006 仍监听全部地址，须由外部防火墙挡住公网"
 fi
 
 # 从虚拟机创建镜像时上传凭证的签名密钥：为空时 clapi 拒绝所有上传，同样自动生成

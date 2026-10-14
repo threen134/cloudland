@@ -178,9 +178,21 @@ func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error)
 	callScript := false
 	restartCloudlet := 0
 	if hyper.Status != hyperInDB.Status {
-		logger.Ctx(ctx).Info("Updating hypervisor status from", hyperInDB.GetStatus(), "to", hyper.GetStatus())
-		hyperInDB.Status = hyper.Status
-		callScript = true
+		switch hyperInDB.Status {
+		case model.HyperStatusNames[model.HYPER_DEPLOYING], model.HyperStatusNames[model.HYPER_DEPLOY_FAILED]:
+			// Enabling a host that is not deployed would make it schedulable, and the deploy could not be retried
+			return NewCLError(ErrHypervisorInvalidState, fmt.Sprintf("Hypervisor is %s", hyperInDB.GetStatus()), nil)
+		case model.HyperStatusOffline:
+			// Status 10 with offline_at is what evacuation and fencing go by: keep it, and let the host come back
+			// in the status the admin chose (hyper_status.go restores offline_prior)
+			logger.Ctx(ctx).Info("Hypervisor is offline, it comes back as", hyper.GetStatus())
+			status := hyper.Status
+			hyperInDB.OfflinePrior = &status
+		default:
+			logger.Ctx(ctx).Info("Updating hypervisor status from", hyperInDB.GetStatus(), "to", hyper.GetStatus())
+			hyperInDB.Status = hyper.Status
+			callScript = true
+		}
 	}
 	// update remark
 	hyperInDB.Remark = hyper.Remark

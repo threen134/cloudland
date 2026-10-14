@@ -195,6 +195,8 @@ services:
       VPN_SECRET_KEY: ${VPN_SECRET_KEY:-}
       # 访问 cland-go 的共享令牌，同时写入计算节点 deploy_command
       GRPC_AUTH_TOKEN: ${GRPC_AUTH_TOKEN:-}
+      # Alertmanager -> clapi alert webhooks (/alerts/process, /alerts/resource-adjustment): refused without it
+      ALERT_WEBHOOK_TOKEN: ${ALERT_WEBHOOK_TOKEN:-}
       # 计算节点 deploy_command 使用的代码分支与脚本地址（DEPLOY_SCRIPT_URL 为空时按 REPO_BRANCH 拼接）
       REPO_BRANCH: ${REPO_BRANCH:-staging}
       DEPLOY_SCRIPT_URL: ${DEPLOY_SCRIPT_URL:-}
@@ -384,10 +386,15 @@ services:
       - ./volumes/alertmanager:/data
       - ./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     # alertmanager.yml 需根据实际环境配置
+    environment:
+      # Shared with clapi, which refuses the alert webhook without it (credentials_file in alertmanager.yml)
+      ALERT_WEBHOOK_TOKEN: ${ALERT_WEBHOOK_TOKEN:-}
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - "--config.file=/etc/alertmanager/alertmanager.yml"
-      - "--storage.path=/data"
-      - "--data.retention=720h"
+      - >-
+        umask 077 && printf '%s' "$$ALERT_WEBHOOK_TOKEN" > /data/webhook_token &&
+        exec /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml
+        --storage.path=/data --data.retention=720h
     ports:
       # No authentication: its API exposes the receiver config and lets anyone
       # silence every alert

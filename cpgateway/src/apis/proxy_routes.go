@@ -250,7 +250,7 @@ var proxyRoutes = []proxyRoute{
 	{"PATCH", "/node-alarm-rules/:uuid", "/node-alarm-rules/{uuid}", true},
 	{"DELETE", "/node-alarm-rules/:uuid", "/node-alarm-rules/{uuid}", true},
 	// alarm.py
-	{"POST", "/metrics/alarm/sync-mappings", "/metrics/alarm/sync-mappings", false},
+	{"POST", "/metrics/alarm/sync-mappings", "/metrics/alarm/sync-mappings", true},
 	{"GET", "/alarm/events", "/alarm/events", false},
 	{"GET", "/alarm/events/:event_uuid/delivery-logs", "/alarm/events/{event_uuid}/delivery-logs", false},
 	{"POST", "/alarm/rule-channels", "/alarm/rule-channels", false},
@@ -264,7 +264,7 @@ var proxyRoutes = []proxyRoute{
 	{"POST", "/metrics/alarm/bw/rules", "/metrics/alarm/bw/rules", false},
 	{"GET", "/metrics/alarm/bw/rules", "/metrics/alarm/bw/rules", false},
 	{"DELETE", "/metrics/alarm/bw/rule/:uuid", "/metrics/alarm/bw/rule/{uuid}", false},
-	{"GET", "/metrics/alarm/active-rules", "/metrics/alarm/active-rules", false},
+	{"GET", "/metrics/alarm/active-rules", "/metrics/alarm/active-rules", true},
 	{"POST", "/metrics/alarm/:uuid/enable", "/metrics/alarm/{uuid}/enable", false},
 	{"POST", "/metrics/alarm/:uuid/disable", "/metrics/alarm/{uuid}/disable", false},
 	{"POST", "/metrics/alarm/link", "/metrics/alarm/link", false},

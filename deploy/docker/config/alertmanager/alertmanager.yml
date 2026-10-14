@@ -17,5 +17,10 @@ receivers:
   - url: "https://clapi:8255/api/v1/alerts/process"
     send_resolved: true
     http_config:
+      # clapi refuses the webhook without the shared token; the container writes ALERT_WEBHOOK_TOKEN
+      # into this file at start (docker-compose.yml)
+      authorization:
+        type: Bearer
+        credentials_file: /data/webhook_token
       tls_config:
         insecure_skip_verify: true
