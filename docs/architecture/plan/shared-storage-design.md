@@ -887,7 +887,7 @@ type StoragePendingCleanup struct {
 
 - **超时**：每步有超时（预检、`join` 10 分钟，下载、安装 30 分钟〔Ceph 安装 45 分钟〕，编译 15 分钟，建 NSD 15 分钟，建文件系统、建 OSD 60 分钟等）。数据迁移类的步骤超时很长，主要靠轮询的「作业中断」及早发现异常：GPFS 移除盘 24 小时，重新均衡、换盘后的恢复（`restore`）、Ceph 移除 OSD、移除主机都是 7 天，Ceph 升级 12 小时。运行超时，或者节点离线且这条运行 5 分钟没有更新，这台节点的这一步置为失败，原因写明
 - **重试**：`POST /storage_tasks/:id/retry` 从失败的那一步重新开始，只对失败的节点再下发（新的 `attempt`）。管理节点步骤改由当前在线的任一管理节点执行（失败的那台可能就是原因）；各节点都成功、只是跨节点的检查（步骤的 `Done`）失败时，所有节点重跑；所有步骤都成功、只是收尾失败时，重试只重做收尾。步骤可以声明 `RetryFrom`，重试时从前面那一步重新开始：用到「上一步解析出的设备名」的步骤（`create_nsd`、`create_fs` 等）从 `resolve_disks` 开始（§6.4）；要用集群密钥登录其他成员的步骤（GPFS 的 `create_cluster`、`change_roles`，Ceph 的 `bootstrap`、`add_hosts`、`set_labels`）从 `ssh_trust` 开始，密钥或 `known_hosts` 写错是它们最常见的失败原因。旧作业如果还在跑（超时判失败但进程还在），新作业会等在同一把集群锁上，不会两份同时干活
-- **中止**：`POST /storage_tasks/:id/abort` 先把任务置 `aborting`，对还在跑的运行下发 `stc_kill.sh '<运行ID>'`（杀掉作业的进程组），等这些运行都终结（或节点离线超过 5 分钟）后才置 `aborted` 并释放槽；已经没有在跑的运行时立即置 `aborted`。不自动回滚：部分失败时很难做对，还会把排查现场清掉；半成品由管理员另行发起「删除集群」清理（删除集群能清理任何阶段的半成品，§7.6、§8.6；⚠️ 有成员离线时删除会失败，见 §14.1 的已知缺陷）
+- **中止**：`POST /storage_tasks/:id/abort` 先把任务置 `aborting`，对还在跑的运行下发 `stc_kill.sh '<运行ID>'`（杀掉作业的进程组），等这些运行都终结（或节点离线超过 5 分钟）后才置 `aborted` 并释放槽；已经没有在跑的运行时立即置 `aborted`。不自动回滚：部分失败时很难做对，还会把排查现场清掉；半成品由管理员另行发起「删除集群」清理（删除集群能清理任何阶段的半成品，§7.6、§8.6；有成员离线时 `leave` 跳过它们，回来后由补清理任务做，2026-10-07 修复）
 - **收尾**（任务种类的 `Finish`）：在任务成功或被中止时执行（失败的任务不执行，它继续占着槽），跑在保存点里，出错时它写的东西全部撤销：成功的任务这时留在 `failed`、已没有要跑的步骤，重试只重做收尾；中止时收尾出错只记日志，任务照样 `aborted`。中止时的收尾只把记录改成与实际相符（如认领失败的盘标 `failed`、改角色恢复旧的内存预留），不回滚节点上做过的事
 - **控制步骤**（`storageStepDef.Control`，S6 加的）：clapi 自己做、不下发脚本的步骤，例如 GPFS 升级前的 `drain`（迁走节点上用本集群存储池的云服务器，§16 S6）。步骤开始、任务每次推进、后台每一轮（15 秒）都调用一次，直到它报告完成，所以它必须能重复调用而不重复做事；出错或超过步骤的超时就判失败；重试时从头开始，超时也重新计
 - **只在在线节点运行的步骤**（`OnlineOnly`）：开始时只在在线的节点上跑、跳过离线的，用于节点回来后自己会补上的事：共享池清单（`sync_pools`，§9.2）。没有一台在线时步骤失败。另有两个开关（2026-10-12 代码审查后加）：
@@ -1187,7 +1187,7 @@ clapi 收尾删掉集群、节点、盘、文件系统和隔离记录，再触�
   - `drain`（clapi 自己做的控制步骤，`storageDrainControl`）：把这台节点上磁盘在本集群池里、运行中或暂停的云服务器迁走（全部磁盘在共享池上的不复制磁盘，很快；有本地盘的照常复制），用的是维护模式那套批量迁移（`migrationAdmin.Create`），但**不把节点设成维护状态**，所以之后也没有「解除维护」；关机的云服务器留在原地。迁不走就失败，管理员处理后重试
   - `upgrade_node`（这台节点上本机执行，`gpfs_upgrade.sh`）：再查一次本机没有磁盘在本集群文件系统上的运行中的域、各文件系统所有盘都 `up`（否则停这台可能拿走某些数据唯一的副本），不满足就失败 → 把本节点的文件系统管理节点 / 集群管理节点角色交给另一台活跃的仲裁节点（`mmchmgr`；否则节点离开后 GPFS 等它的租约过期约一分钟才恢复，要分配块的写在所有节点上卡住，§16 S6 补测第 6 条）→ `mmshutdown`（恢复组服务器改为挂起，§7.9）→ 装新版本 → `mmbuildgpl` → `mmstartup` → 挂载 → 有没起来的盘就 `mmchdisk <fs> start -a`（同步执行，补上停机期间写的数据）→ 所有盘 `up` 才轮到下一台。已经是新版本的节点（重试）只做启动之后的部分
 - **完成升级**：全部节点都跑新版本后由管理员单独发起（`upgrade` 任务带 `finalize`，只有一步，不可逆）：`mmchconfig release=LATEST --accept-empty-cipherlist-security`（GPFS 5.1 起集群没有 cipherList 时要带这个参数，平台建的集群默认没有）、每个文件系统 `mmchfs <fs> -V full`（`mmchfs -V` 要在标准输入上确认，之后核对 `filesystemVersion` 等于 `filesystemHighestSupported`），纠删码集群另加 `mmvdisk recoverygroup change --version LATEST`
-- **内核**：`autoBuildGPL=yes` 让 GPFS 启动时发现没有对应模块就自动编译。但新内核必须在 IBM 的支持范围内，而 Ubuntu 的安全更新会带来新内核。**加入集群时对 GPFS 节点 `apt-mark hold` 内核包**（`linux-generic`、`linux-image-generic`、`linux-headers-generic` 和运行中内核的 `linux-image` / `linux-headers` / `linux-modules-$(uname -r)`，装了的才 hold，记在集群目录的 `held_packages`；节点离开集群时 `leave` 自动放开），管理员查过支持矩阵后再手工升级；节点详情页在运行中的内核不在支持表里时显示警告。这样会让内核安全更新变成手工操作，是否接受列在 §18 决策 D5
+- **内核**：`autoBuildGPL=yes` 让 GPFS 启动时发现没有对应模块就自动编译。但新内核必须在 IBM 的支持范围内，而 Ubuntu 的安全更新会带来新内核。**加入集群时对 GPFS 节点 `apt-mark hold` 内核包**（`linux-generic`、`linux-image-generic`、`linux-headers-generic` 和运行中内核的 `linux-image` / `linux-headers` / `linux-modules-$(uname -r)`，装了的才 hold，记在集群目录的 `held_packages`；节点离开集群时 `leave` 自动放开），管理员查过支持矩阵后再手工升级；原设计「节点详情页在运行中的内核不在支持表里时显示警告」**没实现**（2026-10-14 按代码核对：节点详情与接口都没有内核支持状态，只在预检的 `os` 项里检查）。这样会让内核安全更新变成手工操作，是否接受列在 §18 决策 D5
 
 ### 7.8 外部 GPFS 集群
 
@@ -2657,7 +2657,7 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 - `TC-24-宕机恢复与升级.md`：隔离、疏散、对账、凭据轮换、滚动升级
 - `TC-25-GPFS纠删码.md`（ECE）、`TC-26-SAN与远程挂载.md`（S7；2026-10-11 / 12 跑了 TC-26 的大部分与 TC-25 的 ECE-09–13、17，没跑的在各用例标题后注明原因）
 - 执行记录在 `test-items/runs/`（`2026-10-03-…+共享存储`、`+Ceph`、`+S4共享系统盘`、`2026-10-04-…+S5存储运维`、`2026-10-05-…+S6宕机恢复`、`2026-10-07-…+ECE模拟盘`、`+OOM保护`、`2026-10-10-b017569d+work-04实验` 等）
-- 功能追踪表 `test-items/共享存储功能追踪.csv`：大功能 / 子功能 / 功能描述 / 回归用例 / 覆盖步骤 / 最近执行 / 测试结果，用法见 `test-items/README.md`
+- 功能追踪表 `test-items/回归功能追踪.csv`（2026-10-14 由 `共享存储功能追踪.csv` 改名并扩展到全平台）：功能域 / 大功能 / 子功能 / 功能描述 / 回归用例 / 覆盖步骤 / 最近执行 / 测试结果，共享存储的行功能域为「共享存储」，用法见 `test-items/README.md`
 - 失败注入的做法：安装中断网（`tc qdisc add dev bond0 root netem loss 100%`，不要用 iptables，它拦不住 ARP）；只断管理网（节点上 iptables 拦到 cland 5006 的出向连接）；管理节点在任务中途离线；节点在任务中途重启；删除回环设备模拟坏盘；写满配额
 
 ### 17.3 性能基准
@@ -2829,7 +2829,7 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 | 升级 GPFS / 内核 | 集群详情顶部「升级」（S6，§7.7） | 逐台升级：先迁走云服务器，再停 GPFS、装新版、编译、启动；最后的格式升级不可逆，单独确认。加入集群时内核已锁定（D5），查过 IBM 支持表后再手工升级 |
 | 节点宕机疏散 | 节点详情「疏散」（S6，§11）；也可以在迁移弹窗里对离线节点上的云服务器做强制迁移（S7 第二轮，2026-10-11 验证过） | 先确认旧节点已被隔离（GPFS 驱逐），再在别的节点用原来的盘启动它上面的云服务器（前提是盘全在共享池上）；旧节点回来先对账、清掉残留，才解除隔离 |
 | 镜像预热 | 镜像详情的「存储池副本」卡片 →「预热到存储池」（S7 第二轮，2026-10-11 验证过） | 提前把镜像导入池里做基础副本，显示导入阶段与进度 |
-| 删除集群 | 输入集群名，列出将被擦除的盘，可选同时卸载存储软件 | 卸载 → 删文件系统 → 删 NSD → 停 GPFS → 擦盘 → 清理密钥、标记、内存预留；集群上还有存储池时不能删（§7.6）。⚠️ 有成员节点离线时会失败在 `leave` 步骤，没有「节点回来后补做」（已知缺陷，§16 S7） |
+| 删除集群 | 输入集群名，列出将被擦除的盘，可选同时卸载存储软件 | 卸载 → 删文件系统 → 删 NSD → 停 GPFS → 擦盘 → 清理密钥、标记、内存预留；集群上还有存储池时不能删（§7.6）。有成员节点离线时照常删除，`leave` 跳过离线节点，它们回来后由补清理任务做（2026-10-07 修复） |
 
 所有操作都进审计和操作动态（§13.4）。
 
@@ -3350,7 +3350,7 @@ mmshutdown -N <node>; mmstartup -N <node>
 
 ### E.2 Ceph
 
-- **平台部署的集群**：mgr 的 `prometheus` 模块直接导出，Prometheus 任务 `storage_clusters` 按 clapi 的 http_sd（`/api/v1/prometheus/sd/storage`）采集 mgr 主机的 9283，每个目标带 `storage_cluster` 标签（§14.3）。界面与看板用到：`ceph_cluster_total_bytes`、`ceph_cluster_total_used_bytes`、`ceph_pool_rd_bytes`、`ceph_pool_wr_bytes`、`ceph_pool_rd`、`ceph_pool_wr`、`ceph_osd_up`、`ceph_osd_in`，看板另用 `ceph_pool_percent_used` 与 `ceph_pool_metadata`。只有活动的 mgr 输出数据，所以按集群求和或取最大值时实际只算到一台。⚠️ 已知缺陷：9283 在所有网卡上监听（同 §14.3）
+- **平台部署的集群**：mgr 的 `prometheus` 模块直接导出，Prometheus 任务 `storage_clusters` 按 clapi 的 http_sd（`/api/v1/prometheus/sd/storage`）采集 mgr 主机的 9283，每个目标带 `storage_cluster` 标签（§14.3）。界面与看板用到：`ceph_cluster_total_bytes`、`ceph_cluster_total_used_bytes`、`ceph_pool_rd_bytes`、`ceph_pool_wr_bytes`、`ceph_pool_rd`、`ceph_pool_wr`、`ceph_osd_up`、`ceph_osd_in`，看板另用 `ceph_pool_percent_used` 与 `ceph_pool_metadata`。只有活动的 mgr 输出数据，所以按集群求和或取最大值时实际只算到一台。9283 只监听节点的内网地址（`ceph_prometheus_bind`，2026-10-07 修复设计复查发现的缺陷 c）
 - **导入的集群**（第二轮）：CloudLand 不采集它的 mgr，由节点上的 `backend_metrics`（`backends/ceph.sh`）以集群的客户端用户执行 `ceph -s -f json`、`ceph df detail -f json`，导出 `cloudland_ceph_total_bytes`、`cloudland_ceph_used_bytes`、`cloudland_ceph_osds_up`、`cloudland_ceph_osds_in`，以及所有池加总的 `cloudland_ceph_read_bytes_total`、`cloudland_ceph_write_bytes_total`、`cloudland_ceph_reads_total`、`cloudland_ceph_writes_total`（标签 `cluster`）；每台客户端导出同样的数，查询取最大值
 
 ### E.3 告警

@@ -377,7 +377,7 @@ XFRM 的 state / policy 按 netns 隔离；WireGuard 接口在 netns 内建，�
 
 **改配置**：按连接块比较新旧 `swanctl.conf`。删掉的块 `--terminate`；变了的块先 `--terminate`，块里有 `start_action = start` 时再对块内**全部** CHILD_SA `--initiate`。只 `--load-all` 不够：已建立的 CHILD_SA 保留旧的流量选择符。
 
-**流量选择符对账**：守护脚本每次心跳比较每个连接块已安装 CHILD_SA 的选择符与配置，不一致、或我方发起的块一个都没装，就 terminate 再按配置发起；每条隧道 60 秒最多一次（`reconcile-<隧道>`）。这是 `close_action = none` 之后对端关闭时的重建路径。
+**流量选择符对账**：守护脚本每次心跳比较每个连接块已安装 CHILD_SA 的选择符与配置，不一致、或我方发起的块一个都没装，就 terminate 再按配置发起；每条隧道 60 秒最多一次（`reconcile-<隧道>`）。这是 `close_action = none` 之后对端关闭时的重建路径。**发起在锁外的后台进程里做**（2026-09-30 修 D8）：守护脚本持着 LB / VPN 锁，原来在锁里对每条断开的隧道串行 `swanctl --initiate --timeout 20`，对端不可达时一次持锁 ≥ 59 秒，网关停用晚 30 秒生效、同节点的配置下发排队、LB 守护整轮跳过。现在守护脚本只起 `vpn_initiate.sh reconcile`（每个网关同时一个），配置脚本起 `vpn_initiate.sh initiate <隧道>`；每条隧道一把锁（`initiate-<隧道>.lock`，同一子 SA 发起两次会建出重复的 CHILD_SA），拿到锁后重新核对配置、已安装的子 SA 跳过，仍是 60 秒限速。
 
 **重建隧道**（`POST .../restart`）：`restart_vpn_conn.sh` 逐条 terminate，再对全部 CHILD_SA initiate。
 
@@ -1024,7 +1024,8 @@ GET    /vpn_gateways/:id/clients/:client_id/config      下载配置模板（永
 | `vpn_nexthop_watch.sh` | 其他节点的下一跳探测（§8.2 F7） |
 | `set_vpn_route.sh` | 所有承载 VPC 的节点：`nonat`（不分角色）；网关节点写 `tunnel_routes` 后调 `vpn_notify.sh sync`；其他节点写 `nexthops`、`nexthop_hosts` 并装路由、起下一跳探测；`ns-<vrrp_vlan>` 不在就先调 `set_subnet_gw.sh` 建出来 |
 | `check_vpn_process.sh` | 心跳守护（拿不到锁就跳过这一轮）：补回隔离与 MSS 规则、按地址池的隔离规则；停用的网关只确保不在运行；双活：装路由、起 charon 与 FRR、`vpn_frr_statics`、流量选择符对账、起看护循环；主备的主节点：装路由、起进程、对账、起看护循环；主备的非主节点：**停掉进程、路由改为指向对端**（keepalived 被 `kill -9` 时 notify 不执行，这半边不能省）；最后保证下一跳探测在跑。keepalived 本身由 `check_lb_process.sh` 守护 |
-| `report_vpn_status.sh` | 心跳上报与流量指标（§9.5、§9.7） |
+| `report_vpn_status.sh` | 心跳上报与流量指标（§9.5、§9.7）；隧道断开时把 `charon.log` 里这条隧道最近一次失败的原话（去掉重试计数等会变的部分，免得每次心跳都上报）报成 `vpn_tunnels.last_error`，隧道 up 时清空；日志尾部已经没有这条隧道时沿用 `tunnel_errors` 里记下的（2026-09-30 修 D13：原来写死为空） |
+| `vpn_initiate.sh` | 在锁外后台发起隧道：`reconcile`（守护脚本起，按配置对账全部隧道）、`initiate <隧道>`（配置脚本 reload / terminate 之后起）；见 §5.1 的「流量选择符对账」（2026-09-30 新增） |
 | `clear_vpn_gateway.sh` | 停看护循环、charon、FRR，删配置、路由、`nonat`、放行规则、接口、keepalived 与 `vrrp-<id>/`，释放公网地址（`clear_lb_floating.sh`），删网关目录；路由器上还有别的网关目录时保留按接口的隔离与 MSS 规则 |
 | `restart_vpn_conn.sh` | 重建指定隧道的全部 CHILD_SA |
 | `set_route_table.sh` | 重放 fip 路由表的默认路由（每一行都要成功，双 IP 在两个 VLAN 时有两张表），然后免费 ARP；一律在路由器 netns 里执行 |

@@ -775,7 +775,7 @@ L1 在 `cloudrc` 里新建（GPFS 设计 §5.1 的同名函数属于 GPFS 阶段
 | `GET /instances`、`GET /instances/:id` | 增加 `available_storage_pools`（§5.2）；`reason` 增加 `storage_full`、`storage_pending` |
 | `POST /instances` | L4 增加系统盘的 `storage_pool` 与 `required_storage_pools`；指定 `hypervisor` 要求系统管理员（已单独修复，附录 B 第 1 条） |
 | `POST /migrations` | 增加 `disks: [{volume:{id}, storage_pool:{id}}]`（必须同时指定目标机器）、`allow_pool_fallback`、`ignore_capacity` |
-| `GET /migrations/:id` | 增加 `disk_plan` |
+| `GET /migrations/:id` | 增加 `disk_plan`。2026-09-30 起迁移列表与详情只给系统管理员（clapi `requireMigrationAdmin` + 网关白名单，待办 A10：原先任何成员都能看到全部迁移记录与节点主机名） |
 | `POST /hypers/:uuid/maintain` | 返回每台虚拟机的迁移结果 |
 | `DELETE /hypers/:uuid` | 增加对节点存储池和卷的检查，以及 `keep_pools=true`（§5.9） |
 | `GET /hypers`、`GET /hypers/:uuid` | 磁盘改为按这台机器的节点存储池（含内置池）汇总：`disk_total`、`disk_allocated`、`disk_used`（GB，与现有字段单位一致），`disk_max_usage_ratio`（各池里最高的占用比例，进度条按它上色），另加 `storage_pools[]`（每个池的名称、各项字节数、占用比例、状态）；原来来自 `hyper_status`、乘过超分的 `disk` 不再返回（§8.3） |

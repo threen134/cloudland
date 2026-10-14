@@ -202,6 +202,32 @@ grep apply_tgw /opt/cloudland/log/script.log | tail
 
 ---
 
+### 10. 轮换区域的转发密钥
+
+中央控制面（cpgateway）转发到区域 clapi 的请求都带 `X-Forwarded-Secret`，值是区域记录里的 `internal_secret`；区域 clapi 用自己 `.env` 里的 `CPGATEWAY_SECRET_KEY`（启动时写进 `cpgateway.secret`）核对，不一致就返回 403「Invalid forwarded secret」。
+
+管理界面或 `POST /api/v1/regions/<区域 UUID>/rotate-secret`（系统管理员）**只改中央控制面这一边**：返回新值 `new_secret`，但不会通知区域。从这一刻起，到区域换上新值之前，这个区域的所有接口、组织同步、用量对账都会失败。所以要在维护窗口里做，并且马上完成下面的步骤：
+
+```bash
+# 1. Rotate (central control plane); keep the returned new_secret
+curl -k -X POST https://<PUBLIC_IP>/api/v1/regions/<region uuid>/rotate-secret \
+  -H "Authorization: Bearer <token>"
+
+# 2. On the region's control node: put the new value into .env
+cd /opt/cloudland/deploy/docker
+sed -i 's/^CPGATEWAY_SECRET_KEY=.*/CPGATEWAY_SECRET_KEY=<new_secret>/' .env
+
+# 3. Recreate clapi only (--no-deps): see the warning below
+docker compose up -d --no-deps --force-recreate clapi
+
+# 4. Check: a region API call through the gateway works again
+curl -k "https://<PUBLIC_IP>/api/v1/instances?limit=1" -H "Authorization: Bearer <token>"
+```
+
+> ⚠️ **单节点（all-in-one）部署里，`CPGATEWAY_SECRET_KEY` 同时是 cpgateway 的 `AUTH_SECRET_KEY`**（`docker-compose.yml`），也就是签发激活链接与邀请链接（HS256）的密钥。第 3 步如果用不带 `--no-deps` 的 `docker compose up -d`，compose 会因为环境变量变了把 cpgateway 一起重建，已经发出去的激活、邀请链接全部失效（登录用的访问 token 是 RS256，不受影响）。之后 cpgateway 哪次被重建，也会读到新值，所以已发的链接迟早会失效；要么在没有待处理邀请时轮换，要么接受重发邀请。
+>
+> **HA 部署**：两台控制节点的 `.env` 都要改，两台的 clapi 都要重建。**多区域**：只改那个区域控制节点上的 `.env`。
+
 ## 性能与维护建议
 
 - **磁盘清理**: 随着部署周期的增加，`/opt/cloudland/web/log` 和 `/opt/cloudland/cache` 可能会占用大量空间。建议配置 `logrotate` 或定期手动清理缓存镜像。
