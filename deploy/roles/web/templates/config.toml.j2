@@ -20,6 +20,11 @@ listen = "127.0.0.1:5005"
 endpoint = "127.0.0.1:5006"
 token = "{{ grpc_auth_token }}"
 
+[alert]
+# Shared token of the Alertmanager -> clapi alert webhooks (env ALERT_WEBHOOK_TOKEN takes precedence); the monitor
+# role puts the same value into the Alertmanager receivers
+webhook_token = "{{ alert_webhook_token }}"
+
 [db]
 type = "postgres"
 uri = "host=127.0.0.1 port=5432 user=postgres password={{ db_passwd }} dbname=cloudland sslmode=disable"

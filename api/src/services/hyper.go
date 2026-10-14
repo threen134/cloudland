@@ -174,9 +174,11 @@ func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error)
 		logger.Ctx(ctx).Error("Specified hypervisor not found", err)
 		return NewCLError(ErrHypervisorNotFound, "Specified hypervisor not found", err)
 	}
-	// Update the hypervisor status, remark, or zone
+	// Update the hypervisor status, remark, or zone. Only these columns are written: a whole-row save from this
+	// read would put back status 10 / offline_at over a heartbeat that brought the host back meanwhile
 	callScript := false
 	restartCloudlet := 0
+	updates := map[string]interface{}{}
 	if hyper.Status != hyperInDB.Status {
 		switch hyperInDB.Status {
 		case model.HyperStatusNames[model.HYPER_DEPLOYING], model.HyperStatusNames[model.HYPER_DEPLOY_FAILED]:
@@ -186,16 +188,25 @@ func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error)
 			// Status 10 with offline_at is what evacuation and fencing go by: keep it, and let the host come back
 			// in the status the admin chose (hyper_status.go restores offline_prior)
 			logger.Ctx(ctx).Info("Hypervisor is offline, it comes back as", hyper.GetStatus())
-			status := hyper.Status
-			hyperInDB.OfflinePrior = &status
+			res := db.Model(&model.Hyper{}).Where("id = ? AND status = ?", hyperInDB.ID, model.HyperStatusOffline).
+				Update("offline_prior", hyper.Status)
+			if res.Error != nil {
+				logger.Ctx(ctx).Error("Failed to update hypervisor", res.Error)
+				return NewCLError(ErrHypervisorUpdateFailed, "Failed to update hypervisor", res.Error)
+			}
+			if res.RowsAffected == 0 {
+				return NewCLError(ErrHypervisorInvalidState, "Hypervisor came back online meanwhile, retry", nil)
+			}
 		default:
 			logger.Ctx(ctx).Info("Updating hypervisor status from", hyperInDB.GetStatus(), "to", hyper.GetStatus())
 			hyperInDB.Status = hyper.Status
+			updates["status"] = hyper.Status
 			callScript = true
 		}
 	}
 	// update remark
 	hyperInDB.Remark = hyper.Remark
+	updates["remark"] = hyper.Remark
 	if hyper.ZoneID != hyperInDB.ZoneID {
 		logger.Ctx(ctx).Info("Updating hypervisor zone from", hyperInDB.ZoneID, "to", hyper.ZoneID)
 		zone, err := zoneAdmin.Get(ctx, hyper.ZoneID)
@@ -205,6 +216,7 @@ func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error)
 		}
 		hyperInDB.Zone = zone
 		hyperInDB.ZoneID = zone.ID
+		updates["zone_id"] = zone.ID
 		callScript = true
 		restartCloudlet = 1
 	}
@@ -212,19 +224,22 @@ func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error)
 	if hyper.CpuOverRate != hyperInDB.CpuOverRate {
 		logger.Ctx(ctx).Info("Updating hypervisor CPU over commit rate from", hyperInDB.CpuOverRate, "to", hyper.CpuOverRate)
 		hyperInDB.CpuOverRate = hyper.CpuOverRate
+		updates["cpu_over_rate"] = hyper.CpuOverRate
 		callScript = true
 	}
 	if hyper.MemOverRate != hyperInDB.MemOverRate {
 		logger.Ctx(ctx).Info("Updating hypervisor memory over commit rate from", hyperInDB.MemOverRate, "to", hyper.MemOverRate)
 		hyperInDB.MemOverRate = hyper.MemOverRate
+		updates["mem_over_rate"] = hyper.MemOverRate
 		callScript = true
 	}
 	if hyper.DiskOverRate != hyperInDB.DiskOverRate {
 		logger.Ctx(ctx).Info("Updating hypervisor disk over commit rate from", hyperInDB.DiskOverRate, "to", hyper.DiskOverRate)
 		hyperInDB.DiskOverRate = hyper.DiskOverRate
+		updates["disk_over_rate"] = hyper.DiskOverRate
 		callScript = true
 	}
-	if err = db.Save(hyperInDB).Error; err != nil {
+	if err = db.Model(&model.Hyper{}).Where("id = ?", hyperInDB.ID).Updates(updates).Error; err != nil {
 		logger.Ctx(ctx).Error("Failed to update hypervisor", err)
 		return
 	}

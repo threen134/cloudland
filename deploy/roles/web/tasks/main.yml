@@ -4,6 +4,12 @@
     fail_msg: "grpc_auth_token 未设置：clapi 访问 cland-go 需要该令牌（见 netconf.yml.example）"
   tags: [always]
 
+- name: check alert webhook token
+  assert:
+    that: alert_webhook_token is defined and alert_webhook_token | length > 0
+    fail_msg: "alert_webhook_token 未设置：clapi 没有它时拒绝所有告警回调（见 netconf.yml.example）"
+  tags: [always]
+
 - name: create conf directory
   file:
     path: /opt/cloudland/web/conf

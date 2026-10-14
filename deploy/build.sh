@@ -27,6 +27,11 @@ if ! grep -qE '^grpc_auth_token: *"?[0-9A-Za-z]' "$net_conf"; then
     sed -i '/^grpc_auth_token:/d' "$net_conf"
     echo "grpc_auth_token: \"$(openssl rand -hex 32)\"" >> "$net_conf"
 fi
+# Alertmanager -> clapi 告警回调的共享令牌：为空时生成（monitor 角色与 clapi 配置都用它）
+if ! grep -qE '^alert_webhook_token: *"?[0-9A-Za-z]' "$net_conf"; then
+    sed -i '/^alert_webhook_token:/d' "$net_conf"
+    echo "alert_webhook_token: \"$(openssl rand -hex 32)\"" >> "$net_conf"
+fi
 chmod 600 "$net_conf"
 
 # Install packages

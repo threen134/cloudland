@@ -137,13 +137,18 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	} else {
 		logger.Ctx(ctx).Debugf("Hypervisor %d kept in administrative status %d (reported %d)", hyperID, hyper.Status, hyperStatus)
 	}
-	// Back from offline: the status an admin set before it went away (disabled, maintaining) comes back with it,
-	// the host only ever reports itself active
+	// Back from offline: the status an admin set before it went away (disabled, maintaining), or while it was away
+	// (PATCH /hypers records offline_prior then, 0 or 1), comes back with it. The host reports what its disabled
+	// marker says; when an admin changed it while the host was away the marker is stale, so it is rewritten
+	var syncMarker *int32
 	if hyper.Status == model.HyperStatusOffline {
 		updates["offline_at"] = nil
 		updates["offline_prior"] = nil
-		if p := hyper.OfflinePrior; p != nil && (*p == model.HyperStatusNames[model.HYPER_DISABLED] || *p == model.HyperStatusNames[model.HYPER_MAINTAINING]) {
-			updates["status"] = *p
+		if status, sync := offlineReturnStatus(hyper.OfflinePrior, hyperStatus); status != nil {
+			updates["status"] = *status
+			if sync {
+				syncMarker = status
+			}
 		}
 	}
 	// map 更新不会处理 Zone 关联，需直接写外键列；未上报可用区时保留原值
@@ -154,6 +159,15 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to update hyper", err)
 		return
+	}
+	if syncMarker != nil {
+		// update_hyper.sh only creates or removes the disabled marker here (restart_clet 0); zone and over-commit
+		// rates are the ones the host just reported
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_hyper.sh '%d' '%s' '0' '%f' '%f' '%f'",
+			*syncMarker, ShellEscape(zoneName), hyper.CpuOverRate, hyper.MemOverRate, hyper.DiskOverRate)
+		if xerr := HyperExecute(ctx, fmt.Sprintf("inter=%d", hyperID), command); xerr != nil {
+			logger.Ctx(ctx).Errorf("Failed to sync the disabled marker of hypervisor %d: %v", hyperID, xerr)
+		}
 	}
 	// 同步 DNS：部署失败时清理条目；IP 或 hostname 变化时更新映射（避免每次心跳写文件）
 	if hyperStatus == 5 { // HYPER_DEPLOY_FAILED
@@ -191,4 +205,19 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 		}
 	}
 	return
+}
+
+// offlineReturnStatus decides the status of a host coming back from offline: the status recorded in offline_prior
+// (disabled or maintaining before it went away, or what an admin chose while it was away) wins over the reported
+// one. sync tells that the host's disabled marker, which is what it reports, disagrees and must be rewritten
+func offlineReturnStatus(prior *int32, reported int) (status *int32, sync bool) {
+	if prior == nil {
+		return nil, false
+	}
+	switch *prior {
+	case model.HyperStatusNames[model.HYPER_DISABLED], model.HyperStatusNames[model.HYPER_ACTIVE], model.HyperStatusNames[model.HYPER_MAINTAINING]:
+		disabled := *prior == model.HyperStatusNames[model.HYPER_DISABLED]
+		return prior, disabled != (reported == 0)
+	}
+	return nil, false
 }

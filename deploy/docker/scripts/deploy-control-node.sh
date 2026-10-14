@@ -197,10 +197,12 @@ if [ -z "$(grep '^ALERT_WEBHOOK_TOKEN=' .env | cut -d'=' -f2- || true)" ]; then
     log "已生成 ALERT_WEBHOOK_TOKEN 并写入 .env"
 fi
 
-# loki 3100、OTLP 4317（都无鉴权）与 cland 5006 只需对计算节点开放，计算节点往 MANAGEMENT_VIP 推送 / 连接：
-# 单控制节点上它就在本机，没显式设置时只监听它。不在本机（外部管理的 VIP）时保持监听全部地址并提示
+# loki 3100、OTLP 4317（都无鉴权）与 cland 5006 只需对计算节点开放：计算节点往 MANAGEMENT_VIP 推送 / 连接，
+# 本机 host 网络的服务（如 cland-go 的 OTLP 导出）往 INTERNAL_IP 发。两者是同一个地址时（单控制节点的常见情况），
+# 没显式设置就只监听它；不同（另配的别名或 VIP）时只监听一个会断掉另一边，保持监听全部地址并提示
 mgmt_vip=$(grep '^MANAGEMENT_VIP=' .env | cut -d'=' -f2- || true)
-if [ -n "$mgmt_vip" ] && ip -o addr show | awk '{print $4}' | cut -d/ -f1 | grep -qxF "$mgmt_vip"; then
+internal_ip=$(grep '^INTERNAL_IP=' .env | cut -d'=' -f2- || true)
+if [ -n "$mgmt_vip" ] && [ "$mgmt_vip" = "$internal_ip" ]; then
     if [ -z "$(grep '^TELEMETRY_LISTEN_IP=' .env | cut -d'=' -f2- || true)" ]; then
         sed -i '/^TELEMETRY_LISTEN_IP=/d' .env
         echo "TELEMETRY_LISTEN_IP=${mgmt_vip}" >> .env
@@ -212,7 +214,7 @@ if [ -n "$mgmt_vip" ] && ip -o addr show | awk '{print $4}' | cut -d/ -f1 | grep
         log "cland-go 只监听 ${mgmt_vip}:5006"
     fi
 else
-    warn "MANAGEMENT_VIP (${mgmt_vip}) 不在本机，loki 3100 / OTLP 4317 / cland 5006 仍监听全部地址，须由外部防火墙挡住公网"
+    warn "MANAGEMENT_VIP (${mgmt_vip}) 与 INTERNAL_IP (${internal_ip}) 不同，loki 3100 / OTLP 4317 / cland 5006 仍监听全部地址，须由外部防火墙挡住公网"
 fi
 
 # 从虚拟机创建镜像时上传凭证的签名密钥：为空时 clapi 拒绝所有上传，同样自动生成

@@ -64,6 +64,10 @@ func TestAlarmRuleGroupOwnershipPG(t *testing.T) {
 		"reader links":                    {func() int { return postAs(link, member(orgA, model.OrgReader), body(instA.UUID)).Code }, http.StatusForbidden},
 		"another organization unlinks":    {func() int { return postAs(unlink, member(orgB, model.OrgWriter), body(instA.UUID)).Code }, http.StatusNotFound},
 		"reader unlinks":                  {func() int { return postAs(unlink, member(orgA, model.OrgReader), body(instA.UUID)).Code }, http.StatusForbidden},
+		"system admin links another organization's instance": {func() int {
+			admin := &common.MemberShip{UserID: 1, UserName: "pg-admin", OrgID: orgB, OrgRole: model.OrgAdmin, SystemRole: model.SystemAdmin}
+			return postAs(link, admin, body(instB.UUID)).Code
+		}, http.StatusBadRequest},
 		"reader rebinds channels": {func() int {
 			return postAs(notificationAPI.BindRuleChannels, member(orgA, model.OrgReader),
 				fmt.Sprintf(`{"rule_group_uuid":%q,"channel_uuids":[]}`, group.UUID)).Code

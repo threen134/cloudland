@@ -11,6 +11,7 @@ package rpcs
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -101,6 +102,17 @@ func TestHyperBackFromOfflinePG(t *testing.T) {
 		if got.Status != prior || got.OfflineAt != nil || got.OfflinePrior != nil {
 			t.Fatalf("back from offline with prior %d: status %d offline_at %v prior %v", prior, got.Status, got.OfflineAt, got.OfflinePrior)
 		}
+	}
+	// Enabled by an admin while away (PATCH /hypers records offline_prior 1), back still holding the disabled
+	// marker (reports state 0): it comes back enabled (alignment 04 review)
+	db.Model(&model.Hyper{}).Where("hostid = ?", node).Updates(map[string]interface{}{"status": model.HyperStatusOffline, "offline_prior": 1})
+	nodeCallback(t, node, strings.Replace(report, "'20' '1'", "'20' '0'", 1))
+	got := &model.Hyper{}
+	if err := db.Where("hostid = ?", node).Take(got).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != 1 || got.OfflinePrior != nil {
+		t.Fatalf("enabled while away: status %d prior %v", got.Status, got.OfflinePrior)
 	}
 }
 

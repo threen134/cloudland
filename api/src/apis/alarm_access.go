@@ -99,14 +99,28 @@ func adjustGroupOwner(group *model.AdjustRuleGroup) int64 {
 	return owner
 }
 
-// ruleInstancesReadable answers the request and returns false unless the caller can read every instance: a rule
-// group may only watch instances of the caller's organization, or another organization's metrics would reach
-// the group's alarm events (O1)
-func ruleInstancesReadable(c *gin.Context, uuids []string) bool {
+// ruleInstancesOwnedBy answers the request and returns false unless every instance belongs to owner, the
+// organization of the rule group: the group's alarm events and notifications go to that organization, so another
+// organization's instance would leak its metrics there (O1). The caller must also be able to read them; a system
+// admin can read every instance, which is why the owner is compared and not only readability
+func ruleInstancesOwnedBy(c *gin.Context, uuids []string, owner int64) bool {
 	if len(uuids) == 0 {
 		return true
 	}
-	if _, err := services.ReadableInstanceIDs(c.Request.Context(), uuids); err != nil {
+	ctx := c.Request.Context()
+	ids, err := services.ReadableInstanceIDs(ctx, uuids)
+	if err == nil {
+		idList := make([]int64, 0, len(ids))
+		for _, id := range ids {
+			idList = append(idList, id)
+		}
+		var foreign int64
+		_, db := common.GetContextDB(ctx)
+		if err = db.Model(&model.Instance{}).Where("id IN ? AND owner <> ?", idList, owner).Count(&foreign).Error; err == nil && foreign > 0 {
+			err = common.NewCLError(common.ErrInstanceNotFound, "Instance of another organization", nil)
+		}
+	}
+	if err != nil {
 		var clErr *common.CLError
 		if errors.As(err, &clErr) && clErr.Code == common.ErrInstanceNotFound {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Some instances do not exist", "code": "INSTANCES_NOT_FOUND"})

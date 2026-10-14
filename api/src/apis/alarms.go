@@ -160,7 +160,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 		for _, link := range req.VMLinks {
 			linkUUIDs = append(linkUUIDs, link.VMUUID)
 		}
-		if !ruleInstancesReadable(c, linkUUIDs) {
+		if !ruleInstancesOwnedBy(c, linkUUIDs, owner) {
 			return
 		}
 
@@ -654,7 +654,8 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 	}
 
 	// A writer creates rules, only on instances of their organization; region_id goes into the rule file
-	if !ruleWriter(c) || !ruleRegionValid(c, req.RegionID) || !ruleInstancesReadable(c, req.LinkedVMs) {
+	if !ruleWriter(c) || !ruleRegionValid(c, req.RegionID) ||
+		!ruleInstancesOwnedBy(c, req.LinkedVMs, common.GetMemberShip(c.Request.Context()).OrgID) {
 		return
 	}
 	ms := common.GetMemberShip(c.Request.Context())
@@ -798,7 +799,8 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		return
 	}
 	// A writer creates rules, only on instances of their organization; region_id goes into the rule file
-	if !ruleWriter(c) || !ruleRegionValid(c, req.RegionID) || !ruleInstancesReadable(c, req.LinkedVMs) {
+	if !ruleWriter(c) || !ruleRegionValid(c, req.RegionID) ||
+		!ruleInstancesOwnedBy(c, req.LinkedVMs, common.GetMemberShip(c.Request.Context()).OrgID) {
 		return
 	}
 	ms := common.GetMemberShip(c.Request.Context())
@@ -1626,8 +1628,7 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 // @Router /metrics/alarm/active-rules [get]
 func (a *AlarmAPI) GetActiveRules(c *gin.Context) {
 	// Prometheus' rule groups are every organization's VM rules and the node rules
-	if !common.GetMemberShip(c.Request.Context()).IsSystemAdmin() {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Only system admins can list the active rules"})
+	if !requireSystemAdminJSON(c) {
 		return
 	}
 	// Build Prometheus API URL from config
@@ -1726,7 +1727,8 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		linkedBW = append(linkedBW, vm.InstanceID)
 	}
 	// A writer creates rules, only on instances of their organization; region_id goes into the rule file
-	if !ruleWriter(c) || !ruleRegionValid(c, req.RegionID) || !ruleInstancesReadable(c, linkedBW) {
+	if !ruleWriter(c) || !ruleRegionValid(c, req.RegionID) ||
+		!ruleInstancesOwnedBy(c, linkedBW, common.GetMemberShip(c.Request.Context()).OrgID) {
 		return
 	}
 	ms := common.GetMemberShip(c.Request.Context())
@@ -2302,9 +2304,7 @@ func (a *AlarmAPI) DeleteNodeAlarmRule(c *gin.Context) {
 // @Router /metrics/alarm/sync-mappings [post]
 func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
 	ctx := c.Request.Context()
-	ms := common.GetMemberShip(ctx)
-	if !ms.IsSystemAdmin() {
-		c.JSON(http.StatusForbidden, gin.H{"status": "error", "error": "system admin required"})
+	if !requireSystemAdminJSON(c) {
 		return
 	}
 	result, err := services.SyncVMRuleMappings(ctx, true)
@@ -2354,9 +2354,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 		var groupEnabled bool
 
 		if ruleType == "adjust" {
-			ms := common.GetMemberShip(c.Request.Context())
-			if !ms.IsSystemAdmin() {
-				c.JSON(http.StatusForbidden, gin.H{"status": "error", "error": "system admin required to toggle adjust rules"})
+			if !requireSystemAdminJSON(c) {
 				return
 			}
 			// Query adjust_rule_group table using AdjustOperator
