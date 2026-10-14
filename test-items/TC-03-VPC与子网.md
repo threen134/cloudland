@@ -2,6 +2,8 @@
 
 优先级 **P0** · 会在计算节点上真实创建网络对象 · 约 40 min（NET-08 要准备测试账号，另计 15 min）
 
+依据：`docs/architecture/plan/network-behavior.md`（网络的行为说明，2026-10-14 功能域对齐 03 时整理）。每条用例对应的章节见追踪表「设计依据」列。
+
 > VPC 和子网不只是数据库记录 —— 会在计算节点上建 netns（`router-<N>`）、VXLAN 设备（`v-<vni>`）、网关口和 dnsmasq。**测完必须删干净**，否则节点上会越积越多。
 >
 > 🚫 所有写操作只针对本用例建的 `wp-` 资源。保留 VPC（`rb-vpc`、`mig-vpc`、`ibmx`、`ibmr`、`aax`）与公网子网 `public-756` 只做读，**不要对它们发 PATCH / DELETE**（哪怕预期会被拒：检查一旦失效就是真改）。
@@ -31,6 +33,8 @@
 ---
 
 ## NET-01 界面创建 VPC + 内部子网
+
+依据：`network-behavior.md` §2.1、§2.2。建好后 `GET /vpcs/:id` 读回：名称、native 安全组、子网列表与界面一致。
 
 **P0** · 脚本 `vpcsubnet.js`（写入类：只放开 `POST /api/v1/vpcs`、`POST /api/v1/subnets`）
 
@@ -405,6 +409,8 @@ docker exec cloudland-postgres psql -U postgres -d cloudland -Atc "select count(
 
 ## NET-10 可用区（2026-10-14 按代码核对补，未执行）
 
+依据：`network-behavior.md` §3。接口：`GET /zones/:name`（按名称取）、`PATCH /zones/:name`（改备注、设为默认）。
+
 `/zones`（`services/zone.go`）。各用例只把可用区当参数用（`zone0`、LB / VPN / 放置组的可用区下拉），管理本身没有用例。
 
 1. 系统管理员建可用区 `wp-z1`（`default: false`），再建一个 `default: true` 的
@@ -420,6 +426,8 @@ docker exec cloudland-postgres psql -U postgres -d cloudland -Atc "select count(
 
 ## NET-11 IP 组与字典（2026-10-14 按代码核对补，未执行）
 
+依据：`network-behavior.md` §4。接口：`POST /ip_groups`、`GET /ip_groups/:id`、`PATCH /ip_groups/:id`、`DELETE /ip_groups/:id`；`GET /dictionaries`、`POST /dictionaries`、`GET /dictionaries/:id`、`PATCH /dictionaries/:id`、`DELETE /dictionaries/:id`。
+
 `/ip_groups`、`/dictionaries`（`services/ipgroup.go`、`dictionary.go`）。TC-12 只做了列表冒烟，TC-13 只测了列表过滤的注入。
 
 1. 建 IP 组（带字典类型），给子网指定这个 IP 组（`ip_group`），子网列表按 `ip_group` 过滤
@@ -430,7 +438,7 @@ docker exec cloudland-postgres psql -U postgres -d cloudland -Atc "select count(
 **预期**：
 - 第 1 步：200；子网列表按 IP 组过滤只列出它（原先过滤被覆盖、从未生效，2026-09-17 修过）。
 - 第 2 步：改名 200；只读成员 403。
-- 第 3 步：代码**不检查引用**，直接删除（软删并改名）：记下子网那边 `ip_group` 的显示与之后能否再选（可能需要补引用检查）。
+- 第 3 步：400（`ErrIpGroupInUse` 131405，`The ip group is still used by 1 subnet(s) and 0 floating ip(s)`），IP 组还在；把子网改到别的 IP 组（或删掉子网）后再删成功。浮动 IP 引用时同样拒绝。2026-10-14 修（对齐 03 N3，未部署）：原先不检查引用，直接软删，子网与浮动 IP 的 `group_id` 悬空、按 IP 组过滤查不到
 - 第 4 步：`value` 为空 400「Value cannot be empty」；普通成员建 403（只给系统管理员）。
 
 ## 历史缺陷回归点
@@ -452,6 +460,7 @@ docker exec cloudland-postgres psql -U postgres -d cloudland -Atc "select count(
 | 13 | 只读成员能改 VPC 名；只读成员删 VPC 被安全组权限挡住回滚，但回滚前已向所有节点下发 `clear_local_router.sh`（D5 / FAIL-N1，2026-09-28；2026-09-30 修，2026-10-01 已部署） | `RouterAdmin.Update` 无权限检查；`Delete` 只要求 `OrgReader`，且检查在下发之后 | NET-08：R 改名 / 删除都是 403，cland 日志没有这次的 `clear_local_router.sh` |
 | 14 | 新建 VPC 时别的某个安全组的 `is_default` 被清掉（审查 D5 时发现；2026-09-30 修，2026-10-01 已部署） | `SecgroupAdmin.Switch` 在路由器还没有默认组时 `Take(ID=0)`，取到任意一个组 | NET-01：建 VPC 前后 `is_default` 的组只多出新 native 组 |
 | 15 | 子网表单的 VPC 下拉超过 50 个 VPC 缺项（与 FAIL-8 同类；2026-09-30 修，2026-10-01 已部署） | 取列表不带 `limit` | NET-01：请求带 `limit=500` |
+| 16 | 删掉还有子网 / 浮动 IP 引用的 IP 组，引用悬空（对齐 03 N3，2026-10-14 修，未部署） | `IpGroupAdmin.Delete` 不检查引用 | NET-11 第 3 步：400 131405；`TestIpGroupDeleteInUsePG` |
 
 ---
 

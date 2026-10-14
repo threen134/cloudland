@@ -1,6 +1,6 @@
 # 设计文档索引
 
-本目录有 34 份设计文档（不含本索引），写于不同时期，**可信度差别很大**。判断一个功能「应该怎样」时，只拿标为「维护中」的文档当依据；其余的只看来龙去脉，以代码和当前文档（`docs/deployment/`、`docs/guide/`）为准。
+本目录有 36 份设计文档（不含本索引），写于不同时期，**可信度差别很大**。判断一个功能「应该怎样」时，只拿标为「维护中」的文档当依据；其余的只看来龙去脉，以代码和当前文档（`docs/deployment/`、`docs/guide/`）为准。
 
 做法与背景见 [设计文档、实现与回归测试的统一](../design-code-test-alignment.md)。
 
@@ -24,6 +24,8 @@
 | [sci-grpc-rewrite.md](sci-grpc-rewrite.md) | 控制面 → 计算节点的 gRPC 下发链路（cland-go / cloudlet-go） | 2026-10-14 复查，之后的变化写在 §13 |
 | [distributed-tracing-otel-tempo-plan.md](distributed-tracing-otel-tempo-plan.md) | OpenTelemetry + Tempo 链路追踪 | 2026-10-14 复查，部署上的差异写在 §12 |
 | [cpgateway-go-migration-plan.md](cpgateway-go-migration-plan.md) | 控制面网关（cpgateway） | 2026-10-14 复查，之后的变化写在 §13 |
+| [compute-behavior.md](compute-behavior.md) | 计算资源行为说明：云服务器、迁移、云硬盘、镜像、规格与密钥（不是实施方案，只写对外行为） | 2026-10-14 功能域对齐 02 时按代码与 `CLAUDE.md` 整理 |
+| [network-behavior.md](network-behavior.md) | 网络行为说明：VPC、子网、可用区、IP 组、安全组、弹性公网 IP、负载均衡 | 2026-10-14 功能域对齐 03 时按代码与 `CLAUDE.md` 整理 |
 
 ## 历史
 
@@ -63,4 +65,4 @@
 
 ## 没有设计文档的功能域
 
-虚拟机生命周期、云硬盘、镜像、网络（VPC / 子网 / 安全组 / 弹性 IP）、负载均衡、组织 / 用户 / 配额、告警、控制台、审计与组织动态、部署与计算节点。这些功能域的回归用例以代码和 `CLAUDE.md` 的约定为准；需要时补一页简短的行为说明（见对齐文档 §3.1）。
+组织 / 用户 / 配额、告警、控制台、审计与组织动态、部署与计算节点。这些功能域的回归用例以代码和 `CLAUDE.md` 的约定为准；需要时补一页简短的行为说明（见对齐文档 §3.1）。虚拟机、迁移、云硬盘、镜像、规格与密钥 2026-10-14 已有行为说明 `compute-behavior.md`，网络与负载均衡有 `network-behavior.md`。

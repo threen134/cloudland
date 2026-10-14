@@ -1,0 +1,4 @@
+# Gateway whitelist entries (cpgateway/src/apis/proxy_routes.go) forwarded to a path clapi does not
+# register: "METHOD PATH reason". Empty since 2026-10-14 (alignment 03 N5 removed the last four). Do not
+# add entries here: fix the whitelist or the clapi route instead. The check fails while a fixed entry is
+# still listed.

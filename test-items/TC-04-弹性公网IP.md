@@ -2,6 +2,8 @@
 
 优先级 **P0** · 会在计算节点上真实下发 iptables 规则 · 约 30 min
 
+依据：`docs/architecture/plan/network-behavior.md` §5（弹性公网 IP）、§1（权限）。每条用例对应的章节见追踪表「设计依据」列。
+
 ## ⚠️ 公网地址只剩 1 个（2026-09-28 基线）
 
 `public-756` 只剩 **`52.117.101.158`** 一个空闲地址。凡是要占公网地址的用例——本文件 FIP-01～03 / FIP-07 / FIP-08、`TC-02` 公网子网上的虚拟机、`TC-05 SG-05`、`TC-06` 负载均衡浮动 IP、`TC-17` VPN 网关、`TC-18` 公网子网上的成员——**同一时刻只能有一个在用**：
@@ -38,6 +40,8 @@
 ---
 
 ## FIP-01 申请（不挂实例）
+
+依据：`network-behavior.md` §5.1。申请后 `GET /floating_ips/:id` 读回地址、名称、带宽、未挂载。
 
 **P0** · 脚本 `fip3.js` 的申请部分（写入类：只放开 `POST` / `PATCH /api/v1/floating_ips*`）· **占用 `.158`**
 
@@ -297,6 +301,8 @@ api GET "/floating_ips?limit=100" | jq -r ".floating_ips[].name" | grep wp- || e
 
 ---
 
+**删除的权限（对齐 03 N4，2026-10-14 修，未部署）**：系统管理员把 A 组织的浮动 IP 挂到 B 组织的云服务器上之后，B 组织的写成员 `PATCH /floating_ips/:id {"instance": null}` 卸载 → 200（卸载按挂载目标的组织也可以）；`DELETE /floating_ips/:id` → **403**，地址不释放；A 组织写成员删除 → 成功；A 组织只读成员删除 → 403。原先删除复用卸载的判断，B 组织能把 A 的地址释放掉。连带删除（删负载均衡、VPN 网关时）不受这条限制：系统管理员给 B 的负载均衡挂了 A 的浮动 IP 后，B 删自己的负载均衡照常成功（第二轮 code review 指出第一版把连带删除也拦了；PG 测试 `TestFloatingIpCascadeDeletePG`）。依据：`network-behavior.md` §1。单元测试 `services/network_perm_test.go` `TestFloatingIpDeleteNeedsOwner`。
+
 ## FIP-08 配额按 owner_uuid 释放
 
 **P2** · 新增（2026-09-28）· **另占一次 `.158`**，放在 FIP-03 之后
@@ -332,6 +338,7 @@ api GET "/floating_ips?limit=100" | jq -r ".floating_ips[].name" | grep wp- || e
 | 13 | 弹性 IP 列表名称列表头写成「用户名」；实例 / 子网下拉不带 `limit`（D16、FAIL-8 同类，2026-09-28；2026-09-30 修，2026-10-01 已部署） | 文案键用错；取列表不带 `limit` | FIP-04 |
 | 14 | 负载均衡 / VPN 网关浮动 IP 的**入方向与出方向**限速都从没生效（2026-09-30 修，2026-10-01 已部署） | 出方向同上；入方向 filter 挂在 `te-` 上按目的地址匹配，而发往 VIP 的流量是从 `te-` 进路由器的 | `TC-06` LB-04「负载均衡浮动 IP 限速」：入方向在宿主机 `ext-` 上，iperf 实测 |
 | 15 | 浮动 IP id 增长到 10000 以上后限速设不上（2026-09-30 修，2026-10-01 已部署） | tc 把十进制 id 当十六进制次号读，16 位放不下 | 编号改为公网地址低 16 位；FIP-07 按 `1:659e` 核对 |
+| 16 | 挂载目标的组织能删掉别的组织的浮动 IP（对齐 03 N4，2026-10-14 修，未部署） | 删除复用卸载的 `checkDetachable` | FIP-07 末尾：删除 403、卸载 200 |
 
 ---
 
