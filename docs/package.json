@@ -16,5 +16,11 @@
   },
   "dependencies": {
     "@scalar/api-reference": "^1.49.5"
+  },
+  "overrides": {
+    "@ai-sdk/provider-utils": "^4.0.51",
+    "dompurify": "^3.4.17",
+    "katex": "^0.19.0",
+    "source-map-js": "^1.2.2"
   }
 }
