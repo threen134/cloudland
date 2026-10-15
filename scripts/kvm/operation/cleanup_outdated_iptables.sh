@@ -18,6 +18,7 @@ done
 
 lock_file="$run_dir/iptables.lock"
 exec 200>>"$lock_file"
+flock -w 60 -x 200 || exit 0
 for i in {1..10}; do
     ln=$(iptables -n -L FORWARD --line-numbers | grep 'state RELATED,ESTABLISHED' | tail -1 | cut -d' ' -f1)
     [ "$ln" = 1 ] && break
@@ -29,4 +30,7 @@ ln=$(iptables -n -L secgroup-chain --line-numbers | grep 'ACCEPT' | head -1 | cu
 if [ "$ln" = 1 ]; then
     iptables -A secgroup-chain -j ACCEPT && iptables -D secgroup-chain -j ACCEPT
 fi
+# Router-port and bridge-internal ACCEPTs above a security group jump would bypass that instance's security group;
+# the lock is already held here, the locking wrapper would wait on it
+fw_order_accepts_unlocked
 flock -u 200

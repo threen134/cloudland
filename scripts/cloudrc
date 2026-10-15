@@ -130,8 +130,69 @@ function apply_vnic()
 {
     action=$1
     vnic=$2
+    if [ "$action" = '-I' -o "$action" = '-A' ]; then
+        # Appended, not inserted at rule 3 like the security group jumps: an ACCEPT for traffic entering the bridge from
+        # the router port (ln-<vni>) ahead of an instance's jump lets floating IP / routed traffic past its security group
+        fw_locked fw_append_vnic $vnic
+        return
+    fi
     apply_fw $action FORWARD -m physdev --physdev-in $vnic --physdev-is-bridged -j ACCEPT
     apply_fw $action FORWARD -m physdev --physdev-out $vnic --physdev-is-bridged -j ACCEPT
+}
+
+# Runs a FORWARD reordering helper under $run_dir/iptables.lock, the lock reapply_secgroup / clear_sg_chain / the
+# cleanup job take: a delete-and-append move racing another one can leave two REJECTs or an ACCEPT above a REJECT
+function fw_locked()
+{
+    (
+        flock -w 30 -x 200 || echo "fw_locked: $run_dir/iptables.lock busy, reordering FORWARD unlocked" >&2
+        "$@"
+    ) 200>>"$run_dir/iptables.lock"
+}
+
+function fw_append_vnic()
+{
+    local vnic=$1
+    iptables -C FORWARD -m physdev --physdev-in $vnic --physdev-is-bridged -j ACCEPT 2>/dev/null ||
+        iptables -A FORWARD -m physdev --physdev-in $vnic --physdev-is-bridged -j ACCEPT
+    iptables -C FORWARD -m physdev --physdev-out $vnic --physdev-is-bridged -j ACCEPT 2>/dev/null ||
+        iptables -A FORWARD -m physdev --physdev-out $vnic --physdev-is-bridged -j ACCEPT
+    fw_order_accepts_unlocked
+}
+
+function fw_append_bridge()
+{
+    local mybr=$1
+    iptables -C FORWARD -i $mybr -o $mybr -j ACCEPT 2>/dev/null || iptables -A FORWARD -i $mybr -o $mybr -j ACCEPT
+    fw_order_accepts_unlocked
+}
+
+# Moves every router-port (ln-*) and bridge-internal ACCEPT that sits above a security group jump to the end of FORWARD,
+# then the final REJECT after everything: such an ACCEPT ahead of an instance's jump bypasses its security group, and
+# an ACCEPT appended after the REJECT never matches. The caller holds $run_dir/iptables.lock (see fw_order_accepts)
+function fw_order_accepts_unlocked()
+{
+    local last rule
+    last=$(iptables -S FORWARD | grep -n -- '-j secgroup-chain' | tail -1 | cut -d: -f1)
+    if [ -n "$last" ]; then
+        iptables -S FORWARD | head -n "$last" |
+            grep -E -- '(--physdev-(in|out) ln-[^ ]+ --physdev-is-bridged|-i br[^ ]+ -o br[^ ]+) -j ACCEPT$' |
+            while read -r rule; do
+                rule=${rule#-A FORWARD }
+                iptables -D FORWARD $rule && iptables -A FORWARD $rule
+            done
+    fi
+    # Also with no security group jump yet (a node without instances): rules appended above must stay before it
+    if iptables -C FORWARD -j REJECT --reject-with icmp-host-prohibited 2>/dev/null &&
+        [ "$(iptables -S FORWARD | tail -1)" != "-A FORWARD -j REJECT --reject-with icmp-host-prohibited" ]; then
+        iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
+        iptables -A FORWARD -j REJECT --reject-with icmp-host-prohibited
+    fi
+}
+
+function fw_order_accepts()
+{
+    fw_locked fw_order_accepts_unlocked
 }
 
 function apply_bridge()
@@ -139,14 +200,9 @@ function apply_bridge()
     action=$1
     mybr=$2
     if [ "$action" = '-I' -o "$action" = '-A' ]; then
-        # 网桥内部放行必须排在安全组跳转之后（apply_fw 把安全组跳转插在 FORWARD 第 3 条），
-        # 排在前面会让该网桥上所有虚拟机的安全组失效；追加到链尾并把兜底 REJECT 重新挪到最后
-        iptables -C FORWARD -i $mybr -o $mybr -j ACCEPT 2>/dev/null && return
-        iptables -A FORWARD -i $mybr -o $mybr -j ACCEPT
-        if iptables -C FORWARD -j REJECT --reject-with icmp-host-prohibited 2>/dev/null; then
-            iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
-            iptables -A FORWARD -j REJECT --reject-with icmp-host-prohibited
-        fi
+        # A bridge-internal ACCEPT must come after the security group jumps (apply_fw inserts them at rule 3) and
+        # before the final REJECT
+        fw_locked fw_append_bridge $mybr
         return
     fi
     iptables $action FORWARD -i $mybr -o $mybr -j ACCEPT 2>/dev/null || true

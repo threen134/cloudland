@@ -244,7 +244,10 @@ systemctl disable --now haproxy 2>/dev/null || true
 # VPN gateways: strongSwan (IKEv2), WireGuard and FRR (BGP) run per gateway inside the router netns,
 # started by the vpn scripts; the system services would grab /etc/swanctl, /run/frr and the IKE ports
 apt-get install -y strongswan-swanctl strongswan-charon wireguard-tools frr
-systemctl disable --now strongswan-starter strongswan ipsec frr 2>/dev/null || true
+# One unit per call: systemctl gives up on the whole list when one name is unknown (no strongswan.service on 24.04)
+for unit in strongswan-starter strongswan ipsec frr; do
+    systemctl disable --now $unit 2>/dev/null || true
+done
 # Ubuntu confines charon, swanctl and bgpd with AppArmor to their packaged paths; allow the per-gateway
 # directories (charon's pid dir is compiled in, the scripts bind-mount a private one over /run)
 mkdir -p /etc/apparmor.d/local

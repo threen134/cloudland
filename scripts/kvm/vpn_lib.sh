@@ -456,10 +456,17 @@ vpn_frr_ns()
     echo "vpn-$1"
 }
 
+# mgmtd only exists from FRR 9 on (26.04 ships 10.x); 24.04 ships 8.4, where staticd is configured directly
+vpn_frr_has_mgmtd()
+{
+    [ -x $frr_bin_dir/mgmtd ]
+}
+
 vpn_frr_alive()
 {
     local ns=$(vpn_frr_ns $1)
-    vpn_pid_alive /var/run/frr/$ns/zebra.pid zebra && vpn_pid_alive /var/run/frr/$ns/mgmtd.pid mgmtd && vpn_pid_alive /var/run/frr/$ns/staticd.pid staticd &&
+    vpn_pid_alive /var/run/frr/$ns/zebra.pid zebra && { ! vpn_frr_has_mgmtd || vpn_pid_alive /var/run/frr/$ns/mgmtd.pid mgmtd; } &&
+        vpn_pid_alive /var/run/frr/$ns/staticd.pid staticd &&
         vpn_pid_alive /var/run/frr/$ns/bfdd.pid bfdd && vpn_pid_alive /var/run/frr/$ns/bgpd.pid bgpd
 }
 
@@ -492,16 +499,20 @@ vpn_start_frr()
         [ -S /var/run/frr/$ns/zserv.api ] && break
         sleep 0.25
     done
-    vpn_trace "frr: zebra $([ -S /var/run/frr/$ns/zserv.api ] && echo up || echo NOT UP), launching mgmtd"
+    vpn_trace "frr: zebra $([ -S /var/run/frr/$ns/zserv.api ] && echo up || echo NOT UP)"
     [ -n "$VPN_TRACE" ] && [ ! -S /var/run/frr/$ns/zserv.api ] && vpn_trace "env: uid=$(id -u) umask=$(umask) netns=$(ip netns identify $$ 2>&1 | tr '
 ' ' ') rundir=$(ls -ld /var/run/frr/$ns 2>&1 | cut -c1-60) conf=$(ls /etc/frr/$ns/ 2>&1 | tr '
 ' ' ')"
-    ip netns exec $router $frr_bin_dir/mgmtd -N $ns -d >/dev/null 2>&1 9>&-
-    for i in {1..20}; do
-        [ -S /var/run/frr/$ns/mgmtd.vty ] && break
-        sleep 0.25
-    done
-    vpn_trace "frr: mgmtd $([ -S /var/run/frr/$ns/mgmtd.vty ] && echo up || echo NOT UP), launching staticd, bfdd and bgpd"
+    if vpn_frr_has_mgmtd; then
+        ip netns exec $router $frr_bin_dir/mgmtd -N $ns -d >/dev/null 2>&1 9>&-
+        for i in {1..20}; do
+            [ -S /var/run/frr/$ns/mgmtd.vty ] && break
+            sleep 0.25
+        done
+        vpn_trace "frr: launched mgmtd, $([ -S /var/run/frr/$ns/mgmtd.vty ] && echo up || echo NOT UP); launching staticd, bfdd and bgpd"
+    else
+        vpn_trace "frr: no mgmtd in this FRR version, launching staticd, bfdd and bgpd"
+    fi
     ip netns exec $router $frr_bin_dir/staticd -N $ns -d >/dev/null 2>&1 9>&-
     ip netns exec $router $frr_bin_dir/bfdd -N $ns -d >/dev/null 2>&1 9>&-
     ip netns exec $router $frr_bin_dir/bgpd -N $ns -d >/dev/null 2>&1 9>&-
