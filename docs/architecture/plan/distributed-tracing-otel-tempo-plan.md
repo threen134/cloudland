@@ -524,3 +524,17 @@ OTEL_RESOURCE_ATTRIBUTES=cloudland.node_id=$NODE_ID,cloudland.zone=$ZONE_NAME
 | 中央 Tempo | §5.6 | 没实施：每个区域一套 Tempo；compose 留了 `TEMPO_QUERY_URL`、`TRACING_BACKEND_ENDPOINT` 两个变量供以后指向中央 |
 
 本文范围内没有回归用例专门测追踪；`test-items/TC-12` UI-09（错误提示里的 Trace ID）与 `TC-10` ALM-08（追踪告警）覆盖了一部分，改追踪行为时同步改这两条。
+
+## 13. 回归用例对照
+
+由 `test-items/scripts/check_route_coverage.py --update-design-maps` 按追踪表 `test-items/回归功能追踪.csv` 的「设计依据」列生成，不要手改（2026-10-14 起，功能域对齐第 5 步）。
+
+<!-- regression-map:begin -->
+
+> 由 `test-items/scripts/check_route_coverage.py --update-design-maps` 从回归追踪表（`test-items/回归功能追踪.csv` 的「设计依据」列）生成，**不要手改**：改追踪表后重新生成，CI 会检查两边是否一致。
+
+| 章节 | 功能（功能域 / 大功能 / 子功能） | 回归用例 |
+|---|---|---|
+| §3.1 链路全景 | 界面 / 通用 / 前端链路追踪 | TC-12 UI-09 |
+
+<!-- regression-map:end -->

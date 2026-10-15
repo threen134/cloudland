@@ -1179,3 +1179,20 @@ deploy/docker/scripts/cloudland-entrypoint.sh
 **没变、仍以 §12 为准的**：节点校验端点与 5 分钟刷新、鉴权（未配置 `GRPC_AUTH_TOKEN` 拒绝启动）、会话 ID、串行执行（`CLOUDLET_CONCURRENCY`）、断线立即重连、control 解析与调度、回调转发的重试（最多 3 次，所以 clapi 的回调 handler 要幂等）。
 
 **已知问题**（本文范围内，未修）：clapi → cland、cloudlet ↔ cland 的 gRPC 没有 TLS，令牌与下发的凭据在管理网上是明文（`CLAUDE.md` 待办 A6）；集群共用一对 cland SSH 密钥，`NodeAdd` 把私钥发给每个节点（待办 A1）。
+
+## 14. 回归用例对照
+
+由 `test-items/scripts/check_route_coverage.py --update-design-maps` 按追踪表 `test-items/回归功能追踪.csv` 的「设计依据」列生成，不要手改（2026-10-14 起，功能域对齐第 5 步）。
+
+<!-- regression-map:begin -->
+
+> 由 `test-items/scripts/check_route_coverage.py --update-design-maps` 从回归追踪表（`test-items/回归功能追踪.csv` 的「设计依据」列）生成，**不要手改**：改追踪表后重新生成，CI 会检查两边是否一致。
+
+| 章节 | 功能（功能域 / 大功能 / 子功能） | 回归用例 |
+|---|---|---|
+| §4.1 cland-go | 安全 / 已知风险 / 集群共用 cland SSH 密钥 | TC-13 SEC-06 |
+| §13 NodeAdd | 安全 / 已知风险 / 集群共用 cland SSH 密钥 | TC-13 SEC-06 |
+| §13 命令执行 | 安全 / 凭据 / 下发命令不进日志 | TC-13 SEC-15 |
+| §13 没有 TLS | 安全 / 已知风险 / 下发链路没有 TLS | TC-13 SEC-14 |
+
+<!-- regression-map:end -->

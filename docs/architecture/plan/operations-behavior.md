@@ -28,7 +28,7 @@ clapi 只按网关转发来的身份判断（网关每次按数据库取角色�
 
 - **节点告警规则**（`/node-alarm-rules`）、**VM 告警规则**（`/metrics/alarm/{cpu,memory,bw}/rules`，规则组 + 明细 + 关联的云服务器）、**告警事件**（`/alarm/events`）各自独立
 - 事件不是接口创建的：Prometheus 按规则文件判定 → Alertmanager → clapi `POST /api/v1/alerts/process`。clapi 按 `fingerprint` 幂等写入，`labels.owner` 是 clapi 本地组织 ID；没有 owner 的（节点告警）归系统组织；第一次收到就是 resolved 的记成 resolved
-- **回调要带共享令牌**：`Authorization: Bearer <ALERT_WEBHOOK_TOKEN>`。clapi 没配令牌时拒绝所有回调（不放行）；Docker 部署由 Alertmanager 容器启动时把令牌写进 `/data/webhook_token`，`alertmanager.yml` 用 `credentials_file` 引用；部署脚本在为空时生成，HA 两台同步。Ansible 部署用 `netconf.yml` 的 `alert_webhook_token`（`build.sh` 生成），写进 clapi 配置的 `[alert] webhook_token` 与 monitor 角色的接收器。clapi 的 8255 对整个管理网可达，没有令牌时任何机器都能伪造任意组织的告警并经它的渠道发出去
+- **回调要带共享令牌**：`Authorization: Bearer <ALERT_WEBHOOK_TOKEN>`。clapi 没配令牌时拒绝所有回调（不放行）；Docker 部署由 Alertmanager 容器启动时把令牌写进容器自己的 `/tmp/webhook_token`（不放挂载卷：不依赖宿主机 `volumes/alertmanager` 的属主，令牌也不落宿主机磁盘），`alertmanager.yml` 用 `credentials_file` 引用；部署脚本在为空时生成，HA 两台同步。Ansible 部署用 `netconf.yml` 的 `alert_webhook_token`（`build.sh` 生成），写进 clapi 配置的 `[alert] webhook_token` 与 monitor 角色的接收器。clapi 的 8255 对整个管理网可达，没有令牌时任何机器都能伪造任意组织的告警并经它的渠道发出去
 - VPN 网关的告警（`VpnTunnelDown`、`VpnConnectionDown` 等）不经 Prometheus：clapi 直接写事件，推给网关所属组织启用的渠道（`vpn-gateway-plan.md` §9.6）
 - 链路追踪告警带 `source=tracing`，路由到 `platform` 接收器，不进 clapi
 - 事件保留 `ALARM_EVENT_RETENTION_DAYS` 天（默认 30），clapi 后台清理
@@ -173,11 +173,13 @@ clapi 启动后在后台重建 VM 告警规则与资源自动调整规则的文�
 | §1 权限 | 计算 / 控制台 / token 与权限 | TC-09 CON-06 |
 | §1 权限 | 控制面 / 告警 / 节点告警规则 | TC-10 ALM-02、ALM-03、ALM-03b、ALM-04 |
 | §1 权限 | 控制面 / 告警 / VM 告警规则的权限 | TC-10 ALM-05；TC-10 ALM-07 |
+| §1 权限 | 安全 / 越权 / 越权回归 | TC-13 SEC-09 |
 | §1 权限 | 部署与计算节点 / 计算节点 / 列表与详情 | TC-27 HYP-01；TC-12 UI-01 |
 | §2.1 三块功能与事件来源 | 控制面 / 告警 / 告警事件 | TC-10 ALM-06 |
 | §2.1 三块功能与事件来源 | 控制面 / 告警 / 告警回调鉴权 | TC-10 ALM-06 |
 | §2.1 三块功能与事件来源 | 控制面 / 告警 / 链路追踪告警 | TC-10 ALM-08 |
 | §2.1 三块功能与事件来源 | 控制面 / 告警 / VPN 告警事件 | TC-10 ALM-12 |
+| §2.1 三块功能与事件来源 | 安全 / 暴露面 / 无鉴权接口与端口 | TC-13 SEC-04 |
 | §2.2 规则文件是全有或全无 | 控制面 / 告警 / 规则文件全有或全无 | TC-10 ALM-00 |
 | §2.2 规则文件是全有或全无 | 控制面 / 告警 / 规则变量名 | TC-10 ALM-01 |
 | §2.2 规则文件是全有或全无 | 控制面 / 告警 / VM 告警规则的权限 | TC-10 ALM-05；TC-10 ALM-07 |
@@ -192,10 +194,17 @@ clapi 启动后在后台重建 VM 告警规则与资源自动调整规则的文�
 | §2.8 资源自动调整（未启用） | 控制面 / 告警 / 告警回调鉴权 | TC-10 ALM-06 |
 | §3.1 图形控制台（VNC） | 计算 / 控制台 / 图形控制台（VNC） | TC-09 CON-01 |
 | §3.1 图形控制台（VNC） | 计算 / 控制台 / token 与权限 | TC-09 CON-06 |
+| §3.1 图形控制台（VNC） | 安全 / 暴露面 / VNC 密码 | TC-13 SEC-13 |
+| §3.1 图形控制台（VNC） | 高可用 / 计算节点重启 / 其他恢复 | TC-14 HA-06 |
 | §3.2 文本控制台（串口） | 计算 / 控制台 / 文本控制台（串口） | TC-09 CON-02 |
 | §3.2 文本控制台（串口） | 计算 / 控制台 / 依赖与环境 | TC-09 CON-04 |
+| §3.2 文本控制台（串口） | 安全 / 暴露面 / 串口与主机终端端口 | TC-13 SEC-05；TC-09 CON-02、CON-03 |
 | §3.3 计算节点终端 | 计算 / 控制台 / 计算节点终端 | TC-09 CON-03 |
+| §3.3 计算节点终端 | 安全 / 暴露面 / 串口与主机终端端口 | TC-13 SEC-05；TC-09 CON-02、CON-03 |
 | §3.4 多窗口登录态 | 计算 / 控制台 / 多窗口登录态 | TC-09 CON-07；TC-12 UI-07 |
+| §3.4 多窗口登录态 | 界面 / 通用 / 多窗口登录态 | TC-12 UI-07 |
+| §4.1 控制节点 | 安全 / 暴露面 / 无鉴权接口与端口 | TC-13 SEC-04 |
+| §4.1 控制节点 | 高可用 / 控制节点 / 控制节点重启 | TC-14 HA-07 |
 | §4.1 控制节点 | 部署与计算节点 / 部署 / 一键部署控制节点 | TC-27 DEP-01 |
 | §4.2 控制面 HA 与多区域 | 部署与计算节点 / 部署 / 控制面 HA | TC-27 DEP-04 |
 | §4.2 控制面 HA 与多区域 | 部署与计算节点 / 部署 / 多区域 | TC-27 DEP-05 |
