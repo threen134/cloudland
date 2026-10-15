@@ -1928,7 +1928,7 @@ RBD 的 `image_base` 是副本的镜像名，不带快照名，驱动自己加 `
 | 接口 | 说明 |
 |---|---|
 | `GET /storage_backends` | 支持的存储类型：每种的角色、贡献磁盘的角色、建议角色、支持的系统、是否要内核模块或容器（§4.5.1）；界面按它渲染（S1 已实现） |
-| `GET /storage_clusters`、`GET /storage_clusters/:id` | 列表、详情（节点、磁盘、文件系统、存储池摘要、健康、正在跑的任务，以及按布局取的 `capabilities`、按布局给出的摘要 `layout_info`（纠删码的恢复组、纠删码卷等）、是否测试布局 `test_layout`（数据只有一份，由后端的可选接口 `storageTestLayout` 判断，2026-10-07 补）、自动加入设置 `auto_join`）；节点与磁盘的类型专用属性在 `attrs` 里原样返回。详情不返回集群参数 `params` |
+| `GET /storage_clusters`、`GET /storage_clusters/:id` | 列表、详情（节点、磁盘、文件系统、存储池摘要、健康、正在跑的任务，以及按布局取的 `capabilities`、按布局给出的摘要 `layout_info`（纠删码的恢复组、纠删码卷等）、是否测试布局 `test_layout`（数据只有一份，由后端的可选接口 `storageTestLayout` 判断，2026-10-07 补）、自动加入设置 `auto_join`）；节点与磁盘的类型专用属性在 `attrs` 里原样返回。详情另有 `edition`：集群当前所用软件包的版本类型（GPFS；不来自软件包时没有这一项，2026-10-15 补，升级弹窗按它只列同一版本类型的包，后端照旧拒绝别的版本类型）。详情不返回集群参数 `params` |
 | `POST /storage_clusters/precheck` | 只做预检：`{kind, nodes, disks, params, allow_unsupported}`，返回任务 ID（任务种类 `precheck`，不占集群）。`kind` 与角色由后端校验；`params` 是 JSON 对象，原样交给该类型的后端解析，不认识的键返回 400 |
 | `POST /storage_clusters` | 新建托管集群：`{kind, name, description, package_id, nodes:[{hypervisor, roles}], disks:[{hypervisor, disk_id, media, wipe}], params, allow_unsupported}`；节点用 UUID 指定，与其他接口一致。布局与容器镜像都在 `params` 里：GPFS 的 `layout`（`replica` / `ece` / `san`），Ceph 的 `image`、`registry`、`registry_user`、`registry_password`（口令拆进 `secrets` 加密保存，§5.1）；`package_id` 只有要软件包的类型（GPFS）才用 |
 | `POST /storage_clusters/import` | 导入外部集群：`{kind, name, description, hypervisors, params}`（§7.8、§8.8） |
@@ -1980,13 +1980,13 @@ RBD 的 `image_base` 是副本的镜像名，不带快照名，驱动自己加 `
 
 ### 13.3 界面
 
-侧边栏「存储」分组（`views/dashboard/Layout.vue`）：存储池、**存储集群**、**软件包**（S2）。页面一律复用现有的基础组件（`BaseModal`、`DataTable`、`StatusBadge`、`PaginationBar`、`useListQuery`、`DetailTabs`、`InfoRow`、`CapacityBar`、`MonitoringPanel`），长表单弹窗的报错放在底栏按钮旁。
+侧边栏「存储」分组（`views/dashboard/Layout.vue`）：存储池、**存储集群**。软件包原来是单独一页（S2），2026-10-15 起并进存储集群页作为一个标签：它只给建集群和升级用，一年上传不了几次。页面一律复用现有的基础组件（`BaseModal`、`DataTable`、`StatusBadge`、`PaginationBar`、`useListQuery`、`DetailTabs`、`InfoRow`、`CapacityBar`、`MonitoringPanel`），长表单弹窗的报错放在底栏按钮旁。
 
-- **软件包页**：列表；上传弹窗（分片上传、进度条、断点续传，也可以填下载地址）；许可证弹窗（全文 + 「我已阅读并接受」）
-- **存储集群列表**：两个标签页。「集群」：名称（正在跑的任务以标签显示在名称旁）、类型（GPFS / Ceph）、模式（托管 / 外部）、状态、健康、节点 / 磁盘 / 存储池数、容量条、创建时间；版本没有单独一列（没实现）。「任务」：全部存储任务（含预检、自测）。工具栏有自测、预检、新建
+- **软件包**（存储集群页的「软件包」标签，`?tab=packages`；旧地址 `/dashboard/storage-packages` 重定向过来）：列表；上传弹窗（分片上传、进度条、断点续传，也可以填下载地址）；许可证弹窗（全文 + 「我已阅读并接受」）。创建向导的软件步骤和集群详情的升级弹窗里也能直接上传、接受许可证（`useStoragePackageFlow`）：上传弹窗预先选好这种存储；传完的包在列表里显示「上传中 / 校验中」（升级弹窗里这时还不知道版本，照样列出），每 5 秒刷新，校验通过后自动弹出许可证，接受后自动选中；已校验、许可证没接受的包有「接受许可证」按钮；下载或校验失败时在原处显示失败原因。只在向导停在软件步骤、升级弹窗开着时才刷新和自动弹许可证：离开后不再弹出，也不会改动已经做的选择（否则会换掉预检时用的包）。升级弹窗只列比集群新、与集群同一版本类型（详情的 `edition`）的包；刚上传的包不合适时说明原因（不够新 / 版本类型不同），不弹许可证。不必离开向导，已填的内容不丢
+- **存储集群列表**：三个标签页（集群、任务、软件包；当前标签记在地址的 `tab` 参数里）。「集群」：名称（正在跑的任务以标签显示在名称旁）、类型（GPFS / Ceph）、模式（托管 / 外部）、状态、健康、节点 / 磁盘 / 存储池数、容量条、创建时间；版本没有单独一列（没实现）。「任务」：全部存储任务（含预检、自测）。工具栏有自测、预检、新建；在「软件包」标签上只有刷新和上传
 - **创建向导**（整页，不用弹窗，步骤太多）。托管集群 6 步：类型 → 软件（只有要软件包的类型，即 GPFS）→ 节点与磁盘 → 参数 → 预检 → 确认；外部集群 4 步：类型 → 节点 → 参数 → 确认
   1. 类型：每种存储一张「部署 <类型>」卡片，GPFS 另有「纠删码」和「SAN」两张（纠删码布局没有单节点测试形态）；支持导入的类型另有「导入外部 <类型>」
-  2. 软件：GPFS 选一个软件包，显示版本、版本类型、支持的发行版；许可证没接受的不能选，纠删码布局要纠删码版。Ceph 没有这一步，镜像地址与私有仓库在参数步骤里填
+  2. 软件：GPFS 选一个软件包，显示版本、版本类型、支持的发行版；许可证没接受的不能选（行内有「接受许可证」按钮），纠删码布局要纠删码版。没有可用的包时在这一步点「上传安装包」就地上传（见上面「软件包」）。Ceph 没有这一步，镜像地址与私有仓库在参数步骤里填
   3. 节点与磁盘（同一步，`StorageHostPicker`）：区域内的节点（显示主机名、IP、状态，状态 4 / 5 / 10 的不能选），勾角色；贡献磁盘的节点列出扫描到的盘（型号、大小、介质、扫描时间，超过 24 小时提示重新扫描），`dirty` 的盘要单独勾「擦除」；SAN 布局列的是共享 LUN，在每台服务它的节点下都要勾。原设计的每行系统 / 内核（不在支持范围标红）、内存余量、已在哪个集群，以及勾角色时的实时校验（仲裁节点奇数、mon 奇数、副本数与节点数）都没实现，这些在预检和提交时由后端检查
   4. 参数：§7.2、§8.2 列的参数，带默认值；纠删码布局有纠删码参数；导入 Ceph 填 fsid、mon 地址、客户端用户与密钥
   5. 预检：一键执行，逐节点逐项显示结果；有不通过的项不能继续，系统不在支持范围的那一项可以勾「允许不受支持的系统（仅用于测试）」
@@ -2903,6 +2903,7 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 | §11.4 原节点恢复：先对账 | 共享存储 / 宕机恢复与隔离 / 对账遇到迁移中的云服务器 | TC-24 REC-10 |
 | §12.3 删除共享盘的规则 | 共享存储 / 共享存储池与数据卷 / 开着的卷不能删 | TC-21 CEPH-05 |
 | §12.4 凭据与权限 | 共享存储 / 共用框架 / 凭据保护 | TC-21 CEPH-11、CEPH-16；TC-20 回归点 17 |
+| §13.1 clapi 接口 | 共享存储 / 软件包仓库 / 就地上传（向导与升级弹窗） | TC-20 SHS-01 |
 | §13.1 clapi 接口 | 共享存储 / 任务引擎 / 任务列表 | TC-20 SHS-02 第 3 条 |
 | §13.1 clapi 接口 | 共享存储 / 共用框架 / 存储类型清单 | TC-20 SHS-03 |
 | §13.1 clapi 接口 | 共享存储 / GPFS 副本集群 / 测试布局 | TC-20 SHS-23 第 3 步；SHS-18 |
@@ -2911,6 +2912,7 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 | §13.1 clapi 接口 | 共享存储 / 运维 / Ceph 换盘 | TC-23 OPS-08 |
 | §13.1 clapi 接口 | 共享存储 / 界面 / 存储接口只给系统管理员 | TC-20 SHS-25 |
 | §13.2 cpgateway | 共享存储 / 界面 / 存储接口只给系统管理员 | TC-20 SHS-25 |
+| §13.3 界面 | 共享存储 / 软件包仓库 / 就地上传（向导与升级弹窗） | TC-20 SHS-01 |
 | §13.3 界面 | 共享存储 / 任务引擎 / 任务列表 | TC-20 SHS-02 第 3 条 |
 | §13.3 界面 | 共享存储 / GPFS 副本集群 / 向导部署 | TC-20 SHS-03 |
 | §13.3 界面 | 共享存储 / Ceph 集群 / 向导部署 | TC-21 CEPH-01 |
@@ -3023,7 +3025,7 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 
 ### 19.2 管理员：搭建
 
-**1. 上传安装包**（S2，§6.1）：侧边栏「存储 → 软件包」，上传 IBM 的安装包（约 1.7 GB）。
+**1. 上传安装包**（S2，§6.1）：「存储集群」页的「软件包」标签，上传 IBM 的安装包（约 1.7 GB）；也可以在新建集群向导的软件步骤里直接上传。
 
 - 分片上传，有进度条；断网后从断点接着传。也可以填下载地址，由平台自己拉取
 - 平台后台校验：算出 SHA-256 显示出来，供与 IBM 下载页核对；识别版本类型和支持的系统（22.04 / 24.04）
@@ -3341,7 +3343,7 @@ GPFS 纠删码（§7.9）、多集群远程挂载（一台节点访问多个 GPF
 | `cpgateway/src/apis/proxy_routes.go` | §13.2 | S1 起 |
 | `cpgateway/src/services/system_settings.go` | `STORAGE_ALERT_DELAY_MINUTES`、`STORAGE_POOL_USAGE_WARN_PERCENT`、`STORAGE_POOL_USAGE_CRITICAL_PERCENT` | S5 |
 | `web/src/`：`api/storageClusters.ts`（新增）；`views/dashboard/StorageClusters.vue`（新增）；`components/storage/`（`StoragePrecheckModal.vue`、`StoragePrecheckResults.vue`、`StorageSelftestModal.vue`、`StorageHostPicker.vue`）；任务详情页 `views/dashboard/StorageTaskDetail.vue`（设计里的「任务抽屉」做成了独立页面）；`utils/storageCluster.ts`；`router/index.ts`、`views/dashboard/Layout.vue`（「存储」分组）；三种语言包。类型、角色、建议角色取自 `GET /storage_backends`，不在前端写死（§4.5.1） | §13.3 | S1 |
-| `web/src/`：`api/storagePackages.ts`、`views/dashboard/StoragePackages.vue`（`StoragePackageUploadModal.vue`、`StorageLicenseModal.vue`）、`StorageClusterCreate.vue`、`StorageClusterDetail.vue`（`StorageExpandModal.vue`、`SharedPoolModal.vue`）；`StoragePools.vue`、`StoragePoolDetail.vue`、`HostStorageTab.vue`、`VolumeActionModals.vue`、`CreateInstanceModal.vue`、迁移弹窗（`MigrationList.vue`）与 `MigrationDetail.vue`。各类型的参数表单直接写在 `StorageClusterCreate.vue` 里，没有表单的类型填 JSON；设计里每种存储一个 `components/storage/params/<类型>.vue` **没有采用** | §13.3 | S2–S4 |
+| `web/src/`：`api/storagePackages.ts`、`components/storage/StoragePackageList.vue`（存储集群页的标签；原 `views/dashboard/StoragePackages.vue`，2026-10-15 并入）、`StoragePackageUploadModal.vue`、`StorageLicenseModal.vue`、`composables/useStoragePackageFlow.ts`（向导与升级弹窗里就地上传）、`StorageClusterCreate.vue`、`StorageClusterDetail.vue`（`StorageExpandModal.vue`、`SharedPoolModal.vue`）；`StoragePools.vue`、`StoragePoolDetail.vue`、`HostStorageTab.vue`、`VolumeActionModals.vue`、`CreateInstanceModal.vue`、迁移弹窗（`MigrationList.vue`）与 `MigrationDetail.vue`。各类型的参数表单直接写在 `StorageClusterCreate.vue` 里，没有表单的类型填 JSON；设计里每种存储一个 `components/storage/params/<类型>.vue` **没有采用** | §13.3 | S2–S4 |
 | `web/src/components/storage/`：`StorageClusterMetrics.vue`、`StorageReplaceDiskModal.vue`、`StorageChangeRolesModal.vue`、`StorageAutoJoinModal.vue`、`StoragePoolReconcile.vue` | 监控、换盘、改角色、自动加入、孤儿对账 | S5 |
 | `web/src/components/storage/`：`HostEvacuateModal.vue`、`HostRecoveryCard.vue`（`views/dashboard/HypervisorDetail.vue`）、`StorageRotateKeysModal.vue`、`StorageUpgradeModal.vue` | 疏散与宕机恢复卡片、轮换、升级 | S6 |
 | `web/src/`：`components/storage/StorageRemoteMounts.vue`、`components/image/ImageStorageCopies.vue`（`ImageDetail.vue`）；创建向导的纠删码、SAN 卡片 | 远程挂载、镜像的存储池副本与预热 | S7 |

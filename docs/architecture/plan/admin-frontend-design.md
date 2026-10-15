@@ -17,8 +17,7 @@ order: 12
 └── 组织                /dashboard/orgs           （同组里的「用户」所有人可见）
 存储                     （整个分组仅系统管理员）
 ├── 存储池              /dashboard/storage-pools
-├── 存储集群            /dashboard/storage-clusters
-└── 软件包              /dashboard/storage-packages
+└── 存储集群            /dashboard/storage-clusters   （标签：集群 / 任务 / 软件包）
 系统管理                 （整个分组仅系统管理员）
 ├── 区域管理            /dashboard/regions
 ├── 可用区              /dashboard/zones
@@ -40,7 +39,7 @@ order: 12
 | 控制面网关 | `cpgateway/src/apis/routes.go`、`proxy_routes.go` | 区域接口挂在 `admin` 组（`ActiveUser()` + `Superuser()`）；转发到区域的接口在白名单里标 `Admin: true`（`/hypers*`、`/migrations*`、`/instances/:id/migration_targets`、`/node-alarm-rules*`、`/metrics/hypers/*`、存储的写接口等），非系统管理员 403。转发时角色从数据库取，不信 token 声明（待办 A13） |
 | clapi | `api/src/services/*.go` | 再查一次 `CheckSystemPermission()`。可用区的读接口白名单不标管理员（建云服务器要选可用区），建 / 改 / 删由 clapi 拦（`services/zone.go`） |
 
-带 `requiresSuperAdmin` 的路由：组织（列表 / 详情）、区域、可用区（列表 / 详情）、计算节点（列表 / 详情）、存储池（列表 / 详情）、存储集群（列表 / 新建 / 详情）、软件包、存储任务详情、热迁移（列表 / 详情）、节点告警（列表 / 详情）、设置。
+带 `requiresSuperAdmin` 的路由：组织（列表 / 详情）、区域、可用区（列表 / 详情）、计算节点（列表 / 详情）、存储池（列表 / 详情）、存储集群（列表 / 新建 / 详情，软件包是列表页的一个标签）、存储任务详情、热迁移（列表 / 详情）、节点告警（列表 / 详情）、设置。
 
 ## 3. 区域管理
 
@@ -153,7 +152,7 @@ order: 12
 
 | 位置 | 内容 |
 |---|---|
-| 存储池 / 存储集群 / 软件包 / 存储任务 | `StoragePools.vue`、`StoragePoolDetail.vue`、`StorageClusters.vue`、`StorageClusterCreate.vue`（创建向导整页）、`StorageClusterDetail.vue`、`StoragePackages.vue`、`StorageTaskDetail.vue`；接口 `/storage_pools*`、`/storage_clusters*`、`/storage_packages*`、`/storage_tasks*`、`/storage_backends`（`api/storagePools.ts`、`storageClusters.ts`、`storagePackages.ts`）。存储池的列表与详情所有成员都能读（建卷要选池），写接口与侧边栏入口只给系统管理员 |
+| 存储池 / 存储集群 / 软件包 / 存储任务 | `StoragePools.vue`、`StoragePoolDetail.vue`、`StorageClusters.vue`、`StorageClusterCreate.vue`（创建向导整页）、`StorageClusterDetail.vue`、`StorageTaskDetail.vue`；软件包是存储集群列表页的第三个标签（`?tab=packages`，组件 `components/storage/StoragePackageList.vue`；旧地址 `/dashboard/storage-packages` 重定向过去），创建向导的软件步骤和升级弹窗里可以就地上传安装包、接受许可证（`composables/useStoragePackageFlow.ts`），不必离开当前页面；接口 `/storage_pools*`、`/storage_clusters*`、`/storage_packages*`、`/storage_tasks*`、`/storage_backends`（`api/storagePools.ts`、`storageClusters.ts`、`storagePackages.ts`）。存储池的列表与详情所有成员都能读（建卷要选池），写接口与侧边栏入口只给系统管理员 |
 | 组织 | `OrgList.vue`、`OrgDetail.vue`：组织列表、成员、配额 |
 | 设置 | `SystemSettings.vue`：系统设置按分组编辑，只提交改动的项；改 `HOST_CONSOLE_REQUIRE_PASSWORD` 要输入密码 |
 | 普通页面里的管理员元素 | 创建云服务器时可指定宿主机（`hypervisor`）；镜像的公共 / 私有与存储池副本；VPN、放置组等详情页的节点信息；操作动态里管理员专属资源类型的条目（`ActivityText.vue`） |

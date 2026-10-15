@@ -68,8 +68,8 @@ cd "$TC12" && node tc12-smoke.js 2>&1 | tee smoke.log
 | alarm-events | 20 | — |
 | settings | 卡片 = 5 | — |
 | transit-gateways（2026-10-14 补） | 新环境上 0 个时是空态 | `transit_gateways?offset=0&limit=20…`（以页面实际请求为准） |
-| storage-clusters（2026-10-14 补，系统管理员） | 两个标签「集群 / 任务」；集群行数 = 现有集群数 | `storage_clusters?…`、`storage_tasks?…` |
-| storage-packages（2026-10-14 补，系统管理员） | 软件包行数 | `storage_packages?…` |
+| storage-clusters（2026-10-14 补，系统管理员） | 三个标签「集群 / 任务 / 软件包」（2026-10-15 起，软件包原来是单独一页）；集群行数 = 现有集群数 | `storage_clusters?…`、`storage_tasks?…`、`storage_packages?…` |
+| storage-clusters?tab=packages（2026-10-15 改，系统管理员） | 软件包行数；工具栏只有刷新和「上传安装包」；侧边栏没有「软件包」入口，`/dashboard/storage-packages` 重定向到这里 | `storage_packages?…` |
 | ~~audit-logs、quota~~ | **已废弃**（2026-09-28）：前端没有这两条路由（审计日志只有接口 `GET /audit_logs`，配额在组织详情的「配额」标签），访问会被兜底路由送回首页，旧脚本把它们记成 0 行也看不出问题 | |
 
 详情页基线：16 个都有 `.title-bar`、`.detail-header` 里的返回按钮文案是「返回」、页面不横向滚动；带标签页的：云服务器「基本信息 / 资源监控 / 监控与告警」，安全组「安全组规则 N / 关联网卡 N」，VPN 网关「概览 / 站点连接 N / 客户端 N / 监控 / 操作记录」，组织「成员 / 配额」，计算节点「概览 / 存储 / 资源监控」。
