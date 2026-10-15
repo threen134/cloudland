@@ -1,4 +1,8 @@
-# User Alarm Notification Plan Review
+---
+order: 14
+---
+
+# P14 User Alarm Notification Plan Review
 
 总体来看，该方案逻辑清晰，模块职责划分合理（CPGateway 负责全局配置和通知分发，clapi 负责区域级底层规则）。但在**数据一致性、权限控制、告警可靠性**方面存在一些设计漏洞和不合理之处：
 

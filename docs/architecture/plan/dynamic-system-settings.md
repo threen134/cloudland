@@ -1,4 +1,8 @@
-# 设计文档：CloudLand 动态系统设置与多渠道通知系统 (Dynamic System Settings & Notifications)
+---
+order: 21
+---
+
+# P21 设计文档：CloudLand 动态系统设置与多渠道通知系统 (Dynamic System Settings & Notifications)
 
 ## 1. 背景与目标
 目前 CloudLand 的系统参数及通知方式（SMTP、飞书）硬编码在后端环境变量中（`cpgateway/app/core/config.py`）。管理员调整需要重启服务，且缺乏对 Slack 和通用 Webhook 的支持。

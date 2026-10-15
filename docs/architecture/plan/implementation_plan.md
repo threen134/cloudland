@@ -1,4 +1,10 @@
-# 标准化 JSON 日志 (控制面与后端)
+---
+order: 37
+---
+
+# P37 标准化 JSON 日志 (控制面与后端)
+
+> ⚠️ **已作废（2026-10-15）**：文中的 C++ 服务（`cloudland`、`cloudlet`）和 `clbase` 都已不存在，主控与计算节点 agent 现在是 cland-go / cloudlet-go。日志与链路追踪以 [P07 链路追踪](distributed-tracing-otel-tempo-plan.md) 为准。
 
 将所有 Go 和 C++ 服务（`clapi`、`clbase`、`alarm-rules-manager`、`cloudland` 和 `cloudlet`）的日志统一为纯 JSON 格式，便于通过 Loki/Grafana 进行结构化查询和可观测性分析。
 

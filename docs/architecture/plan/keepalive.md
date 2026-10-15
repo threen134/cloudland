@@ -1,4 +1,8 @@
-# Region 心跳机制实施方案
+---
+order: 31
+---
+
+# P31 Region 心跳机制实施方案
 
 在 [cpgateway](file:///Users/spark/workspace/cloud/cloudland/deploy/docker/dockerfiles/Dockerfile.cpgateway) 中添加后台心跳机制，自动监控各 Region 的可用性，并更新数据库中的 `is_available` 状态。
 

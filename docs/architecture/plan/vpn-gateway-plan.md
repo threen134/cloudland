@@ -1,4 +1,8 @@
-# VPN 网关设计（站点到站点、客户端到站点与高可用）
+---
+order: 2
+---
+
+# P02 VPN 网关设计（站点到站点、客户端到站点与高可用）
 
 - **状态**：已实施，部署在测试环境（work-01 控制面与三个计算节点）并实测。V1–V3 已提交推送（`73d8001d`、`a6336e10`）；流量历史已提交、未推送（`f6311d55`、`8e7f5bf1`）；隧道高可用 R0–R3、对端配置弹窗、凭据回读、连接表格适配 1440、客户端路由与子网网关地址两处修复（§18.14）、单节点网关（§18.15）、代码复查修复（§18.16、§18.17）未提交；以上 2026-09-27 全部部署到测试环境并实测（§18.18）。V4 没做。批次与每一轮的记录见 §18。
 - **本文**：2026-09-25 由原《VPN 网关设计》（本文件的旧版，见 git 历史）与《VPN 网关隧道高可用》（`vpn-tunnel-ha-plan.md`，未提交过，内容已全部并入）合并，**按当前实现写**；设计取舍保留在正文，改掉的原设计与测出来的问题记在 §18 与附录 C，旧章节号的对照见附录 D。
@@ -391,7 +395,7 @@ XFRM 的 state / policy 按 netns 隔离；WireGuard 接口在 netns 内建，�
 
 ### 5.3 BGP 模式
 
-**FRR**：10.5.1，每个网关一组守护进程，pathspace `-N vpn-<网关 ID>`，配置在 `/etc/frr/vpn-<网关 ID>/`，运行目录 `/var/run/frr/vpn-<网关 ID>/`（`install -d -m 755 -o frr -g frr`：keepalived 调 notify 时 umask 更严，`mkdir -p` 建出的 0600 目录会让 FRR 切到 `frr` 用户后起不来）。启动顺序 **zebra → mgmtd → staticd → bfdd → bgpd**（staticd 依赖 mgmtd；zebra 必须先于 bgpd，否则学到的路由装不进内核，而且 bgpd 不会退出，现象是「邻居 up、有路由、`ip route` 里没有」），然后 `vtysh -b` 加载配置。改配置用 `frr-reload.py`，**必须带 `--confdir /etc/frr/vpn-<网关 ID>`**，否则 reload 里的 `write` 会覆盖默认的 `/etc/frr/frr.conf`；reload 失败就整体重启。系统自带的 frr 服务要 disable（它跑在宿主机 netns 里，会动宿主机路由表）。
+**FRR**：10.5.1，每个网关一组守护进程，pathspace `-N vpn-<网关 ID>`，配置在 `/etc/frr/vpn-<网关 ID>/`，运行目录 `/var/run/frr/vpn-<网关 ID>/`（`install -d -m 755 -o frr -g frr`：keepalived 调 notify 时 umask 更严，`mkdir -p` 建出的 0600 目录会让 FRR 切到 `frr` 用户后起不来）。启动顺序 **zebra → mgmtd → staticd → bfdd → bgpd**（FRR 9 起 staticd 依赖 mgmtd；**Ubuntu 24.04 自带 8.4.4，没有 mgmtd**，`vpn_frr_has_mgmtd` 看二进制在不在，没有就不拉起、存活判断也不查它——2026-10-14 1.1.0 回归发现，之前存活判断要求 mgmtd，FRR 在 24.04 上每几秒被重启、BGP 永远建不起来；8.4 的 `frr-reload.py` 支持 `--confdir`；zebra 必须先于 bgpd，否则学到的路由装不进内核，而且 bgpd 不会退出，现象是「邻居 up、有路由、`ip route` 里没有」），然后 `vtysh -b` 加载配置。改配置用 `frr-reload.py`，**必须带 `--confdir /etc/frr/vpn-<网关 ID>`**，否则 reload 里的 `write` 会覆盖默认的 `/etc/frr/frr.conf`；reload 失败就整体重启。系统自带的 frr 服务要 disable（它跑在宿主机 netns 里，会动宿主机路由表）；部署脚本要逐个 unit 关，24.04 没有 `strongswan.service`，一条命令列多个 unit 会整条失败、一个都没关（2026-10-14 回归发现）。
 
 **会话**：每条 BGP 隧道一个 eBGP 邻居，建在隧道内的一对地址上（`tunnel_local_ip` / `tunnel_peer_ip`，同一个 /30，`update-source` 本端地址）。同一网关的所有 BGP 连接用同一个本端 ASN，本端 ≠ 对端。`bgp router-id` 显式给（双活用本节点 VRRP 地址，否则用隧道内地址），netns 里可能没有合适的接口地址供 FRR 自动选。
 

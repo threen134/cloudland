@@ -1,4 +1,10 @@
-# CloudLand Docker 部署方案更新计划
+---
+order: 36
+---
+
+# P36 CloudLand Docker 部署方案更新计划
+
+> ⚠️ **已作废（2026-10-15）**：文中的 C++ 主控、middle（Python）中间层和 profile 组合都已不存在：网关现在是 Go 写的 cpgateway，profile 是 `full`、`dev`、`region`、`minio` 的组合。部署以 [部署文档](../../deployment/index.md) 和 `deploy/docker/` 为准。下面的「状态：待审核」是当时的状态。
 
 > 日期: 2026-03-13
 > 状态: 待审核

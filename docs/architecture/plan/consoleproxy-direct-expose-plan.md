@@ -1,4 +1,8 @@
-# ConsoleProxy 多 Region 方案：Central Nginx + Region Gateway 模型
+---
+order: 18
+---
+
+# P18 ConsoleProxy 多 Region 方案：Central Nginx + Region Gateway 模型
 
 ## 背景
 

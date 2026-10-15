@@ -1,4 +1,8 @@
-# Org-Level Quota System Redesign Plan
+---
+order: 26
+---
+
+# P26 Org-Level Quota System Redesign Plan
 
 ## 背景
 

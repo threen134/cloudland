@@ -1,4 +1,10 @@
-# 计算节点完整生命周期管理 — 彻底移除 host.list，API 驱动部署
+---
+order: 35
+---
+
+# P35 计算节点完整生命周期管理 — 彻底移除 host.list，API 驱动部署
+
+> ⚠️ **已作废（2026-10-15）**：SCI 通信库与 C++ 主控已被 cland-go / cloudlet-go 取代，2026-09-17 从仓库删除。节点注册、准入与下发链路以 [P06 gRPC 下发链路](sci-grpc-rewrite.md) 和 [计算节点部署文档](../../deployment/04-compute-node.md) 为准。
 
 ## Context
 

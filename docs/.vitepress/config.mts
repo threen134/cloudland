@@ -60,7 +60,10 @@ export default withMermaid(
           includeRootIndexFile: true,
           collapsed: true,
           useFolderTitleFromIndexFile: true,
-          useFolderLinkFromIndexFile: true
+          useFolderLinkFromIndexFile: true,
+          // plan/*.md carry `order` = their P-number
+          sortMenusByFrontmatterOrder: true,
+          frontmatterOrderDefaultValue: 0
         },
         {
           documentRootPath: '.',

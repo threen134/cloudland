@@ -877,3 +877,5 @@ psql_c "select count(*) from vpn_tunnels where vpn_gateway_id = $n and deleted_a
 | 61 | VPN 告警可能推给别的组织的通知渠道（D2，2026-09-28；2026-09-30 修，2026-10-01 已部署） | 渠道镜像存的是控制面组织 ID | VPN-08、`TC-10` ALM-07 |
 | 62 | 删掉网关节点上 VPC 的最后一台虚拟机会把网关的 netns 与目录一起拆掉（D3 推断；2026-09-30 修，2026-10-01 已部署） | `clear_local_router.sh` 不看 `vpn-*` | VPN-10 第一项 |
 | 63 | VPN 网关公网地址的限速入出方向都从没生效（2026-09-30 修，2026-10-01 已部署） | 与负载均衡同一段 `create_lb_floating.sh`，见 `TC-06` 回归点 20 | VPN-01 带宽一项（可选） |
+| 64 | 🔴 Ubuntu 24.04 自带 FRR 8.4.4 没有 `mgmtd`，`vpn_frr_alive` 要求它存活，FRR 每几秒被重启，BGP 永远不 Established（2026-10-14 1.1.0 回归发现，R9，未部署） | `vpn_frr_has_mgmtd` | VPN-03 在 24.04 节点上 Established，`notify.log` 里 `frr: config loaded` 之后不再反复出现 `stopping leftovers` |
+| 65 | 部署脚本关系统服务的命令在 24.04 上整条失败（没有 `strongswan.service`），系统 frr / strongswan-starter 一直运行，宿主机 charon 占着 500 / 4500（R10，未部署） | 逐个 unit 关 | VPN-00 前置：四台节点 `systemctl is-enabled frr strongswan-starter` 都是 disabled，`ss -lunp` 里宿主机没有 500 / 4500 |

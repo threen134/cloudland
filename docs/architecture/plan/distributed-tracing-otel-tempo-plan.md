@@ -1,4 +1,8 @@
-# 分布式链路追踪方案（OpenTelemetry + Grafana Tempo）
+---
+order: 7
+---
+
+# P07 分布式链路追踪方案（OpenTelemetry + Grafana Tempo）
 
 > **实施状态（2026-09-14）**：阶段 1、2 已实施（含 cpgateway-go 网关埋点）；阶段 3 中数据库、S3、前端埋点已实施，Tempo metrics-generator 与中央 Tempo 未实施。实施与原方案的差异见 §11。
 >
