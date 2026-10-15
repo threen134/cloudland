@@ -1,0 +1,2 @@
+# Sandbox scripts run directly in WSL: keep LF in the Windows checkout too
+test-items/sandbox/** text eol=lf

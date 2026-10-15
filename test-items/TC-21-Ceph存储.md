@@ -31,7 +31,7 @@
 - 节点：work-01 / 02 / 03 = hostid 1 / 2 / 3（Ubuntu 24.04，Ceph 19.2.3），内网 10.191.202.40 / .29 / .13
 - 磁盘：回环盘 `/var/lib/cl-s3test/osd1.img`（每台 16 GiB 稀疏文件，`cl-s3.sh setup` 建，同时在 `cloudrc.local` 设 `storage_allow_loop=true`），平台在上面先建 LVM；CEPH-09 用 work-02 的 `osd2.img`（`cl-s3.sh setup osd2 work-02`）。回环设备重启后不会自己挂回来，所以三台装了只用于测试环境的 `cl-s3test-loop.service`（`/usr/local/sbin/cl-s3test-loop.sh`，开机在 docker 之前把 `/var/lib/cl-s3test/*.img` 挂回回环设备并激活 `clceph-*` 卷组；目录不存在时不运行），换真盘后可以删掉
 - 工具（work-01，都要先有 S2 的 `cl-env.sh`、`cl-s2-lib.sh`、`cl-s2-vol-lib.sh`）：`/root/cl-s3.sh {setup|create|watch <任务>|check|disks|cadm '<ceph 参数>'}`（集群名 `ceph1`，三台都是 mon、work-01 / 02 是 mgr、每台一个 OSD，OSD 内存 1 GiB）、`cl-s3-pool.sh {create <名> [配额 GB] [介质] [超分]|quota|delete|show}`、`cl-s3-vol.sh <池>`（CEPH-04/05/06，逐项 PASS / FAIL）、`cl-s3-unavail.sh <池>`（CEPH-08）、`cl-s3-quota.sh`（CEPH-07）、`cl-s3-disks.sh {add|remove}`（CEPH-09）、`cl-s3-import.sh {run|cleanup}`（CEPH-11，把 ceph1 当外部集群）
-- 沙箱（本机 WSL，Ubuntu 26.04，Ceph 20.2.0）：`go test ./src/rpcs -run TestStorageCephWSL`（`CEPH_WSL_E2E=1`，见测试文件头的前提），会建一个单节点集群并在最后删掉；探路脚本 `gpfs-spike/ceph/spike1.sh`、`spike2.sh`
+- 沙箱（本机 WSL，Ubuntu 26.04，Ceph 20.2.0）：`go test ./src/rpcs -run TestStorageCephWSL`（`CEPH_WSL_E2E=1`，见测试文件头的前提），会建一个单节点集群并在最后删掉；探路脚本 `test-items/sandbox/storage/ceph/spike1.sh`、`spike2.sh`
 - PostgreSQL：`go test ./src/services -run TestStorageCeph`（`CLAPI_TEST_DB_URI`），覆盖每一步的输入、Done 钩子与收尾
 - 界面：本机会话临时目录 `pw/stc-ui-ceph.js`（全部接口模拟，41 项）、`pw/stc-ui-ceph-live.js`（对 work-01 真实数据只读，17 项，`ADMIN_PW` 环境变量给密码）
 
@@ -168,7 +168,7 @@
 **预期**：第 1 步每个都是 -900，`memory.low` 为 mon 2147483648、mgr 1073741824、OSD（`osd_memory_target_mib`+512）× 1048576，`system.slice` 是本机部署的守护进程之和；第 2 步通过；第 3 步不变；第 4 步只杀压力进程，Ceph 守护进程 PID 不变、单元 `NRestarts` 为 0，HEALTH_OK（对照组里 mgr、OSD 先于压力进程被杀）
 
 > 临时云服务器（Ceph 19.2.3，手工加的同等保护，当时没给 `system.slice` 设保护）：第 4 步的 OOM 部分通过，对照组杀了两个 mgr 与 OSD（2026-10-07，设计 §6.7.2「验证结果」）；页缓存当时没保住（OSD RSS 67 → 45 MiB），原因是回归点 18，修后没在真实 Ceph 上重做
-> WSL：第 1、3 步通过（Ceph 20.2，`TestStorageCephWSL`）；`gpfs-spike/stc-test9-oom.sh` 22 项、`stc-test10-memlow.sh` 通过
+> WSL：第 1、3 步通过（Ceph 20.2，`TestStorageCephWSL`）；`test-items/sandbox/storage/stc-test9-oom.sh` 22 项、`stc-test10-memlow.sh` 通过
 > work-x（2026-10-07，部署 `6a69e161`，执行记录 `runs/2026-10-07-6a69e161+OOM保护.md`）：部署前第 1、2 层不通过（adj 0、评分 672–681）；部署并对 `ceph1` 补执行 `ceph_unit_oom` 后第 1、2 层通过（-900、评分 74–82、`system.slice` 4608 / 4608 / 3584 MiB）；第 3 步 `systemctl restart` OSD 4.9 秒返回、单元立即 active、12 秒后受保护；心跳巡检 5 分钟内补回被改掉的保护；第 4 步没在 work-x 上做
 
 ## CEPH-14 界面
@@ -257,7 +257,7 @@ WSL 真 Ceph 单节点端到端 `TestStorageCephWSL` 已核对第 1、2 条和�
 | 11 | 中止的部署删不掉（「The cluster has no admin host」：删除时只选已是成员的管理节点） | 删除集群时管理节点不按状态过滤（PG 测试 `TestStorageCephAbortedDeletePG`，CEPH-13） |
 | 12 | 20.2 的 `orch daemon add osd` 每次都把那块盘存成**受管**的 `osd.default` 规格（cephadm 里判断规格是否已存在时拿 `default` 去比 `osd.default`，永远不相等），按代码，这块盘移除、清掉之后后台会在上面重新建 OSD（没有实测） | 建完 OSD 后 `orch set-unmanaged osd.default`（19.2 没有这个规格，命令失败、无害）。20.2：WSL 端到端测试保留集群（`CEPH_WSL_KEEP=1`）后 `orch ls` 里 `osd.default` 是 `<unmanaged>`；19.2：CEPH-09 加盘、移除盘照常 |
 | 13 | 节点关机时同一台机器上的 mon 与 OSD 被 systemd 一起停掉，OSD 报告下线的消息正好发给了本机这个正在停的 mon，丢了；集群要等心跳超时（约 13 秒）才标它 down，其余节点上云服务器的 I/O 卡这么久（cephadm 的单元不像 Ceph 软件包的单元那样把 OSD 排在 mon 之后） | 安装步骤给守护进程节点写 `/etc/systemd/system/ceph-<集群>@.service.d/cloudland-order.conf`（`After=ceph-<集群>@mon.%l.service`），删除集群时删掉。验证：`systemctl show -p After ceph-<集群>@osd.<编号>.service` 有本机 mon；`systemctl stop ceph-<集群>.target` 时 OSD 日志里 `prepare_to_stop` 两行相隔约 1 秒（没修时正好 5 秒，是等确认超时），osd.2 在 2.7 秒内被标 down（没修 17.6 秒）；WSL 端到端测试检查顺序与删除后不残留（CEPH-12） |
-| 14 | 删 RBD 卷时 `rbd info` 的任何失败（超时、集群暂时连不上）都被当成「镜像不在」，脚本报删除成功，clapi 删掉卷记录，镜像留在池里占容量和配额（2026-10-03 代码审查） | 直接 `rbd rm`，只有 `No such file or directory`（镜像或池不在）才算已删；超时报「timed out」（WSL `gpfs-spike/stc-test4.sh` 第 4 组用替身 `rbd` 测各种返回） |
+| 14 | 删 RBD 卷时 `rbd info` 的任何失败（超时、集群暂时连不上）都被当成「镜像不在」，脚本报删除成功，clapi 删掉卷记录，镜像留在池里占容量和配额（2026-10-03 代码审查） | 直接 `rbd rm`，只有 `No such file or directory`（镜像或池不在）才算已删；超时报「timed out」（WSL `test-items/sandbox/storage/stc-test4.sh` 第 4 组用替身 `rbd` 测各种返回） |
 | 15 | 导入集群登记已有 RBD 池时按 `LIKE '%"ceph_pool":"名字"%'` 查重，名字里的 `_` 是通配符，`rbd_a` 会被当成已登记的 `rbdXa`（代码审查） | 用 `dbs.Contains` 转义（PG `TestStorageCephImportPG`：登记了 `vms` 后 `v_s` 不算重复） |
 | 16 | 导入不占槽，导入的检查还在跑时就能删除（forget）集群，检查跑完又把客户端配置写回去（代码审查） | 有在跑或等重试的导入时删除返回 409（同上）；另见 TC-20 回归点 16–26 里两种存储共用的修复 |
 | 17 | Ceph 守护进程没有 OOM 保护，评分（672–681）比小云服务器（670）还高，节点内存耗尽时 mgr、OSD 先于云服务器被杀（2026-10-06 核对 work-x，临时云服务器里实测）；cephadm 用 docker，单元上的 `OOMScoreAdjust` / `MemoryMin` 碰不到真实进程 | drop-in `cloudland-oom.conf` + `ceph_oom_protect.sh`（CEPH-15）；`memory.low` 经 `docker update` 写，直接写 cgroup 文件会在 `daemon-reload` 后变回 0（`stc-test9-oom.sh` 第 2 项） |

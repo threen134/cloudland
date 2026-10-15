@@ -14,7 +14,7 @@
 - PostgreSQL `TestStorageGPFSSANPG`：部署、加带已有 LUN 与新 LUN 的节点、移除节点、移除 LUN、删除，核对 NSD 服务器列表、`mmchnsd`、只擦一次。
 - PostgreSQL `TestStorageRemoteMountPG`：挂载四步的输入、池清单与上报、疏散时隔离在哪个集群、拒绝、取消挂载。
 - 单元 `TestGPFSSANLayout` / `TestGPFSSANNamesAndWipes` / `TestGPFSSANChangePlans`。
-- WSL `gpfs-spike/stc-test16.sh`（SAN 节点脚本，15 项，含 `in_use`）、`stc-test17.sh`（远程挂载节点脚本，17 项，含 cipherList）。
+- WSL `test-items/sandbox/storage/stc-test16.sh`（SAN 节点脚本，15 项，含 `in_use`）、`stc-test17.sh`（远程挂载节点脚本，17 项，含 cipherList）。
 - 本机界面 `pw/stc-ui-s7.js`（SAN 向导、远程挂载的列表 / 建 / 删）。
 
 ## 设计约定（判定预期的依据）
