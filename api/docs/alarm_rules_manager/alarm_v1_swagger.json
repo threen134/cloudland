@@ -14870,6 +14870,10 @@
                         "$ref": "#/definitions/apis.StorageClusterDiskResponse"
                     }
                 },
+                "edition": {
+                    "description": "Detail only: the edition of the package the cluster runs (gpfs), absent when it came from no package; an\nupgrade takes a package of the same edition only",
+                    "type": "string"
+                },
                 "filesystems": {
                     "description": "Detail only: the file systems (kinds with that layer) and the CloudLand pools of the cluster",
                     "type": "array",

@@ -17,7 +17,6 @@ import (
 	"time"
 
 	. "api/src/common"
-	"api/src/dbs"
 	"api/src/model"
 
 	"gorm.io/gorm"
@@ -60,10 +59,8 @@ func (gpfsBackend) UpgradeParams(ctx context.Context, cluster *model.StorageClus
 		return nil, planError("The cluster runs %s: the package (%s) must be of a newer release", cluster.Version, pkg.Version)
 	}
 	// The edition is the license the cluster runs under
-	db := dbs.DBContext(ctx)
-	current := &model.StoragePackage{}
-	if cluster.PackageID > 0 && db.Take(current, cluster.PackageID).Error == nil && current.Edition != "" && pkg.Edition != current.Edition {
-		return nil, planError("The cluster runs the %s edition, the package is of the %s edition", current.Edition, pkg.Edition)
+	if edition := StorageClusterEdition(ctx, cluster); edition != "" && pkg.Edition != edition {
+		return nil, planError("The cluster runs the %s edition, the package is of the %s edition", edition, pkg.Edition)
 	}
 	return &storageUpgradeParams{PackageID: pkg.ID, Version: pkg.Version}, nil
 }

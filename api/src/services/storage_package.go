@@ -570,6 +570,19 @@ func (a *StoragePackageAdmin) Get(ctx context.Context, id string) (*model.Storag
 	return a.get(ctx, id)
 }
 
+// StorageClusterEdition is the edition of the package a cluster runs (gpfs: the license it runs under), "" when it
+// came from no package or the package does not say; an upgrade takes a package of the same edition only
+func StorageClusterEdition(ctx context.Context, cluster *model.StorageCluster) string {
+	if cluster.PackageID <= 0 {
+		return ""
+	}
+	pkg := &model.StoragePackage{}
+	if dbs.DBContext(ctx).Select("edition").Take(pkg, cluster.PackageID).Error != nil {
+		return ""
+	}
+	return pkg.Edition
+}
+
 // storagePackageURL is the presigned URL hosts download an installer with
 func storagePackageURL(ctx context.Context, pkg *model.StoragePackage) (string, error) {
 	client := s3Client.Load()

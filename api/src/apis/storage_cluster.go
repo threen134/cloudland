@@ -225,6 +225,9 @@ type StorageClusterResponse struct {
 	// Detail only: the last health report and the alarms it raised
 	HealthInfo *StorageClusterHealthResponse `json:"health_info,omitempty"`
 	Version    string                        `json:"version,omitempty"`
+	// Detail only: the edition of the package the cluster runs (gpfs), absent when it came from no package; an
+	// upgrade takes a package of the same edition only
+	Edition string `json:"edition,omitempty"`
 	// The storage software's own id of the cluster: GPFS cluster name and id, Ceph fsid
 	ClusterRef  string `json:"cluster_ref,omitempty"`
 	Unsupported bool   `json:"unsupported"`
@@ -670,6 +673,7 @@ func storageClusterSummarize(ctx context.Context, resps map[int64]*StorageCluste
 // storageClusterDetail adds the file systems, pools and health report of a cluster to its response
 func storageClusterDetail(ctx context.Context, cluster *model.StorageCluster, resp *StorageClusterResponse) {
 	resp.HealthInfo = storageClusterHealth(ctx, cluster)
+	resp.Edition = services.StorageClusterEdition(ctx, cluster)
 	resp.AutoJoin = storageAutoJoin(ctx, cluster)
 	for _, f := range storageClusterAdmin.Filesystems(ctx, cluster.ID) {
 		resp.Filesystems = append(resp.Filesystems, &StorageFilesystemResponse{ID: f.UUID, Name: f.Name, MountPoint: f.MountPoint,
