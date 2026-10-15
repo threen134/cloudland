@@ -1,10 +1,21 @@
 <script setup lang="ts">
-// Storage clusters (shared-storage-design.md §13.3) and the tasks that build and change them: the creation wizard,
-// the precheck of hosts and the selftest of the task path start here; a cluster is changed on its detail page.
+// Storage clusters (shared-storage-design.md §13.3), the tasks that build and change them, and the package repository
+// their software comes from (?tab=packages): the creation wizard, the precheck of hosts and the selftest of the task
+// path start here; a cluster is changed on its detail page.
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
-import { RefreshCw, ServerCog, ClipboardCheck, Activity, ListChecks, Database, Plus } from 'lucide-vue-next'
+import { useRoute, useRouter } from 'vue-router'
+import {
+    RefreshCw,
+    ServerCog,
+    ClipboardCheck,
+    Activity,
+    ListChecks,
+    Database,
+    Plus,
+    Package,
+    Upload,
+} from 'lucide-vue-next'
 import {
     storageClustersApi,
     TASK_LIVE_STATUSES,
@@ -29,13 +40,29 @@ import StatusBadge from '../../components/base/StatusBadge.vue'
 import DetailTabs, { type Tab } from '../../components/base/DetailTabs.vue'
 import StoragePrecheckModal from '../../components/storage/StoragePrecheckModal.vue'
 import StorageSelftestModal from '../../components/storage/StorageSelftestModal.vue'
+import StoragePackageList from '../../components/storage/StoragePackageList.vue'
 
 const { t, te } = useI18n()
+const route = useRoute()
 const router = useRouter()
 const region = useRegionStore()
 
-type TabId = 'clusters' | 'tasks'
-const activeTab = ref<TabId>('clusters')
+type TabId = 'clusters' | 'tasks' | 'packages'
+const TAB_IDS: TabId[] = ['clusters', 'tasks', 'packages']
+const tabOf = (q: unknown): TabId => (TAB_IDS.includes(q as TabId) ? (q as TabId) : 'clusters')
+// The tab is in the address: the old package page and the links to it land on ?tab=packages
+const activeTab = ref<TabId>(tabOf(route.query.tab))
+watch(
+    () => route.query.tab,
+    (q) => {
+        activeTab.value = tabOf(q)
+    }
+)
+watch(activeTab, (tab) => {
+    if (tabOf(route.query.tab) !== tab)
+        router.replace({ query: { ...route.query, tab: tab === 'clusters' ? undefined : tab } })
+})
+const packageList = ref<InstanceType<typeof StoragePackageList> | null>(null)
 
 const clusterQuery = useListQuery<StorageCluster>(
     async ({ offset, limit }) => {
@@ -55,6 +82,7 @@ const taskQuery = useListQuery<StorageTask>(
 const tabs = computed<Tab[]>(() => [
     { id: 'clusters', label: t('storage.cluster.clustersTab'), icon: Database, count: clusterQuery.total.value },
     { id: 'tasks', label: t('storage.cluster.tasksTab'), icon: ListChecks, count: taskQuery.total.value },
+    { id: 'packages', label: t('storage.cluster.packagesTab'), icon: Package, count: packageList.value?.total },
 ])
 
 const clusterColumns = computed<Column[]>(() => [
@@ -100,7 +128,9 @@ onUnmounted(() => {
 const refresh = () => {
     clusterQuery.load()
     taskQuery.load()
+    packageList.value?.load()
 }
+const refreshing = computed(() => clusterQuery.loading.value || taskQuery.loading.value || !!packageList.value?.loading)
 
 const showPrecheck = ref(false)
 const showSelftest = ref(false)
@@ -115,8 +145,11 @@ const clusterPageSize = clusterQuery.pageSize
 const taskPage = taskQuery.page
 const taskPageSize = taskQuery.pageSize
 
+// The package list loads itself when it mounts
 onMounted(() => {
-    if (region.currentRegionId) refresh()
+    if (!region.currentRegionId) return
+    clusterQuery.load()
+    taskQuery.load()
 })
 </script>
 
@@ -126,12 +159,18 @@ onMounted(() => {
             <DetailTabs v-model="activeTab" :tabs="tabs" />
             <div class="actions">
                 <button class="btn btn-secondary btn-sm btn-icon" :title="t('actions.refresh')" @click="refresh">
-                    <RefreshCw
-                        :size="14"
-                        :class="{ spinning: clusterQuery.loading.value || taskQuery.loading.value }"
-                    />
+                    <RefreshCw :size="14" :class="{ spinning: refreshing }" />
                 </button>
                 <button
+                    v-if="activeTab === 'packages'"
+                    class="btn btn-primary btn-sm"
+                    @click="packageList?.openUpload()"
+                >
+                    <Upload :size="14" />
+                    <span>{{ t('storage.packages.uploadPackage') }}</span>
+                </button>
+                <button
+                    v-if="activeTab !== 'packages'"
                     class="btn btn-secondary btn-sm"
                     :title="t('storage.cluster.selftestHint')"
                     @click="showSelftest = true"
@@ -139,11 +178,15 @@ onMounted(() => {
                     <Activity :size="14" />
                     <span>{{ t('storage.cluster.selftest') }}</span>
                 </button>
-                <button class="btn btn-secondary btn-sm" @click="showPrecheck = true">
+                <button v-if="activeTab !== 'packages'" class="btn btn-secondary btn-sm" @click="showPrecheck = true">
                     <ClipboardCheck :size="14" />
                     <span>{{ t('storage.cluster.precheck') }}</span>
                 </button>
-                <button class="btn btn-primary btn-sm" @click="router.push({ name: 'storage-cluster-create' })">
+                <button
+                    v-if="activeTab !== 'packages'"
+                    class="btn btn-primary btn-sm"
+                    @click="router.push({ name: 'storage-cluster-create' })"
+                >
                     <Plus :size="14" />
                     <span>{{ t('storage.wizard.create') }}</span>
                 </button>
@@ -230,7 +273,7 @@ onMounted(() => {
         </DataTable>
 
         <DataTable
-            v-else
+            v-else-if="activeTab === 'tasks'"
             :columns="taskColumns"
             :rows="taskQuery.items.value"
             row-key="id"
@@ -282,6 +325,9 @@ onMounted(() => {
                 />
             </template>
         </DataTable>
+
+        <!-- Mounted all along so the tab shows its count -->
+        <StoragePackageList v-show="activeTab === 'packages'" ref="packageList" />
 
         <StoragePrecheckModal :show="showPrecheck" @close="showPrecheck = false" @created="openTask" />
         <StorageSelftestModal :show="showSelftest" @close="showSelftest = false" @created="openTask" />

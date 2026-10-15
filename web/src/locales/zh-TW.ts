@@ -2991,7 +2991,9 @@ export default {
             gpfsIntro:
                 '逐台升級：每台節點先把使用這個叢集儲存的雲端伺服器遷走（和維護模式一樣），再停止 GPFS、安裝新版本、重新編譯、啟動，並把這台的磁碟拉回來，才輪到下一台。',
             package: '新版本的安裝套件',
-            noPackage: '沒有比目前版本新、已接受授權的安裝套件：先在「軟體套件」裡上傳',
+            noPackage: '沒有比目前版本新、已接受授權的安裝包：可以在下面上傳新版本的安裝包',
+            uploadedOlder: '剛上傳的 {name} 是 {version}，不比叢集目前的 {current} 新，不能用來升級',
+            uploadedEdition: '剛上傳的 {name} 是{edition}，叢集用的是{current}，版本類型不同不能升級',
             finalize: '完成升級（不可逆）',
             finalizeHint:
                 '所有節點都執行新版本後，把叢集和檔案系統提升到新版本（mmchconfig release=LATEST、mmchfs -V full）。之後舊版本的節點不能再加入，無法回退。',
@@ -3071,8 +3073,9 @@ export default {
             eceNoSlotMapHint:
                 '虛擬機器和模擬磁碟沒有機箱槽位，勾選後關閉復原群組的槽位檢查和磁碟揮發性寫入快取檢查。IBM 不支援這種用法，正式環境不要勾選；實體伺服器要先在每台上執行 ecedrivemapping 產生槽位對應。',
             softwareTitle: '選擇軟體包',
-            softwareIntro: '安裝包在「軟體包」頁上傳；只能選擇校驗通過並已接受授權條款的包。',
-            noPackage: '還沒有可用的安裝包，先到這裡上傳：',
+            softwareIntro:
+                '只能選擇校驗通過並已接受授權條款的安裝包；沒有的話點「上傳安裝包」在這裡上傳，校驗完成後接受授權條款即可選用。',
+            noPackage: '還沒有這種儲存的安裝包：點「上傳安裝包」上傳。',
             licenseNotAccepted: '授權條款未接受',
             eceEditionNeeded: '糾刪碼佈局要用糾刪碼版',
             hostsTitle: '節點、角色和磁碟',
@@ -3379,10 +3382,11 @@ export default {
         title: '儲存',
         poolsPage: '儲存池',
         clustersPage: '儲存叢集',
-        packagesPage: '軟體包',
         packages: {
             intro: '儲存軟體的安裝包（目前只有 GPFS 需要）：上傳後平台在背景校驗並讀出版本、支援的系統和授權條款，接受授權條款後才能用於部署。',
             upload: '上傳',
+            uploadPackage: '上傳安裝包',
+            uploadedFailed: '剛上傳的安裝包 {name} 沒能用上：{reason}',
             uploadTitle: '上傳軟體包',
             uploadIntro:
                 '檔案按 8 MiB 分片上傳，中途斷開後重新選同一個檔案即可接著傳；也可以填一個下載位址，由平台自己下載。',
@@ -3398,7 +3402,7 @@ export default {
             uploadFailed: '上傳失敗',
             emptyTitle: '還沒有軟體包',
             emptyHint:
-                '用「新增叢集」部署 GPFS 或 Ceph 叢集，或匯入一個已有的叢集；部署前也可以先對計畫使用的節點做預檢：作業系統與核心、時間同步、節點之間的連接埠、資料目錄空間、記憶體和磁碟。預檢只檢查，不安裝、不改動任何東西。',
+                '點「上傳安裝包」上傳安裝檔案，或者填一個下載位址讓平台自己下載；校驗通過、接受授權條款之後，新增叢集和升級時就能選用。新增叢集和升級時也可以在那裡直接上傳。',
             file: '檔案',
             version: '版本',
             size: '大小',
@@ -3427,6 +3431,7 @@ export default {
             scanStale: '超過 24 小時，請重新掃描',
             clustersTab: '叢集',
             tasksTab: '任務',
+            packagesTab: '軟體包',
             precheck: '節點預檢',
             selftest: '鏈路自檢',
             selftestHint: '檢查控制面到節點的任務鏈路，不改動節點',

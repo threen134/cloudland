@@ -53,7 +53,6 @@ import {
     Boxes,
     Waypoints,
     ServerCog,
-    Package,
 } from 'lucide-vue-next'
 
 const auth = useAuthStore()
@@ -181,7 +180,6 @@ const pageTitle = computed(() => {
         'storage-task-detail': t('storage.clustersPage'),
         'storage-cluster-create': t('storage.clustersPage'),
         'storage-cluster-detail': t('storage.clustersPage'),
-        'storage-packages': t('storage.packagesPage'),
         migrations: t('dashboard.migrations'),
         'migration-detail': t('dashboard.migrations'),
         alarms: t('dashboard.alarms'),
@@ -401,10 +399,6 @@ onUnmounted(() => {
                         >
                             <ServerCog :size="18" />
                             <span>{{ $t('storage.clustersPage') }}</span>
-                        </RouterLink>
-                        <RouterLink to="/dashboard/storage-packages" class="nav-item" active-class="active">
-                            <Package :size="18" />
-                            <span>{{ $t('storage.packagesPage') }}</span>
                         </RouterLink>
                     </div>
                 </div>

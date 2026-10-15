@@ -6,7 +6,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { ArrowLeft, Check, ServerCog, Download, ClipboardCheck } from 'lucide-vue-next'
+import { ArrowLeft, Check, ServerCog, Download, ClipboardCheck, Upload } from 'lucide-vue-next'
 import {
     storageClustersApi,
     TASK_LIVE_STATUSES,
@@ -14,15 +14,26 @@ import {
     type StorageTask,
     type StorageParams,
 } from '../../api/storageClusters'
-import { storagePackagesApi, type StoragePackage } from '../../api/storagePackages'
+import { type StoragePackage } from '../../api/storagePackages'
 import StorageHostPicker, { type HostPick } from '../../components/storage/StorageHostPicker.vue'
 import StoragePrecheckResults from '../../components/storage/StoragePrecheckResults.vue'
 import StatusBadge from '../../components/base/StatusBadge.vue'
+import StoragePackageUploadModal from '../../components/storage/StoragePackageUploadModal.vue'
+import StorageLicenseModal from '../../components/storage/StorageLicenseModal.vue'
 import { useGoBack } from '../../composables/useGoBack'
 import { useToast } from '../../composables/useToast'
+import { useStoragePackageFlow } from '../../composables/useStoragePackageFlow'
 import { errorMessage } from '../../utils/error'
 import { formatBytes } from '../../utils/format'
-import { roleText, storageKindText, taskStatusText, taskVariant } from '../../utils/storageCluster'
+import {
+    roleText,
+    storageKindText,
+    taskStatusText,
+    taskVariant,
+    packageBusy,
+    packageStatusText,
+    packageEditionText,
+} from '../../utils/storageCluster'
 
 const { t, te } = useI18n()
 const router = useRouter()
@@ -118,32 +129,39 @@ const typeChosen = (o: TypeOption) =>
     kind.value === o.kind && mode.value === o.mode && layout.value === (o.layout || 'replica')
 
 // ---- software ----
-const packages = ref<StoragePackage[]>([])
-const packagesLoading = ref(false)
+// The packages of the chosen kind; one missing is uploaded and its license accepted right here, the wizard stays
 const packageId = ref('')
-const kindPackages = computed(() => packages.value.filter((p) => p.kind === kind.value && p.status === 'ready'))
 // The erasure code layout runs on the erasure code edition only (the backend refuses others)
 const editionFits = (p: StoragePackage) => !ece.value || p.edition === 'erasure_code'
-const packageFits = (p: StoragePackage) => !!p.accepted_by && editionFits(p)
+const packageFits = (p: StoragePackage) => p.status === 'ready' && !!p.accepted_by && editionFits(p)
+const packageWanted = (p: StoragePackage) => p.kind === kind.value && editionFits(p)
+const {
+    packages,
+    ofKind: kindPackages,
+    failed: failedPackage,
+    loading: packagesLoading,
+    error: packagesError,
+    showUpload: showPackageUpload,
+    licenseId: licensePackageId,
+    uploadDone: packageUploaded,
+    uploadClosed: packageUploadClosed,
+    accepted: licenseAccepted,
+} = useStoragePackageFlow({
+    kind: () => kind.value,
+    // Only on the software step: a package accepted later must not change the choice the precheck was made with
+    active: () => step.value === 'software',
+    wanted: packageWanted,
+    // The package just uploaded and accepted here is the one wanted
+    onAccepted: (pkg) => {
+        if (packageWanted(pkg)) packageId.value = pkg.id
+    },
+})
 const pickPackage = () => {
     const usable = kindPackages.value.filter(packageFits)
     if (!usable.some((p) => p.id === packageId.value)) packageId.value = usable[0]?.id || ''
 }
-watch(ece, pickPackage)
-const loadPackages = async () => {
-    packagesLoading.value = true
-    try {
-        packages.value = (await storagePackagesApi.list({ limit: 500 })).storage_packages || []
-        pickPackage()
-    } catch (err) {
-        loadError.value = errorMessage(err, t('messages.error'))
-    } finally {
-        packagesLoading.value = false
-    }
-}
+watch([ece, kindPackages], pickPackage)
 const chosenPackage = computed(() => packages.value.find((p) => p.id === packageId.value))
-const editionText = (e?: string) =>
-    e && te(`storage.packages.editions.${e}`) ? t(`storage.packages.editions.${e}`) : e || '-'
 
 // ---- hosts ----
 const pick = ref<HostPick>({ roles: {}, disks: {} })
@@ -480,7 +498,6 @@ const next = () => {
     if (!stepValid.value) return
     if (step.value === 'confirm') return submit()
     stepIndex.value++
-    if (step.value === 'software') loadPackages()
 }
 const back = () => {
     if (stepIndex.value > 0) stepIndex.value--
@@ -572,35 +589,58 @@ onMounted(async () => {
             <!-- 2. Software -->
             <template v-else-if="step === 'software'">
                 <h3>{{ t('storage.wizard.softwareTitle') }}</h3>
-                <p class="intro">{{ t('storage.wizard.softwareIntro') }}</p>
+                <div class="software-head">
+                    <p class="intro">{{ t('storage.wizard.softwareIntro') }}</p>
+                    <button type="button" class="btn btn-secondary btn-sm" @click="showPackageUpload = true">
+                        <Upload :size="14" />
+                        <span>{{ t('storage.packages.uploadPackage') }}</span>
+                    </button>
+                </div>
+                <div v-if="packagesError" class="text-error">{{ packagesError }}</div>
+                <div v-if="failedPackage" class="text-error">
+                    {{
+                        t('storage.packages.uploadedFailed', {
+                            name: failedPackage.file_name,
+                            reason: failedPackage.reason || '-',
+                        })
+                    }}
+                </div>
                 <div v-if="packagesLoading" class="muted-line">{{ t('messages.loading') }}</div>
-                <div v-else-if="kindPackages.length === 0" class="muted-line">
+                <div v-else-if="kindPackages.length === 0" class="package-empty">
                     {{ t('storage.wizard.noPackage') }}
-                    <router-link :to="{ name: 'storage-packages' }" class="resource-link">{{
-                        t('storage.packagesPage')
-                    }}</router-link>
                 </div>
                 <div v-else class="package-list">
                     <label
                         v-for="p in kindPackages"
                         :key="p.id"
                         class="package-row"
-                        :class="{ disabled: !packageFits(p), active: packageId === p.id }"
+                        :class="{
+                            disabled: packageBusy(p) || !editionFits(p),
+                            active: packageId === p.id,
+                        }"
                     >
                         <input v-model="packageId" type="radio" :value="p.id" :disabled="!packageFits(p)" />
                         <span class="package-text">
                             <span class="name">{{ p.file_name }}</span>
-                            <span class="sub"
-                                >{{ p.version }} · {{ editionText(p.edition) }} · {{ (p.distros || []).join(', ') }} ·
-                                {{ formatBytes(p.size_bytes) }}</span
+                            <!-- Version, edition, systems and size are known once it is verified -->
+                            <span v-if="p.status === 'ready'" class="sub"
+                                >{{ p.version }} · {{ packageEditionText(t, te, p.edition) }} ·
+                                {{ (p.distros || []).join(', ') }} · {{ formatBytes(p.size_bytes) }}</span
                             >
                         </span>
-                        <span v-if="!p.accepted_by" class="badge badge-warning">{{
-                            t('storage.wizard.licenseNotAccepted')
-                        }}</span>
+                        <span v-if="packageBusy(p)" class="badge badge-primary">{{ packageStatusText(t, te, p) }}</span>
                         <span v-else-if="!editionFits(p)" class="badge badge-secondary">{{
                             t('storage.wizard.eceEditionNeeded')
                         }}</span>
+                        <button
+                            v-else-if="!p.accepted_by"
+                            type="button"
+                            class="btn btn-secondary btn-sm"
+                            :title="t('storage.wizard.licenseNotAccepted')"
+                            @click.prevent.stop="licensePackageId = p.id"
+                        >
+                            {{ t('storage.packages.accept') }}
+                        </button>
                     </label>
                 </div>
             </template>
@@ -1080,6 +1120,20 @@ onMounted(async () => {
                 }}
             </button>
         </div>
+
+        <StoragePackageUploadModal
+            :show="showPackageUpload"
+            :packages="packages"
+            :initial-kind="kind"
+            @close="packageUploadClosed"
+            @done="packageUploaded"
+        />
+        <StorageLicenseModal
+            :show="!!licensePackageId"
+            :package-id="licensePackageId"
+            @close="licensePackageId = ''"
+            @accepted="licenseAccepted"
+        />
     </div>
 </template>
 
@@ -1186,6 +1240,29 @@ onMounted(async () => {
     font-size: var(--font-size-xs);
     color: var(--text-secondary);
     line-height: 1.5;
+}
+
+.software-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-3);
+}
+
+.software-head .intro {
+    flex: 1;
+}
+
+.software-head .btn {
+    flex-shrink: 0;
+}
+
+.package-empty {
+    padding: var(--spacing-3);
+    border: 1px dashed var(--border-light);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
 }
 
 .package-list {

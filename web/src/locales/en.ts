@@ -3097,8 +3097,11 @@ export default {
             gpfsIntro:
                 'One host after the other: the instances that use this cluster move off the host (as maintenance does), GPFS stops, the new release is installed and built, GPFS starts and the disks of the host come back before the next host goes.',
             package: 'Package of the new release',
-            noPackage:
-                'No package newer than the current release with its license accepted: upload one under Packages first',
+            noPackage: 'No package newer than the current release with its license accepted: upload one below',
+            uploadedOlder:
+                '{name}, just uploaded, is {version}: not newer than the {current} the cluster runs, so it cannot upgrade it',
+            uploadedEdition:
+                '{name}, just uploaded, is of the {edition}; the cluster runs the {current}, and an upgrade keeps the edition',
             finalize: 'Finalize (irreversible)',
             finalizeHint:
                 'Once every host runs the new release, raise the cluster and its file systems to it (mmchconfig release=LATEST, mmchfs -V full). Hosts of an older release can not join afterwards; there is no way back.',
@@ -3181,8 +3184,8 @@ export default {
                 'Virtual machines and emulated disks have no enclosure slots: this turns the slot check and the volatile write cache check of the recovery group off. IBM does not support it, never tick it in production; on real servers run ecedrivemapping on each first.',
             softwareTitle: 'Choose the software package',
             softwareIntro:
-                'Packages are uploaded on the Software packages page; only a verified one with its license accepted can be chosen.',
-            noPackage: 'No package yet; upload one on',
+                'Only a verified package with its license accepted can be chosen; if there is none, upload one here with "Upload a package" and accept its license once it is verified.',
+            noPackage: 'No package for this storage yet: upload one with "Upload a package".',
             licenseNotAccepted: 'License not accepted',
             eceEditionNeeded: 'Erasure code layout needs the Erasure Code Edition',
             hostsTitle: 'Hosts, roles and disks',
@@ -3507,10 +3510,11 @@ export default {
         title: 'Storage',
         poolsPage: 'Storage pools',
         clustersPage: 'Storage clusters',
-        packagesPage: 'Packages',
         packages: {
             intro: 'Installers of storage software (only GPFS needs one for now): once uploaded they are verified in the background, and a deployment can use one after its license is accepted.',
             upload: 'Upload',
+            uploadPackage: 'Upload a package',
+            uploadedFailed: 'The package just uploaded, {name}, could not be used: {reason}',
             uploadTitle: 'Upload a package',
             uploadIntro:
                 'The file goes up in parts of 8 MiB; when an upload is cut off, choose the same file again to go on. Or give an address and let the platform download it.',
@@ -3526,7 +3530,7 @@ export default {
             uploadFailed: 'The upload failed',
             emptyTitle: 'No packages yet',
             emptyHint:
-                'Deploy a GPFS or Ceph cluster with "New cluster", or import an existing one. The hosts you plan to use can be checked first: OS and kernel, time sync, ports between the hosts, room in the data directories, memory and disks. The precheck only checks; it installs and changes nothing.',
+                'Upload an installer with "Upload a package", or give an address and let the platform download it; once it is verified and its license accepted, new clusters and upgrades can use it. The new cluster wizard and the upgrade dialog can upload one too.',
             file: 'File',
             version: 'Version',
             size: 'Size',
@@ -3556,6 +3560,7 @@ export default {
             scanStale: 'older than 24 hours: scan again',
             clustersTab: 'Clusters',
             tasksTab: 'Tasks',
+            packagesTab: 'Packages',
             precheck: 'Host precheck',
             selftest: 'Task path selftest',
             selftestHint: 'Check the task path from the control plane to the hosts without changing them',

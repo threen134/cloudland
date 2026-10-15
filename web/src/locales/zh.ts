@@ -2990,7 +2990,9 @@ export default {
             gpfsIntro:
                 '逐台升级：每台节点先把用这个集群存储的云服务器迁走（和维护模式一样），再停 GPFS、装新版本、重新编译、启动，并把这台的盘拉回来，才轮到下一台。',
             package: '新版本的安装包',
-            noPackage: '没有比当前版本新、已接受许可的安装包：先在「软件包」里上传',
+            noPackage: '没有比当前版本新、已接受许可的安装包：可以在下面上传新版本的安装包',
+            uploadedOlder: '刚上传的 {name} 是 {version}，不比集群当前的 {current} 新，不能用来升级',
+            uploadedEdition: '刚上传的 {name} 是{edition}，集群用的是{current}，版本类型不同不能升级',
             finalize: '完成升级（不可逆）',
             finalizeHint:
                 '所有节点都运行新版本后，把集群和文件系统提升到新版本（mmchconfig release=LATEST、mmchfs -V full）。之后旧版本的节点不能再加入，无法回退。',
@@ -3069,8 +3071,9 @@ export default {
             eceNoSlotMapHint:
                 '虚拟机和模拟盘没有机箱槽位，勾选后关闭恢复组的槽位检查和磁盘易失写缓存检查。IBM 不支持这种用法，生产环境不要勾选；实体服务器要先在每台上运行 ecedrivemapping 生成槽位映射。',
             softwareTitle: '选择软件包',
-            softwareIntro: '安装包在「软件包」页上传；只能选择校验通过并已接受许可证的包。',
-            noPackage: '还没有可用的安装包，先到这里上传：',
+            softwareIntro:
+                '只能选择校验通过并已接受许可证的安装包；没有的话点「上传安装包」在这里上传，校验完成后接受许可证即可选用。',
+            noPackage: '还没有这种存储的安装包：点「上传安装包」上传。',
             licenseNotAccepted: '许可证未接受',
             eceEditionNeeded: '纠删码布局要用纠删码版',
             hostsTitle: '节点、角色和磁盘',
@@ -3376,10 +3379,11 @@ export default {
         title: '存储',
         poolsPage: '存储池',
         clustersPage: '存储集群',
-        packagesPage: '软件包',
         packages: {
             intro: '存储软件的安装包（目前只有 GPFS 需要）：上传后平台在后台校验并读出版本、支持的系统和许可证，接受许可证后才能用于部署。',
             upload: '上传',
+            uploadPackage: '上传安装包',
+            uploadedFailed: '刚上传的安装包 {name} 没能用上：{reason}',
             uploadTitle: '上传软件包',
             uploadIntro:
                 '文件按 8 MiB 分片上传，中途断开后重新选同一个文件即可接着传；也可以填一个下载地址，由平台自己下载。',
@@ -3395,7 +3399,7 @@ export default {
             uploadFailed: '上传失败',
             emptyTitle: '还没有软件包',
             emptyHint:
-                '用「新建集群」部署 GPFS 或 Ceph 集群，或导入一个已有的集群；部署前也可以先对计划使用的节点做预检：操作系统与内核、时间同步、节点之间的端口、数据目录空间、内存和磁盘。预检只检查，不安装、不改动任何东西。',
+                '点「上传安装包」上传安装文件，或者填一个下载地址让平台自己下载；校验通过、接受许可证之后，新建集群和升级时就能选用。新建集群和升级时也可以在那里直接上传。',
             file: '文件',
             version: '版本',
             size: '大小',
@@ -3424,6 +3428,7 @@ export default {
             scanStale: '超过 24 小时，请重新扫描',
             clustersTab: '集群',
             tasksTab: '任务',
+            packagesTab: '软件包',
             precheck: '节点预检',
             selftest: '链路自检',
             selftestHint: '检查控制面到节点的任务链路，不改动节点',

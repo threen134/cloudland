@@ -1,6 +1,7 @@
 // Texts of storage clusters and their tasks. Kinds, statuses and step names come from the backend; one without a
 // translation is shown as it is rather than as a key.
 import type { StatusVariant } from './status'
+import type { StoragePackage } from '../api/storagePackages'
 
 type T = (key: string, values?: Record<string, unknown>) => string
 type Te = (key: string) => boolean
@@ -56,3 +57,24 @@ export const formatTimeout = (t: T, seconds: number) =>
     seconds % 60 === 0
         ? t('storage.cluster.minutes', { n: seconds / 60 })
         : t('storage.cluster.seconds', { n: seconds })
+
+// ---- storage packages (shared-storage-design.md §6.1) ----
+
+/** Still moving on its own: verified by clapi, or downloaded by it from an address; lists refresh while one is */
+export const packageBusy = (p: StoragePackage) =>
+    p.status === 'verifying' || (p.status === 'uploading' && !!p.source_url)
+
+/** The status of a package; an upload from the browser with how far it got */
+export const packageStatusText = (t: T, te: Te, p: StoragePackage) => {
+    if (p.status === 'uploading' && !p.source_url && p.total_parts)
+        return t('storage.packages.statusUploading', { percent: Math.floor((p.parts_done * 100) / p.total_parts) })
+    const key = `storage.packages.statuses.${p.status}`
+    return te(key) ? t(key) : p.status
+}
+
+/** The edition of a package (gpfs: data management, erasure code, ...) */
+export const packageEditionText = (t: T, te: Te, edition?: string) => {
+    if (!edition) return '-'
+    const key = `storage.packages.editions.${edition}`
+    return te(key) ? t(key) : edition
+}

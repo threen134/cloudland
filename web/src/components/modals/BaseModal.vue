@@ -1,3 +1,23 @@
+<script lang="ts">
+// Dialogs open right now, the last one on top: a dialog can open another over itself (uploading a package from the
+// storage upgrade dialog), and ESC closes only the topmost. Module scope: <script setup> runs once per instance
+const openStack: symbol[] = []
+
+// The page behind does not scroll while any dialog is open. Kept with the stack rather than per dialog: dialogs do
+// not always close in the reverse order they opened (a license dialog pops up on its own over a dialog that then
+// closes), and a value saved per dialog would restore the lock of another one
+let savedOverflow: string | null = null
+const syncScrollLock = () => {
+    if (openStack.length && savedOverflow === null) {
+        savedOverflow = document.body.style.overflow
+        document.body.style.overflow = 'hidden'
+    } else if (!openStack.length && savedOverflow !== null) {
+        document.body.style.overflow = savedOverflow
+        savedOverflow = null
+    }
+}
+</script>
+
 <script setup lang="ts">
 // 所有弹窗的外壳。原先每个页面各写一遍 overlay + 内容骨架，于是没有一个弹窗
 // 支持 ESC 关闭、背景滚动锁定和回车提交。这里统一实现一次。
@@ -34,13 +54,23 @@ const props = withDefaults(
 const emit = defineEmits<{ close: []; submit: [] }>()
 
 const contentRef = ref<HTMLElement | null>(null)
+const self = Symbol('modal')
+const pushOpen = () => {
+    if (!openStack.includes(self)) openStack.push(self)
+    syncScrollLock()
+}
+const popOpen = () => {
+    const i = openStack.indexOf(self)
+    if (i >= 0) openStack.splice(i, 1)
+    syncScrollLock()
+}
 
 const requestClose = () => {
     if (!props.loading) emit('close')
 }
 
 const onKeydown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') requestClose()
+    if (e.key === 'Escape' && openStack[openStack.length - 1] === self) requestClose()
 }
 
 // Initial focus: the element marked autofocus, else the first visible form control of the body, else the
@@ -87,36 +117,18 @@ const onEnterKey = (e: KeyboardEvent) => {
     if (!edited || el.type === 'checkbox' || el.type === 'radio') e.preventDefault()
 }
 
-// 打开时锁住背景滚动，关闭或组件销毁时恢复。
-// 记录原值而不是直接清空，避免与其他也改过 overflow 的代码互相覆盖。
-let previousOverflow: string | null = null
-
-const lockScroll = () => {
-    if (previousOverflow === null) {
-        previousOverflow = document.body.style.overflow
-        document.body.style.overflow = 'hidden'
-    }
-}
-
-const unlockScroll = () => {
-    if (previousOverflow !== null) {
-        document.body.style.overflow = previousOverflow
-        previousOverflow = null
-    }
-}
-
 watch(
     () => props.show,
     async (visible) => {
         if (visible) {
             edited = false
-            lockScroll()
+            pushOpen()
             document.addEventListener('keydown', onKeydown)
             // 焦点移入弹窗，否则键盘用户仍停留在背景页面上
             await nextTick()
             focusInitial()
         } else {
-            unlockScroll()
+            popOpen()
             document.removeEventListener('keydown', onKeydown)
         }
     },
@@ -124,7 +136,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
-    unlockScroll()
+    popOpen()
     document.removeEventListener('keydown', onKeydown)
 })
 

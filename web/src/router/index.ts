@@ -302,10 +302,9 @@ const router = createRouter({
                     meta: { requiresSuperAdmin: true },
                 },
                 {
+                    // The packages are a tab of the storage clusters page now
                     path: 'storage-packages',
-                    name: 'storage-packages',
-                    component: () => import('../views/dashboard/StoragePackages.vue'),
-                    meta: { requiresSuperAdmin: true },
+                    redirect: { name: 'storage-clusters', query: { tab: 'packages' } },
                 },
                 {
                     path: 'storage-tasks/:id',

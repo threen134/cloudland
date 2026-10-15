@@ -1,22 +1,30 @@
 <script setup lang="ts">
-// Storage packages (shared-storage-design.md §6.1, §13.3): installers of storage software in the package repository.
-// Upload one, wait for its verification, read and accept its license; deployments can then use it.
+// Storage packages (shared-storage-design.md §6.1, §13.3): installers of storage software in the package repository,
+// a tab of the storage clusters page (the page holds the refresh and upload buttons and calls load / openUpload).
+// Upload one, wait for its verification, read and accept its license; deployments can then use it. The creation
+// wizard and the upgrade dialog can also upload and accept one themselves (useStoragePackageFlow).
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RefreshCw, Package, Upload, FileText, Trash2 } from 'lucide-vue-next'
+import { Package, FileText, Trash2 } from 'lucide-vue-next'
 import { storagePackagesApi, type StoragePackage } from '../../api/storagePackages'
 import { useListQuery } from '../../composables/useListQuery'
 import { useRegionStore } from '../../stores/region'
 import { formatBytes, formatDateTime } from '../../utils/format'
-import { storageKindText, storageKindShort } from '../../utils/storageCluster'
+import {
+    storageKindText,
+    storageKindShort,
+    packageBusy,
+    packageStatusText,
+    packageEditionText,
+} from '../../utils/storageCluster'
 import { errorMessage } from '../../utils/error'
 import type { StatusVariant } from '../../utils/status'
-import DataTable, { type Column } from '../../components/base/DataTable.vue'
-import PaginationBar from '../../components/base/PaginationBar.vue'
-import StatusBadge from '../../components/base/StatusBadge.vue'
-import DeleteModal from '../../components/modals/DeleteModal.vue'
-import StoragePackageUploadModal from '../../components/storage/StoragePackageUploadModal.vue'
-import StorageLicenseModal from '../../components/storage/StorageLicenseModal.vue'
+import DataTable, { type Column } from '../base/DataTable.vue'
+import PaginationBar from '../base/PaginationBar.vue'
+import StatusBadge from '../base/StatusBadge.vue'
+import DeleteModal from '../modals/DeleteModal.vue'
+import StoragePackageUploadModal from './StoragePackageUploadModal.vue'
+import StorageLicenseModal from './StorageLicenseModal.vue'
 
 const { t, te } = useI18n()
 const region = useRegionStore()
@@ -42,17 +50,10 @@ const columns = computed<Column[]>(() => [
 
 const statusVariant = (p: StoragePackage): StatusVariant =>
     p.status === 'ready' ? 'success' : p.status === 'error' ? 'error' : 'pending'
-const statusText = (p: StoragePackage) => {
-    if (p.status === 'uploading' && !p.source_url && p.total_parts)
-        return t('storage.packages.statusUploading', { percent: Math.floor((p.parts_done * 100) / p.total_parts) })
-    return te(`storage.packages.statuses.${p.status}`) ? t(`storage.packages.statuses.${p.status}`) : p.status
-}
 
 // Packages being verified or downloaded by clapi move on by themselves: refresh quietly meanwhile
 let timer: ReturnType<typeof setInterval> | null = null
-const anyBusy = computed(() =>
-    query.items.value.some((p) => p.status === 'verifying' || (p.status === 'uploading' && p.source_url))
-)
+const anyBusy = computed(() => query.items.value.some(packageBusy))
 watch(
     anyBusy,
     (busy) => {
@@ -107,22 +108,20 @@ const pageSize = query.pageSize
 onMounted(() => {
     if (region.currentRegionId) query.load()
 })
+
+defineExpose({
+    load: () => query.load(),
+    openUpload: () => {
+        showUpload.value = true
+    },
+    loading: query.loading,
+    total: query.total,
+})
 </script>
 
 <template>
-    <div class="vpc-list-container">
-        <div class="page-actions">
-            <p class="page-intro">{{ t('storage.packages.intro') }}</p>
-            <div class="actions">
-                <button class="btn btn-secondary btn-sm btn-icon" :title="t('actions.refresh')" @click="query.load()">
-                    <RefreshCw :size="14" :class="{ spinning: query.loading.value }" />
-                </button>
-                <button class="btn btn-primary btn-sm" @click="showUpload = true">
-                    <Upload :size="14" />
-                    <span>{{ t('storage.packages.upload') }}</span>
-                </button>
-            </div>
-        </div>
+    <div>
+        <p class="page-intro">{{ t('storage.packages.intro') }}</p>
 
         <DataTable
             :columns="columns"
@@ -159,20 +158,14 @@ onMounted(() => {
             </template>
             <template #cell-version="{ row: p }">
                 <div>{{ p.version || '-' }}</div>
-                <div v-if="p.edition" class="sub nowrap">
-                    {{
-                        te(`storage.packages.editions.${p.edition}`)
-                            ? t(`storage.packages.editions.${p.edition}`)
-                            : p.edition
-                    }}
-                </div>
+                <div v-if="p.edition" class="sub nowrap">{{ packageEditionText(t, te, p.edition) }}</div>
                 <div v-if="p.distros.length" class="sub nowrap">{{ p.distros.join(', ') }}</div>
             </template>
             <template #cell-size_bytes="{ row: p }">
                 <span class="nowrap">{{ p.size_bytes ? formatBytes(p.size_bytes) : '-' }}</span>
             </template>
             <template #cell-status="{ row: p }">
-                <StatusBadge :variant="statusVariant(p)" :label="statusText(p)" />
+                <StatusBadge :variant="statusVariant(p)" :label="packageStatusText(t, te, p)" />
                 <div v-if="p.reason" class="sub reason" :title="p.reason">{{ p.reason }}</div>
             </template>
             <template #cell-license="{ row: p }">
@@ -233,27 +226,11 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.page-actions {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-3);
-    flex-wrap: wrap;
-    margin-bottom: var(--spacing-4);
-}
-
 .page-intro {
-    margin: 0;
-    flex: 1;
-    min-width: 280px;
+    margin: 0 0 var(--spacing-3);
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
     line-height: 1.6;
-}
-
-.actions {
-    display: flex;
-    gap: var(--spacing-2);
 }
 
 .empty-state {

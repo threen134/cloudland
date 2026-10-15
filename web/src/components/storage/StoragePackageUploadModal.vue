@@ -11,7 +11,8 @@ import { storageKindText } from '../../utils/storageCluster'
 import { formatBytes } from '../../utils/format'
 import { errorMessage } from '../../utils/error'
 
-const props = defineProps<{ show: boolean; packages: StoragePackage[] }>()
+// initialKind: the storage type to start with (the creation wizard and the upgrade dialog know it)
+const props = defineProps<{ show: boolean; packages: StoragePackage[]; initialKind?: string }>()
 const emit = defineEmits<{ close: []; done: [pkg: StoragePackage] }>()
 const { t, te } = useI18n()
 
@@ -50,6 +51,8 @@ watch(
     () => props.show,
     async (show) => {
         if (!show) return
+        // A package uploaded during an earlier opening is in the list given now, with its status of now
+        current.value = null
         source.value = 'file'
         file.value = null
         url.value = ''
@@ -58,7 +61,9 @@ watch(
         total.value = 0
         try {
             kinds.value = (await storageClustersApi.backends()).filter((b) => b.package)
-            if (!kinds.value.some((b) => b.kind === kind.value)) kind.value = kinds.value[0]?.kind || ''
+            if (props.initialKind && kinds.value.some((b) => b.kind === props.initialKind))
+                kind.value = props.initialKind
+            else if (!kinds.value.some((b) => b.kind === kind.value)) kind.value = kinds.value[0]?.kind || ''
         } catch (err) {
             error.value = errorMessage(err, t('messages.error'))
         }
@@ -102,7 +107,9 @@ const uploadFile = async (f: File) => {
         }
         sent.value = n
     }
-    return storagePackagesApi.complete(pkg.id)
+    // No longer taking parts: choosing the same file again starts a new upload rather than resuming this one
+    current.value = await storagePackagesApi.complete(pkg.id)
+    return current.value
 }
 
 const submit = async () => {

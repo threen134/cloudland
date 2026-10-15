@@ -176,6 +176,8 @@ export interface StorageCluster {
     status: string
     health: string
     version?: string
+    /** Detail only: the edition of the package the cluster runs (gpfs); an upgrade takes the same edition only */
+    edition?: string
     /** The storage software's own id: GPFS cluster name and id, Ceph fsid */
     cluster_ref?: string
     unsupported: boolean
