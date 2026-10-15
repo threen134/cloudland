@@ -3,7 +3,7 @@ export GO111MODULE=on
 all: build
 
 version:
-	git describe --always --tags > .version 2>/dev/null || echo "dev" > .version
+	cp -f ../VERSION .version
 
 build: version
 	go build -o cpgateway -ldflags "-X \"main.Version=$$(cat .version)\""

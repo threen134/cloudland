@@ -387,12 +387,14 @@ services:
       - ./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
     # alertmanager.yml 需根据实际环境配置
     environment:
-      # Shared with clapi, which refuses the alert webhook without it (credentials_file in alertmanager.yml)
+      # Shared with clapi, which refuses the alert webhook without it (credentials_file in alertmanager.yml).
+      # Written to the container's own /tmp: it does not depend on who owns volumes/alertmanager on the host
+      # and the token does not land on the host disk
       ALERT_WEBHOOK_TOKEN: ${ALERT_WEBHOOK_TOKEN:-}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
-        umask 077 && printf '%s' "$$ALERT_WEBHOOK_TOKEN" > /data/webhook_token &&
+        umask 077 && printf '%s' "$$ALERT_WEBHOOK_TOKEN" > /tmp/webhook_token &&
         exec /bin/alertmanager --config.file=/etc/alertmanager/alertmanager.yml
         --storage.path=/data --data.retention=720h
     ports:

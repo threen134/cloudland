@@ -21,6 +21,6 @@ receivers:
       # into this file at start (docker-compose.yml)
       authorization:
         type: Bearer
-        credentials_file: /data/webhook_token
+        credentials_file: /tmp/webhook_token
       tls_config:
         insecure_skip_verify: true

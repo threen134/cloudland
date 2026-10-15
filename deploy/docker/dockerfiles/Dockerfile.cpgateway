@@ -11,6 +11,8 @@ WORKDIR /build
 COPY cpgateway/go.mod cpgateway/go.sum ./
 RUN go mod download
 COPY cpgateway/ ./
+# Release number: the repository root VERSION file
+COPY VERSION ./.version
 
 # 生产只使用 PostgreSQL；CGO_ENABLED=0 下 SQLite 驱动不可用，不影响运行
 RUN CGO_ENABLED=0 go build -o /cpgateway \

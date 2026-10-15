@@ -2,9 +2,9 @@ export GO111MODULE=on
 
 all: api alarm_rules_manager cland cloudlet
 
-# git describe 失败时（无 .git、非属主执行、未装 git）保留已提交的 .version，不中断构建
+# The release number lives in the repository root VERSION file (shared by clapi, cpgateway and the web UI)
 version:
-	git describe --always --tags > .version.tmp 2>/dev/null && mv -f .version.tmp .version || rm -f .version.tmp
+	cp -f ../VERSION .version
 
 setup:
 	go install github.com/swaggo/swag/cmd/swag@latest

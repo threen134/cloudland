@@ -21,9 +21,8 @@ RUN go mod download
 # 复制 api 源码
 COPY api/ ./
 
-# 生成版本号
-RUN git config --global --add safe.directory /build 2>/dev/null; \
-    echo "docker-build" > .version
+# Release number: the repository root VERSION file
+COPY VERSION ./.version
 
 # 编译 clapi (已含原 clbase 功能)
 RUN cd cmds/api && go build -o /out/clapi -ldflags "-X \"main.Version=$(cat /build/.version)\""

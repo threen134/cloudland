@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	Version = "0.0.1"
+	Version = "dev"
 )
 
 var (
@@ -59,6 +59,8 @@ func RootCmd() (cmd *cobra.Command) {
 }
 
 func init() {
+	// GET /version answers the release number built in (the repository root VERSION file)
+	services.Version = strings.TrimSpace(Version)
 	viper.Set("AppVersion", Version)
 	viper.Set("GoVersion", strings.Title(runtime.Version()))
 	viper.SetConfigFile("conf/config.toml")
