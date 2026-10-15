@@ -340,7 +340,8 @@ func (c ErrCode) ToHTTPStatus() int {
 	switch {
 	case c == ErrPermissionDenied || c == ErrNoOrgMembership || c == ErrUserDisabled:
 		return 403
-	case c >= 100002 && c <= 100003 || c == ErrInvalidCIDR || c == ErrCIDRTooBig:
+	case c >= 100002 && c <= 100003 || c == ErrInvalidCIDR || c == ErrCIDRTooBig || c == ErrCannotDeletePrimaryInterface ||
+		c == ErrHypervisorInvalidState:
 		return 400
 	case c == ErrCannotRemoveOwner || c == ErrLastSystemAdmin || c == ErrCannotSelfDemote || c == ErrMissingOrgContext || c == ErrSlugImmutable || c == ErrSlugInvalid:
 		return 400

@@ -63,3 +63,26 @@ func TestFloatingIpCascadeDeletePG(t *testing.T) {
 	}
 	cland.take()
 }
+
+// 1.1.0 regression run: a floating IP of another organization on this organization's load balancer (a system admin
+// attached it) is seen by the load balancer's own operations (keepalived config, detach, delete), not by listing
+func TestLoadBalancerForeignFloatingIpPG(t *testing.T) {
+	_, db := pgContext(t, 1)
+	org := p2Org(9305)
+	lb := &model.LoadBalancer{Owner: org, Name: p2Name("lb-foreign")}
+	must(t, db.Create(lb).Error)
+	fip := &model.FloatingIp{Owner: org + 1, Name: p2Name("lb-fip"), FipAddress: "52.117.101.156/28",
+		Type: string(PublicLoadBalancer), LoadBalancerID: lb.ID}
+	must(t, db.Create(fip).Error)
+	writer := asMember(org, model.OrgWriter)
+	_, listed, err := FloatingIpAdmin.List(writer, 0, -1, "", "", "load_balancer_id = ?", lb.ID)
+	must(t, err)
+	if len(listed) != 0 {
+		t.Fatalf("the organization's listing shows another organization's floating ip: %d", len(listed))
+	}
+	attached, err := FloatingIpAdmin.OfLoadBalancer(writer, lb.ID)
+	must(t, err)
+	if len(attached) != 1 || attached[0].ID != fip.ID {
+		t.Fatalf("OfLoadBalancer returned %d floating ips, want the admin's one", len(attached))
+	}
+}

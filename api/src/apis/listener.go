@@ -219,6 +219,10 @@ func (v *ListenerAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
+	if err = validateListenerTLS(payload.Cert, payload.Key); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
 	logger.Ctx(ctx).Debugf("Creating listener with %+v", payload)
 	listener, err := listenerAdmin.Create(ctx, payload.Name, payload.Mode, payload.Key, payload.Cert, int32(payload.Port), loadBalancer)
 	if err != nil {

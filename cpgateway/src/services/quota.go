@@ -310,6 +310,21 @@ func getBackendJSON(ctx context.Context, url string, headers map[string]string) 
 	return data, resp.StatusCode, nil
 }
 
+// sameOwnerCount counts the floating IPs of a load balancer response owned by the load balancer's organization.
+// One without owner_uuid (an older region) counts, as before
+func sameOwnerCount(data map[string]interface{}) int {
+	fips, _ := data["floating_ips"].([]interface{})
+	owner, _ := data["owner_uuid"].(string)
+	n := 0
+	for _, f := range fips {
+		fip, _ := f.(map[string]interface{})
+		if fipOwner, _ := fip["owner_uuid"].(string); fipOwner == "" || owner == "" || fipOwner == owner {
+			n++
+		}
+	}
+	return n
+}
+
 func floatOrZero(v interface{}) float64 {
 	f, _ := ToFloat(v)
 	return f
@@ -371,10 +386,11 @@ func QueryResourceAmount(ctx context.Context, region *model.Region, resource, ap
 	case "vpc":
 		return ResourceAmount{"vpcs": 1}, nil
 	case "load_balancer":
-		// Deleting a load balancer also deletes its floating IPs
+		// Deleting a load balancer also deletes its floating IPs, except those of another organization (a system
+		// admin may attach one): they are only detached and stay counted for their owner
 		amount := ResourceAmount{"load_balancers": 1}
-		if fips, ok := data["floating_ips"].([]interface{}); ok && len(fips) > 0 {
-			amount["public_ips"] = float64(len(fips))
+		if n := sameOwnerCount(data); n > 0 {
+			amount["public_ips"] = float64(n)
 		}
 		return amount, nil
 	case "vpn_gateway":

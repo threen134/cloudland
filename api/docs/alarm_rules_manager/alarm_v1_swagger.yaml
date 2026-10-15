@@ -1247,6 +1247,11 @@ definitions:
     type: object
   apis.InstancePatchPayload:
     properties:
+      force:
+        description: |-
+          Force (system admins only, with power_action) skips the refusal while the instance is rescuing, reinstalling
+          or resizing, to recover one stuck there; the admin answers for nothing still owning its disks
+        type: boolean
       hostname:
         description: same rule as InstancePayload
         maxLength: 32
@@ -2598,6 +2603,11 @@ definitions:
         type: string
       status:
         type: string
+      stray:
+        description: |-
+          A claim that never made it into the storage (the new disk of an aborted replacement) in a layout where no disk
+          leaves on its own: removing it gives it back (the erasure code layout)
+        type: boolean
     type: object
   apis.StorageClusterHealthResponse:
     properties:

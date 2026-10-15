@@ -414,6 +414,50 @@ func TestMigrationPlacementPG(t *testing.T) {
 	}
 }
 
+// A given target (1.1.0 regression run): the migration record was written before the placement check, so a strict
+// pack group saw its own member as migrating from an earlier request (409 busy) and a spread member's own target
+// counted as occupied. Commands can not be sent here (the gRPC client of the test binary may already point at no
+// cland): the placement must let the first member through and write the record with the given target
+func TestMigrationGivenTargetPlacementPG(t *testing.T) {
+	f := newPGFixture(t, 9801)
+	for _, h := range []int32{9801, 9802, 9803} {
+		f.host(h, 16, 64, 2000)
+	}
+	opts := &MigrationOptions{AllowPoolFallback: true}
+	placementRefusal := func(err error) bool {
+		c := errCode(err)
+		return c == ErrPlacementGroupBusy || c == ErrPlacementGroupConflict || c == ErrPlacementGroupHostFull || c == ErrPlacementGroupNoHost
+	}
+	stored := func(r *MigrationResult) *model.Migration {
+		m := &model.Migration{}
+		if r.Migration == nil || f.db.Where("id = ?", r.Migration.ID).Take(m).Error != nil {
+			return nil
+		}
+		return m
+	}
+	pack := f.group("given-pack", model.PlacementPolicyPack, true)
+	p1 := f.member(pack, "p1", 9801, 0, model.InstanceStatusRunning, 1, 1024, 10, 10*time.Minute)
+	p2 := f.member(pack, "p2", 9801, 0, model.InstanceStatusRunning, 1, 1024, 10, 10*time.Minute)
+	_, results, _ := migrationAdmin.Create(f.ctx, "pg-given-pack", []*model.Instance{p1, p2}, false, 9802, opts, true)
+	if len(results) == 0 || placementRefusal(results[0].Error) {
+		t.Fatalf("first member of a strict pack group to a given host refused by the placement: %+v", results)
+	}
+	if m := stored(results[0]); m == nil || m.TargetHyper != 9802 {
+		t.Fatalf("first member: migration record %+v, want target 9802", m)
+	}
+	spread := f.group("given-spread", model.PlacementPolicySpread, true)
+	s1 := f.member(spread, "s1", 9801, 0, model.InstanceStatusRunning, 1, 1024, 10, 10*time.Minute)
+	f.member(spread, "s2", 9802, 0, model.InstanceStatusRunning, 1, 1024, 10, 10*time.Minute)
+	_, results, _ = migrationAdmin.Create(f.ctx, "pg-given-spread", []*model.Instance{s1}, false, 9803, opts, true)
+	if len(results) != 1 || placementRefusal(results[0].Error) {
+		t.Fatalf("spread member to a free given host refused by the placement: %+v", results)
+	}
+	_, results, _ = migrationAdmin.Create(f.ctx, "pg-given-spread2", []*model.Instance{s1}, false, 9802, opts, true)
+	if len(results) != 1 || errCode(results[0].Error) != ErrPlacementGroupConflict {
+		t.Fatalf("spread member onto a host holding another member: %+v, want ErrPlacementGroupConflict", results)
+	}
+}
+
 // A boot disk in a pool no host can take: the storage reason, not a placement one
 func TestCreationPlacementPoolReasonPG(t *testing.T) {
 	f := newPGFixture(t, 9701)

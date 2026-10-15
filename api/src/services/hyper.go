@@ -532,6 +532,11 @@ func (a *HyperAdmin) Maintain(ctx context.Context, hostID int32, migrate bool, t
 	if hyper.Status != 1 && hyper.Status != 0 {
 		return nil, NewCLError(ErrHypervisorInvalidState, "Hypervisor must be active or disabled to maintain", nil)
 	}
+	// Checked before the status changes: once this host is in maintenance, migrationAdmin.Create would report the
+	// target as "not active" instead. Only when instances are moved to a given target: otherwise it is ignored
+	if migrate && targetHyper >= 0 && targetHyper == hostID {
+		return nil, NewCLError(ErrInvalidParameter, "The target hypervisor must be another hypervisor", nil)
+	}
 
 	// 有虚拟机正在迁入时拒绝进入维护：这些虚拟机此刻的 instances.hyper 仍指向源节点，
 	// 不会出现在下面的腾空快照里，等迁移完成就会落到一台已处于维护中的节点上并留在那儿

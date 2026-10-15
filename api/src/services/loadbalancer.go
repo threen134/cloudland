@@ -37,8 +37,7 @@ func GetLBFloatingIpJson(ctx context.Context, loadBalancer *model.LoadBalancer) 
 			logger.Ctx(ctx).Info("EXIT GetLBFloatingIpJson: success")
 		}
 	}()
-	intQuery := fmt.Sprintf("load_balancer_id = %d", loadBalancer.ID)
-	_, floatingIps, err := (&FloatingIpAdminService{}).List(ctx, 0, -1, "", "", intQuery)
+	floatingIps, err := (&FloatingIpAdminService{}).OfLoadBalancer(ctx, loadBalancer.ID)
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to list floating ips", err)
 		err = NewCLError(ErrFIPListFailed, "Failed to list floating ips", err)
@@ -501,6 +500,13 @@ func (a *LoadBalancerAdmin) Update(ctx context.Context, loadBalancer *model.Load
 	return
 }
 
+// lbFloatingIpReleasable tells whether deleting a load balancer releases one of its floating IPs. One the caller may not
+// release (a system admin attached an address of another organization) is only taken off and stays with its owner:
+// releasing it needs a writer of that organization (FloatingIpAdmin.DeleteOwned), and cpgateway counts it for the owner
+func lbFloatingIpReleasable(m *MemberShip, floatingIp *model.FloatingIp) bool {
+	return m.CheckResourceOrg(model.OrgWriter, floatingIp.Owner)
+}
+
 func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
 	logger.Ctx(ctx).Infof("ENTER LoadBalancerAdmin.Delete: lbID=%d, name=%s", loadBalancer.ID, loadBalancer.Name)
 	defer func() {
@@ -523,15 +529,18 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the router", nil)
 		return
 	}
-	intQuery := fmt.Sprintf("load_balancer_id = %d", loadBalancer.ID)
-	_, floatingIps, err := (&FloatingIpAdminService{}).List(ctx, 0, -1, "", "", intQuery)
+	floatingIps, err := (&FloatingIpAdminService{}).OfLoadBalancer(ctx, loadBalancer.ID)
 	if err != nil {
 		logger.Ctx(ctx).Error("Failed to list floating ips", err)
 		err = NewCLError(ErrFIPListFailed, "Failed to list floating ips", err)
 		return
 	}
 	for _, floatingIp := range floatingIps {
-		err = (&FloatingIpAdminService{}).Delete(ctx, floatingIp)
+		if lbFloatingIpReleasable(memberShip, floatingIp) {
+			err = (&FloatingIpAdminService{}).Delete(ctx, floatingIp)
+		} else {
+			err = (&FloatingIpAdminService{}).Detach(ctx, floatingIp)
+		}
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to delete floating ip", err)
 			err = NewCLError(ErrFIPListFailed, "Failed to delete floating ip", err)

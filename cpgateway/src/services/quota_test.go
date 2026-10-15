@@ -226,3 +226,20 @@ func TestPrepareQuotaKeepsQueryString(t *testing.T) {
 		t.Fatalf("delete without all_orgs: %+v", herr)
 	}
 }
+
+func TestSameOwnerCount(t *testing.T) {
+	fip := func(owner string) interface{} { return map[string]interface{}{"owner_uuid": owner} }
+	for name, c := range map[string]struct {
+		data map[string]interface{}
+		want int
+	}{
+		"same org":     {map[string]interface{}{"owner_uuid": "b", "floating_ips": []interface{}{fip("b"), fip("b")}}, 2},
+		"foreign fip":  {map[string]interface{}{"owner_uuid": "b", "floating_ips": []interface{}{fip("b"), fip("admin")}}, 1},
+		"older region": {map[string]interface{}{"owner_uuid": "b", "floating_ips": []interface{}{map[string]interface{}{}}}, 1},
+		"none":         {map[string]interface{}{"owner_uuid": "b"}, 0},
+	} {
+		if got := sameOwnerCount(c.data); got != c.want {
+			t.Errorf("%s: %d, want %d", name, got, c.want)
+		}
+	}
+}

@@ -680,8 +680,7 @@ func (a *FloatingIpAdminService) Detach(ctx context.Context, floatingIp *model.F
 		return NewCLError(ErrUpdateInstIDOfFIPFailed, "Failed to update instance ID for floating ip", err)
 	}
 	if loadBalancer != nil {
-		intQuery := fmt.Sprintf("load_balancer_id = %d", loadBalancer.ID)
-		_, loadBalancer.FloatingIps, err = (&FloatingIpAdminService{}).List(ctx, 0, -1, "", "", intQuery)
+		loadBalancer.FloatingIps, err = (&FloatingIpAdminService{}).OfLoadBalancer(ctx, loadBalancer.ID)
 		if err != nil {
 			logger.Ctx(ctx).Error("Failed to list floating ip(s), %v", err)
 			return
@@ -904,6 +903,18 @@ func (a *FloatingIpAdminService) Delete(ctx context.Context, floatingIp *model.F
 }
 
 func (a *FloatingIpAdminService) List(ctx context.Context, offset, limit int64, order, query string, intQuery string, intArgs ...interface{}) (total int64, floatingIps []*model.FloatingIp, err error) {
+	return a.list(ctx, true, offset, limit, order, query, intQuery, intArgs...)
+}
+
+// OfLoadBalancer lists every floating IP attached to a load balancer, whatever organization owns it: a system admin
+// may attach one of their organization's addresses to someone's load balancer, and the keepalived config, a detach
+// and the load balancer's delete must still see it. Callers have checked access to the load balancer itself
+func (a *FloatingIpAdminService) OfLoadBalancer(ctx context.Context, loadBalancerID int64) ([]*model.FloatingIp, error) {
+	_, floatingIps, err := a.list(ctx, false, 0, -1, "", "", "load_balancer_id = ?", loadBalancerID)
+	return floatingIps, err
+}
+
+func (a *FloatingIpAdminService) list(ctx context.Context, orgScoped bool, offset, limit int64, order, query string, intQuery string, intArgs ...interface{}) (total int64, floatingIps []*model.FloatingIp, err error) {
 	logger.Ctx(ctx).Infof("ENTER FloatingIpAdmin.List: offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
 	defer func() {
 		if err != nil {
@@ -924,6 +935,9 @@ func (a *FloatingIpAdminService) List(ctx context.Context, offset, limit int64, 
 
 	_, db := GetContextDB(ctx)
 	where, args := memberShip.GetOrgFilter()
+	if !orgScoped {
+		where, args = "1 = 1", nil
+	}
 	floatingIps = []*model.FloatingIp{}
 	if err = db.Model(&model.FloatingIp{}).Where(where, args...).Scopes(dbs.Contains(query, "fip_address", "int_address", "name")).Where(intQuery, intArgs...).Count(&total).Error; err != nil {
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count floatingIps", err)

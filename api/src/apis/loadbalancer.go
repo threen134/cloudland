@@ -251,6 +251,9 @@ func (v *LoadBalancerAPI) getLoadBalancerResponse(ctx context.Context, loadBalan
 			ResourceReference: &ResourceReference{
 				ID:   floatingip.UUID,
 				Name: floatingip.Name,
+				// cpgateway releases the public IP quota of an address with the load balancer only when the same
+				// organization owns both: a floating IP of another organization is detached, not released
+				OwnerUUID: orgAdmin.GetOrgUUID(ctx, floatingip.Owner),
 			},
 			FipAddress: floatingip.FipAddress,
 		}

@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 	"regexp"
@@ -32,6 +33,22 @@ func validateBackendEndpoint(endpoint string) error {
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port < 1 || port > 65535 {
 		return fmt.Errorf("endpoint port %q must be between 1 and 65535", portStr)
+	}
+	return nil
+}
+
+// validateListenerTLS requires the PEM certificate and private key of a listener to come together and to match:
+// haproxy refuses a config with a broken pair, keeps running the old one, and then no change to the load balancer
+// takes effect until that listener is deleted (1.1.0 regression run)
+func validateListenerTLS(cert, key string) error {
+	if cert == "" && key == "" {
+		return nil
+	}
+	if cert == "" || key == "" {
+		return fmt.Errorf("cert and key must be given together")
+	}
+	if _, err := tls.X509KeyPair([]byte(cert), []byte(key)); err != nil {
+		return fmt.Errorf("cert and key are not a valid PEM pair: %v", err)
 	}
 	return nil
 }

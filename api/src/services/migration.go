@@ -172,25 +172,32 @@ func (a *MigrationAdmin) createOne(ctx context.Context, name string, instance *m
 		PriorStatus:       string(instance.Status),
 	}
 	migration.Instance = instance
-	if err = tx.Create(migration).Error; err != nil {
-		return nil, NewCLError(ErrMigrationCreateFailed, "DB create migration failed", err)
-	}
-	control := fmt.Sprintf("inter=%d", tgtHyper)
 	var planErr error
-	// Members of a placement group: the group decides or checks the target, under its lock (placement-group-plan.md §6.3)
+	// Members of a placement group: the group decides or checks the target, under its lock (placement-group-plan.md §6.3).
+	// Before the record is written: the group reads the in-flight migrations of its members, and this one, written
+	// with a given target, would count as a member already migrating there (1.1.0 regression run: a strict pack group
+	// could not be moved to a given host, and a spread member's own target counted as occupied)
 	placed := false
 	if instance.PlacementGroupID > 0 {
 		var target int32
 		target, migration.PlacementWarning, planErr = placeMigration(txCtx, tx, instance, tgtHyper, opts, call)
 		if planErr == nil && tgtHyper < 0 && target >= 0 {
-			// Chosen here, so handled like a given target from now on. It must be written, not only set in memory:
-			// the callbacks and the occupancy of the group read target_hyper from the database
+			// Chosen here, so handled like a given target from now on; written with the record, as the callbacks and the
+			// occupancy of the group read target_hyper from the database
 			placed, tgtHyper, migration.TargetHyper = true, target, target
-			if uerr := tx.Model(&model.Migration{}).Where("id = ?", migration.ID).Update("target_hyper", target).Error; uerr != nil {
-				planErr = NewCLError(ErrMigrationUpdateFailed, "Failed to save the target of the migration", uerr)
-			}
 		}
 	}
+	if planErr != nil && !batch {
+		return nil, planErr
+	}
+	// A placement refusal in batch mode goes straight to the not_doing record below: nothing to write before it,
+	// and a failed insert here must not replace the refusal as the reason
+	if planErr == nil {
+		if err = tx.Create(migration).Error; err != nil {
+			return nil, NewCLError(ErrMigrationCreateFailed, "DB create migration failed", err)
+		}
+	}
+	control := fmt.Sprintf("inter=%d", tgtHyper)
 	if planErr == nil && tgtHyper >= 0 {
 		// Target known: plan, check and reserve now, a failure is returned at once
 		_, planErr = PlanMigrationTarget(txCtx, migration, instance, tgtHyper)
