@@ -23,11 +23,14 @@ if [ $? -ne 0 ]; then
     # first. Under the router lock, taken after create_local_router.sh (it takes it itself) and given back
     # before the DHCP server starts (a daemon must not inherit it)
     exec 8>$(router_lock_file $router)
-    flock -w 60 8 || log_debug $router "set_subnet_gw.sh: lock busy, stale ports overlapping $gateway are not checked"
-    for stale in $(router_overlapping_ports $router $vlan $gateway); do
-        log_debug $router "set_subnet_gw.sh: removing ns-$stale, a stale port with a network overlapping $gateway"
-        clear_router_port $router $stale
-    done
+    if flock -w 60 8; then
+        for stale in $(router_overlapping_ports $router $vlan $gateway); do
+            log_debug $router "set_subnet_gw.sh: removing ns-$stale, a stale port with a network overlapping $gateway"
+            clear_router_port $router $stale
+        done
+    else
+        log_debug $router "set_subnet_gw.sh: lock busy, stale ports overlapping $gateway are not checked"
+    fi
     exec 8>&-
     ./create_veth.sh $router ln-$vlan ns-$vlan
     apply_vnic -I ln-$vlan

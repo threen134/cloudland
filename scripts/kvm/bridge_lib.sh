@@ -80,21 +80,31 @@ function router_port_dnsmasq()
 }
 
 # Takes gateway port ns-<vni> of router <router> down on this node: clear_router_port <router> <vni>. Its DHCP
-# server and directory go; when the router has the port (or no netns any more: after a reboot NetworkManager
-# brings the bridge back without it), the veth ln- / ns-, the FORWARD rules of ln- and the bridge and VXLAN uplink
-# of the VNI (clear_link.sh <vni> unused). The caller holds the router lock and made sure nothing uses the port.
+# server and directory always go. The rest only when the VNI is the router's here: it has the port, or it has none
+# but kept the directory of the VNI while no other router holds ln-<vni> (after a reboot NetworkManager brings the
+# bridge back without the port, or without the netns at all). Then the veth ln- / ns-, the FORWARD rules of ln- and
+# the bridge and VXLAN uplink of the VNI go (clear_link.sh <vni> unused keeps them while something else uses them;
+# it does not count ln-, so this is what keeps the port of another router). A VNI whose ln- has its peer in the
+# netns of another router (two VPCs on one VNI: subnets from before the VXLAN ID check) keeps its port, bridge and
+# uplink; a peer in a netns without a name (deleted while a process kept it, or still being torn down) does not
+# count as another router. The caller holds the router lock and made sure nothing uses the port.
 # Shared by clear_local_router.sh, clear_subnet_gw.sh and set_subnet_gw.sh
 function clear_router_port()
 {
-    local router=$1 vlan=$2 pid
+    local router=$1 vlan=$2 pid owned="" peer
+    # First: a DHCP server is what keeps a netns without a name alive
     for pid in $(router_port_dnsmasq $router $vlan); do
         kill -9 $pid
     done
-    rm -rf $router_dir/$router/$vlan
-    if ip netns exec $router true 2>/dev/null; then
-        ip netns exec $router ip link show ns-$vlan >/dev/null 2>&1 || return 0
-        ip netns exec $router ip link del ns-$vlan
+    if ip netns exec $router ip link show ns-$vlan >/dev/null 2>&1; then
+        owned=yes
+    elif [ -d $router_dir/$router/$vlan ]; then
+        peer=$(ip -o link show ln-$vlan 2>/dev/null | sed -n 's/.* link-netns \([^ ]*\).*/\1/p')
+        [ -z "$peer" -o "$peer" = "$router" ] && owned=yes
     fi
+    rm -rf $router_dir/$router/$vlan
+    [ -n "$owned" ] || return 0
+    ip netns exec $router ip link del ns-$vlan 2>/dev/null
     ./clear_link.sh $vlan unused >/dev/null 2>&1
     apply_vnic -D ln-$vlan
 }

@@ -5,11 +5,13 @@
 # keeps it for as long as its router lives, also a node that only routes through it (the VRRP subnet of a VPN
 # gateway, a transit gateway member). A port left behind keeps the connected route of the network, which wins over
 # the port of a subnet created again with the same CIDR, so the new subnet is unreachable on this node.
-#   port:    no other subnet uses the VNI. The port goes with its DHCP server and directory, the bridge and the VXLAN
-#            uplink (clear_router_port), then the router itself if nothing else uses it here (clear_local_router.sh)
+#   port:    no other subnet of the VPC uses the VNI. The port goes with its DHCP server and directory, the bridge
+#            and the VXLAN uplink (clear_router_port, which also cleans up after a reboot that lost the port and
+#            leaves a VNI another router holds alone), then the router itself if nothing else uses it here
+#            (clear_local_router.sh)
 #   address: another subnet of the VPC still uses the VNI. Only the gateway address of the network goes from the port
-# A node without the port does nothing. A node that misses this (offline) keeps the port until a subnet with an
-# overlapping network gets a port here (set_subnet_gw.sh removes it then) or the router goes
+# A node that misses this (offline) keeps the port until a subnet with an overlapping network gets a port here
+# (set_subnet_gw.sh removes it then) or the router goes
 
 cd $(dirname $0)
 source ../cloudrc
@@ -42,15 +44,8 @@ if [ "$mode" = address ]; then
     fi
     # Its DHCP range; the server of the VNI reads it at the next start
     rm -f $router_dir/$router/$vlan/dnsmasq.conf.d/dhcp_$(echo $network | tr -s './' '_').conf
-elif [ -n "$had_port" ]; then
-    clear_router_port $router $vlan
 else
-    # No port here: only what the router left of the VNI. The bridge and uplink of the VNI are not its own then
-    # (another router, or none: this node may never have had the subnet)
-    for pid in $(router_port_dnsmasq $router $vlan); do
-        kill -9 $pid
-    done
-    rm -rf $router_dir/$router/$vlan
+    clear_router_port $router $vlan
 fi
 if [ -n "$had_port" ]; then
     ip netns exec $router ipset del nonat $network 2>/dev/null
