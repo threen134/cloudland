@@ -6,13 +6,14 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/spf13/viper"
+
 	"api/src/model"
 
 	. "api/src/common"
 )
 
-// dnsHostsMu 保护 hyper-hosts 文件的并发读写。
-// RegisterHostInDns、RemoveHostFromDns、RebuildDnsHostsFile 均在此锁下操作。
+// dnsHostsMu guards hyper-hosts: SyncHostsInDns and RebuildDnsHostsFile both read and rewrite it under this lock
 var dnsHostsMu sync.Mutex
 
 func dnsHostsFile() string {
@@ -32,92 +33,136 @@ func hostsLineMatchesHostname(line, hostname string) bool {
 	return len(fields) >= 2 && fields[1] == hostname
 }
 
-// RegisterHostInDns 将 hostname→ip 写入 hyper-hosts（幂等，支持 IP 变更）。
-// rename 原子替换后 dnsmasq inotify 自动重载，无需 SIGHUP。
-// 注意：在 HyperAdmin.Deploy 中于节点 DEPLOYING 状态即写入；若部署失败，
-// DNS 条目在后续 Delete 时由 RemoveHostFromDns 清理。
-func RegisterHostInDns(hostname, ip string) {
-	if hostname == "" || ip == "" {
-		return
-	}
-	dnsHostsMu.Lock()
-	defer dnsHostsMu.Unlock()
-	hostsFile := dnsHostsFile()
+// hostsEntry is one "ip name" line of hyper-hosts
+type hostsEntry struct {
+	ip, name string
+}
 
-	var lines []string
-	if data, err := os.ReadFile(hostsFile); err == nil {
-		for _, l := range strings.Split(string(data), "\n") {
-			if hostsLineMatchesHostname(l, hostname) {
-				continue // 过滤旧条目（支持 IP 变更）
-			}
-			if strings.TrimSpace(l) != "" {
-				lines = append(lines, l)
-			}
+// hyperDnsEntries gives the address of each host name in the hypers table, of the given names only when there are
+// some. A name several hosts share goes to the one with the lowest host id, so every writer picks the same one
+func hyperDnsEntries(names []string) ([]hostsEntry, error) {
+	query := DB().Model(&model.Hyper{}).Select("hostname, host_ip").Where("host_ip <> '' AND hostname <> ''")
+	if len(names) > 0 {
+		query = query.Where("hostname IN ?", names)
+	}
+	var hypers []model.Hyper
+	if err := query.Order("hostid").Find(&hypers).Error; err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var entries []hostsEntry
+	for _, h := range hypers {
+		if !seen[h.Hostname] {
+			seen[h.Hostname] = true
+			entries = append(entries, hostsEntry{h.HostIP, h.Hostname})
 		}
 	}
-	lines = append(lines, ip+" "+hostname)
+	return entries, nil
+}
 
+// serviceDnsEntries are the control plane names compute nodes reach, all at MANAGEMENT_VIP: the S3 endpoint when it
+// is the built-in MinIO (MINIO_HOSTNAME, or any .cloudland.internal name; an outside S3 resolves upstream) and
+// CLAPI_HOSTNAME, which capture uploads go to
+func serviceDnsEntries() []hostsEntry {
+	vip := viper.GetString("management_vip")
+	if vip == "" {
+		logger.Info("DNS: management_vip not set, skip S3/clapi hostname registration")
+		return nil
+	}
+	var entries []hostsEntry
+	if s3Host := ParseS3Host(); s3Host != "" &&
+		(strings.HasSuffix(s3Host, ".cloudland.internal") || strings.EqualFold(s3Host, viper.GetString("minio.hostname"))) {
+		entries = append(entries, hostsEntry{vip, s3Host})
+	}
+	if clapiHost := viper.GetString("clapi.hostname"); clapiHost != "" {
+		entries = append(entries, hostsEntry{vip, clapiHost})
+	}
+	return entries
+}
+
+// writeHostsFile replaces a hosts file with the given lines through a rename. The temporary file starts with a dot:
+// dnsmasq skips dotfiles in --hostsdir, while a plain "hyper-hosts.tmp" would be read as one more hosts file whose
+// entries stay after the rename. The mode is set explicitly since dnsmasq reads the file as an unprivileged user
+func writeHostsFile(hostsFile string, lines []string) error {
 	content := strings.Join(lines, "\n") + "\n"
 	tmpFile := filepath.Join(filepath.Dir(hostsFile), "."+filepath.Base(hostsFile)+".tmp")
 	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
-		logger.Errorf("DNS: write %s failed: %v", tmpFile, err)
-		return
+		return err
+	}
+	if err := os.Chmod(tmpFile, 0644); err != nil {
+		os.Remove(tmpFile)
+		return err
 	}
 	if err := os.Rename(tmpFile, hostsFile); err != nil {
-		logger.Errorf("DNS: rename %s -> %s failed: %v", tmpFile, hostsFile, err)
-		return
+		os.Remove(tmpFile)
+		return err
 	}
-	logger.Infof("DNS: registered %s -> %s", hostname, ip)
+	return nil
 }
 
-// RemoveHostFromDns 从 hyper-hosts 删除指定 hostname 条目。
-func RemoveHostFromDns(hostname string) {
-	if hostname == "" {
+// SyncHostsInDns rewrites the hyper-hosts lines of the given host names from the hypers table, in a single write: a
+// name no host has any more goes away, otherwise it points at the address of the host that has it (the lowest host id
+// when several share it). It reads committed rows, so it is called once the change is committed. Other lines, the
+// control plane service names among them, stay as they are
+func SyncHostsInDns(names ...string) {
+	var wanted []string
+	for _, n := range names {
+		if n != "" {
+			wanted = append(wanted, n)
+		}
+	}
+	if len(wanted) == 0 {
 		return
 	}
 	dnsHostsMu.Lock()
 	defer dnsHostsMu.Unlock()
-	hostsFile := dnsHostsFile()
-
-	data, err := os.ReadFile(hostsFile)
+	entries, err := hyperDnsEntries(wanted)
 	if err != nil {
+		logger.Errorf("DNS: query of %v failed: %v", wanted, err)
+		return
+	}
+	hostsFile := dnsHostsFile()
+	data, err := os.ReadFile(hostsFile)
+	if err != nil && !os.IsNotExist(err) {
+		logger.Errorf("DNS: read %s failed: %v", hostsFile, err)
 		return
 	}
 	var lines []string
-	found := false
 	for _, l := range strings.Split(string(data), "\n") {
-		if hostsLineMatchesHostname(l, hostname) {
-			found = true
+		if strings.TrimSpace(l) == "" {
 			continue
 		}
-		if strings.TrimSpace(l) != "" {
+		stale := false
+		for _, n := range wanted {
+			if hostsLineMatchesHostname(l, n) {
+				stale = true
+				break
+			}
+		}
+		if !stale {
 			lines = append(lines, l)
 		}
 	}
-	if !found {
+	for _, e := range entries {
+		lines = append(lines, e.ip+" "+e.name)
+	}
+	if strings.Join(lines, "\n")+"\n" == string(data) {
 		return
 	}
-
-	content := strings.Join(lines, "\n") + "\n"
-	tmpFile := filepath.Join(filepath.Dir(hostsFile), "."+filepath.Base(hostsFile)+".tmp")
-	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
-		logger.Errorf("DNS: write %s failed: %v", tmpFile, err)
+	if err := writeHostsFile(hostsFile, lines); err != nil {
+		logger.Errorf("DNS: rewrite of %s failed: %v", hostsFile, err)
 		return
 	}
-	if err := os.Rename(tmpFile, hostsFile); err != nil {
-		logger.Errorf("DNS: rename %s -> %s failed: %v", tmpFile, hostsFile, err)
-		return
-	}
-	logger.Infof("DNS: removed %s", hostname)
+	logger.Infof("DNS: synced %v (%d found)", wanted, len(entries))
 }
 
-// RebuildDnsHostsFile 从数据库 hypers 表重建 hyper-hosts，供 clapi 启动时调用。
+// RebuildDnsHostsFile rewrites hyper-hosts at clapi start from the configuration and the hypers table: the control
+// plane service names and every host, in one write so that none of them is missing in between
 func RebuildDnsHostsFile() {
 	dnsHostsMu.Lock()
 	defer dnsHostsMu.Unlock()
-	db := DB()
-	var hypers []model.Hyper
-	if err := db.Select("hostname, host_ip").Where("host_ip != ''").Find(&hypers).Error; err != nil {
+	hypers, err := hyperDnsEntries(nil)
+	if err != nil {
 		logger.Errorf("DNS: rebuild query failed: %v", err)
 		return
 	}
@@ -128,20 +173,16 @@ func RebuildDnsHostsFile() {
 		return
 	}
 
+	seen := map[string]bool{}
 	var lines []string
-	for _, h := range hypers {
-		if h.Hostname != "" && h.HostIP != "" {
-			lines = append(lines, h.HostIP+" "+h.Hostname)
+	for _, e := range append(serviceDnsEntries(), hypers...) {
+		if !seen[e.name] {
+			seen[e.name] = true
+			lines = append(lines, e.ip+" "+e.name)
 		}
 	}
-	content := strings.Join(lines, "\n") + "\n"
-	tmpFile := filepath.Join(filepath.Dir(hostsFile), "."+filepath.Base(hostsFile)+".tmp")
-	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
-		logger.Errorf("DNS: rebuild write failed: %v", err)
-		return
-	}
-	if err := os.Rename(tmpFile, hostsFile); err != nil {
-		logger.Errorf("DNS: rebuild rename failed: %v", err)
+	if err := writeHostsFile(hostsFile, lines); err != nil {
+		logger.Errorf("DNS: rebuild of %s failed: %v", hostsFile, err)
 		return
 	}
 	logger.Infof("DNS: rebuilt %s with %d entries", hostsFile, len(lines))

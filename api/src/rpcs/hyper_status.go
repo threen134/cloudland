@@ -23,6 +23,15 @@ func init() {
 func HyperStatus(ctx context.Context, args []string) (status string, err error) {
 	//"|:-COMMAND-:| hyper_status.sh '$NODE_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_rate' '$mem_over_rate' '$disk_over_rate' '$cpu_model'"
 	logger.Ctx(ctx).Debugf("HyperStatus updates %+v", args)
+	// Host names whose hyper-hosts lines follow this report. Deferred ahead of the transaction so that it runs after
+	// the commit: SyncHostsInDns reads committed rows, and a clapi start rebuilding the file meanwhile can not put the
+	// old address back for good
+	var dnsNames []string
+	defer func() {
+		if err == nil && len(dnsNames) > 0 {
+			services.SyncHostsInDns(dnsNames...)
+		}
+	}()
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -118,7 +127,11 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	} else {
 		hyper.DiskOverRate = float32(diskOverRate)
 	}
-	cpuModel := args[15]
+	// An empty cpu model (lscpu without "Model name:") is the last argument, which the decoding drops
+	cpuModel := ""
+	if argn > 15 {
+		cpuModel = args[15]
+	}
 	// end PET-769
 	// PET-1218 fix hyper status
 	logger.Ctx(ctx).Debugf("Updating hypervisor %s status to %d", hyperName, hyperStatus)
@@ -126,7 +139,10 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 		"hostname":  hyperName,
 		"cpu_model": cpuModel,
 		"virt_type": "kvm-x86_64",
-		"host_ip":   hostIP,
+	}
+	// The VXLAN interface has no address for a moment while booting or switching the bond: keep the known one
+	if hostIP != "" {
+		updates["host_ip"] = hostIP
 	}
 	// 心跳只反映节点自身的运行状态，不能覆盖管理员置位的状态：disabled(0) 与 maintaining(2)
 	// 是控制面单方面设置的，计算节点并不知情，每次心跳都上报 active(1)。这里若无条件写回
@@ -169,11 +185,12 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 			logger.Ctx(ctx).Errorf("Failed to sync the disabled marker of hypervisor %d: %v", hyperID, xerr)
 		}
 	}
-	// 同步 DNS：部署失败时清理条目；IP 或 hostname 变化时更新映射（避免每次心跳写文件）
-	if hyperStatus == 5 { // HYPER_DEPLOY_FAILED
-		services.RemoveHostFromDns(hyperName)
-	} else if hostIP != "" && (hyper.HostIP != hostIP || hyper.Hostname != hyperName) {
-		services.RegisterHostInDns(hyperName, hostIP)
+	// hyper-hosts follows the name and the address, rewritten only when one of them changed (after the commit, see
+	// above). A renamed host takes its old name along, unless another host still has that name
+	if hyper.Hostname != hyperName {
+		dnsNames = []string{hyper.Hostname, hyperName}
+	} else if hostIP != "" && hyper.HostIP != hostIP {
+		dnsNames = []string{hyperName}
 	}
 	resource := &model.Resource{
 		Hostid:      int32(hyperID),

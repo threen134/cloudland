@@ -285,25 +285,25 @@ fi
 log "5/5 - 启动 CloudLand 控制面服务"
 bash scripts/init-certs.sh
 
-# 预初始化 dnsmasq 所需目录和占位文件
-# dnsmasq 容器启动时要求 --hostsdir 和 --conf-dir 路径存在，否则会告警/空转
-# cland 容器通过 docker-compose dns: 字段独立指向本机 dnsmasq，无需改宿主 resolv.conf
+# Directories and files the dnsmasq container loads (--hostsdir, --servers-file). cland and clapi reach this dnsmasq
+# through their compose dns: setting, the host's own resolv.conf is left alone
 DNS_UPSTREAM_VAL=$(grep '^DNS_UPSTREAM=' .env | cut -d'=' -f2- || echo "")
 mkdir -p ../dns/hosts ../dns/conf.d
+# dnsmasq reads them as its own unprivileged user: keep them readable whatever root's umask is
+chmod 755 ../dns ../dns/hosts ../dns/conf.d
 [ -f ../dns/hosts/hyper-hosts ] || touch ../dns/hosts/hyper-hosts
-# 注册控制节点自身 hostname 到 dnsmasq
-# 同时注册 MinIO、clapi 的内部域名，计算节点经本机 dnsmasq 解析
+chmod 644 ../dns/hosts/hyper-hosts
+# The control node's own name goes into control-hosts, which clapi never touches: clapi rebuilds hyper-hosts
+# from the hypers table at every start, so an entry kept there would be gone once clapi is up. The MinIO and
+# clapi internal names are written by clapi in that same rebuild (pointing at MANAGEMENT_VIP), before it uses them.
 CTRL_HOSTNAME=$(hostname)
 INTERNAL_IP_VAL=$(grep '^INTERNAL_IP=' .env | cut -d'=' -f2-)
 if [ -n "$CTRL_HOSTNAME" ] && [ -n "$INTERNAL_IP_VAL" ]; then
-    for entry in "$CTRL_HOSTNAME" \
-                 "$(grep '^MINIO_HOSTNAME=' .env | cut -d'=' -f2-)" \
-                 "$(grep '^CLAPI_HOSTNAME=' .env | cut -d'=' -f2-)"; do
-        if [ -n "$entry" ] && ! grep -qw "$entry" ../dns/hosts/hyper-hosts 2>/dev/null; then
-            echo "$INTERNAL_IP_VAL $entry" >> ../dns/hosts/hyper-hosts
-            log "已注册 DNS: $INTERNAL_IP_VAL $entry"
-        fi
-    done
+    # dnsmasq skips dotfiles in --hostsdir: the temporary file is never read as a hosts file
+    echo "$INTERNAL_IP_VAL $CTRL_HOSTNAME" > ../dns/hosts/.control-hosts.tmp
+    chmod 644 ../dns/hosts/.control-hosts.tmp
+    mv -f ../dns/hosts/.control-hosts.tmp ../dns/hosts/control-hosts
+    log "已注册 DNS: $INTERNAL_IP_VAL $CTRL_HOSTNAME"
 fi
 # 支持逗号分隔的多个上游地址，每个一行 server= (对齐 clapi ApplyDnsUpstream 实现)
 # 这是 bootstrap 配置，clapi 启动后会根据 DB 中 DNS_UPSTREAM 设置覆写
@@ -315,6 +315,7 @@ if [ ! -f ../dns/conf.d/upstream.conf ]; then
         echo "server=8.8.8.8" > ../dns/conf.d/upstream.conf
     fi
 fi
+chmod 644 ../dns/conf.d/upstream.conf
 
 docker compose pull || warn "部分官方镜像拉取失败，尝试本地构建..."
 docker compose up -d --build

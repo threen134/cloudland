@@ -398,7 +398,7 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 			if err = db.Save(hyper).Error; err != nil {
 				return nil, "", NewCLError(ErrSQLSyntaxError, "Failed to update existing hypervisor record", err)
 			}
-			RegisterHostInDns(hostname, ip)
+			SyncHostsInDns(hostname)
 		} else {
 			return nil, "", NewCLError(ErrHypervisorInvalidState, "Hypervisor with this hostname already exists and is not in a retryable state", nil)
 		}
@@ -439,7 +439,7 @@ func (a *HyperAdmin) Deploy(ctx context.Context, ip, hostname, networkDevice, vl
 		if perr := EnsureBuiltinHyperPool(ctx, hostID); perr != nil {
 			logger.Ctx(ctx).Errorf("Failed to add the built-in storage pool of host %d: %v", hostID, perr)
 		}
-		RegisterHostInDns(hostname, ip)
+		SyncHostsInDns(hostname)
 	}
 
 	// Construct deploy command
@@ -652,7 +652,8 @@ func (a *HyperAdmin) Delete(ctx context.Context, hostID int32, keepPools bool) (
 		logger.Ctx(ctx).Errorf("cland NodeRemove failed for hostid=%d hostname=%s: %v — the cloudlet keeps its current connection but cannot reconnect", hostID, hyper.Hostname, removeErr)
 	}
 
-	RemoveHostFromDns(hyper.Hostname)
+	// The name goes from hyper-hosts, or points at another host that still has it
+	SyncHostsInDns(hyper.Hostname)
 	logger.Ctx(ctx).Infof("Hypervisor %d deleted successfully from database (Hostname: %s)", hostID, hyper.Hostname)
 	return nil
 }

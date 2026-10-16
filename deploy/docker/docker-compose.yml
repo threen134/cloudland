@@ -5,6 +5,8 @@
 #   1. cp .env.example .env && 编辑 .env
 #   2. bash scripts/init-certs.sh
 #   3. mkdir -p ../dns/hosts ../dns/conf.d && touch ../dns/hosts/hyper-hosts && echo "server=8.8.8.8" > ../dns/conf.d/upstream.conf
+#      && echo "<INTERNAL_IP> $(hostname)" > ../dns/hosts/control-hosts
+#      (the control node's own name: clapi rewrites hyper-hosts at every start and never touches control-hosts)
 #   4. docker compose up -d --build
 #
 # Profile 说明:
