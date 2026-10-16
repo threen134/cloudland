@@ -9,7 +9,7 @@
 ## 设计约定（判定预期的依据）
 
 - **每个 VPC 最多一个网关** = 一个 VrrpInstance（与 LB 同一张表、同一套 keepalived 守护）+ 一或两个公网浮动 IP（`floating_ips.vpn_gateway_id`、`vpn_endpoint`）。主备两个节点由 zone 内 `select=` 调度；**zone 里只有一个可用节点时主备网关按单节点运行**，有了第二个节点后看护任务自动补备节点；双活网关要两个节点，不够时创建返回 400（132009）。
-- **主节点**在 VPC 路由器 netns `router-<N>` 里跑：strongSwan **charon**（站点到站点，IKEv2，XFRM 接口 `ipsec-<隧道 if_id>`）、看护循环 `vpn_watch.sh <网关ID>`、**FRR**（只在有 BGP 连接时起，pathspace `-N vpn-<网关ID>`，守护进程 **5 个**：`zebra → mgmtd → staticd → bfdd → bgpd`，R1 起 bfdd 总是起）。**备节点只跑 keepalived**；WireGuard 接口 `wg-<网关ID>` 两个节点都有（配置两边都下发），只是客户端流量只进持有 VIP 的节点。
+- **主节点**在 VPC 路由器 netns `router-<N>` 里跑：strongSwan **charon**（站点到站点，IKEv2，XFRM 接口 `ipsec-<隧道 if_id>`）、看护循环 `vpn_watch.sh <网关ID>`、**FRR**（只在有 BGP 连接时起，pathspace `-N vpn-<网关ID>`，守护进程按 FRR 版本：Ubuntu 24.04 自带的 FRR 8.4 没有 mgmtd，**4 个** `zebra → staticd → bfdd → bgpd`；FRR 10.x（26.04）**5 个**，多一个 `mgmtd`（staticd 依赖它）；R1 起 bfdd 总是起）。**备节点只跑 keepalived**；WireGuard 接口 `wg-<网关ID>` 两个节点都有（配置两边都下发），只是客户端流量只进持有 VIP 的节点。
 - 目录：`/opt/cloudland/cache/router/router-<N>/vpn-<网关ID>/`（strongswan.conf / swanctl.conf / wg.conf / run/ / tunnel_routes / notify.log / traffic.base / watch.pid / *.reported），keepalived 在同级 `vrrp-<VrrpInstanceID>/`（含 `keepalived.pid`）；FRR 在 `/etc/frr/vpn-<gw>/frr.conf` 与 `/var/run/frr/vpn-<gw>/`。
 - **charon 多实例**：`unshare -m` + `mount --bind <vpn_dir>/run /run` 起，pid 在 `<vpn_dir>/run/charon.pid`。`swanctl` 子命令要在 `--uri` **前面**。
 - **东西向回程**：其他节点把对端网段指向网关节点的 VRRP **单播**地址（`via <ip> dev ns-<vrrp vlan> onlink`，由 `nexthops` 文件与 F7 探测维护）；主备节点由 `vpn_notify.sh` 按角色装（master 指隧道接口 / 黑洞，backup 指对端，fault 黑洞）；每个节点都加 `nonat` ipset 条目。
@@ -65,7 +65,7 @@
 | VPN-00 前置 | 可跑 | 先挪走旧状态文件 |
 | VPN-01 创建网关 | 可跑 | 只建 `vpn-a` 一个；409 同 VPC 要临时把配额调到 6 |
 | VPN-02 静态站点到站点 | 部分 | 配置、路由、nonat、MSS、流量接口可跑（假对端 + 保留网关只读）；**连通、18/18 矩阵、流量计数、重协商 SKIP**：要第二个公网地址建 vpn-b |
-| VPN-03 BGP | 部分 | 只能核对配置（frr.conf、5 个守护进程、Null0 250、默认 frr.conf 不被覆盖）；Established、学路由 SKIP（同上）；Established / BFD 可在保留网关上只读看 |
+| VPN-03 BGP | 部分 | 只能核对配置（frr.conf、守护进程（24.04 为 4 个，FRR 10.x 为 5 个）、Null0 250、默认 frr.conf 不被覆盖）；Established、学路由 SKIP（同上）；Established / BFD 可在保留网关上只读看 |
 | VPN-04 主备切换 | 可跑（单网关版本） | 用 WireGuard 客户端探测代替 VPC A → B |
 | VPN-05 WireGuard 客户端 | 可跑 | 「客户端与站点不互通」用假对端 + DROP 计数验证 |
 | VPN-06 客户端停用 / 启用 | 可跑 | 多客户端同时在线（新增）要第二台宿主机当客户端 |
@@ -291,7 +291,7 @@ api POST /vpn_gateways/$(lv gw_a)/connections '{"name":"dummy-bgp","remote_gatew
 
 ### 检查项（假对端 `dummy-bgp`，可跑）
 
-- [ ] 主节点 FRR **5 个**守护进程都在：`ps -eo args | grep -cE '^/usr/lib/frr/[a-z]+ -N vpn-<gw> '` = 5（zebra / mgmtd / staticd / bfdd / bgpd；2026-09-28 核对，原写 4 个是 R1 之前）
+- [ ] 主节点 FRR 守护进程都在：`ps -eo args | grep -cE '^/usr/lib/frr/[a-z]+ -N vpn-<gw> '` = 节点上的版本对应的个数——Ubuntu 24.04 的 FRR 8.4 是 **4**（zebra / staticd / bfdd / bgpd，没有 mgmtd），FRR 10.x 是 **5**（多 mgmtd）。2026-09-28 在 26.04 上核对为 5；2026-10-16 在 24.04 上为 4（work-x 重装后），原写 4 个是 R1 之前
 - [ ] `/etc/frr/vpn-<gw>/frr.conf` 有 `ip route 10.99.8.0/22 Null0 250`、prefix-list、`neighbor 169.254.120.2 remote-as 65020`、口令；`ipsec-<if_id>` 上配了 `169.254.120.1/30`；INPUT 放行 `-s 169.254.120.2 -d 169.254.120.1 --dport 179`
 - [ ] 连接返回 `bgp_password_set=true`，有写权限时带 `bgp_password`；一次心跳后隧道 `bgp.state` 不是 `Established`（`Active` / `Connect` 之类），`bfd_state` 为空（没开 BFD）
 - [ ] `/etc/frr/frr.conf`（默认那份）**没有被覆盖**：测试前后 `md5sum` 一致
@@ -408,6 +408,8 @@ ADMIN_PASSWORD=... GW_ID=a53b2307-e906-429d-9623-bc9be0c7be10 node vpn-peer-conf
   > **回归点**：`VpnGateways.vue` 的 `onMounted` 曾只加载 VPC 列表、没调 `fetchGateways()`（列表页的 VPC 筛选 2026-09-24 已去掉：每个 VPC 最多一个网关，筛选结果只有 0 或 1 条；VPC 列表只用于创建弹窗），`useListQuery` 又只在依赖变化时重载，页面永远显示「未发现 VPN 网关」。typecheck / lint 抓不到，只有真跑才发现
 - [ ] 详情页标题区约 43px、**五个标签**（概览 / 站点连接 N / 客户端 N / 监控 / 操作记录；2026-09-28 核对，监控标签是 09-24 加的）
 - [ ] 站点连接标签（看 `ibmx-gw`）：`to-ibmr-bfd` 路由方式 `BGP`、状态「已连接」、隧道行是状态圆点加 BGP 标签（悬停显示 BGP / BFD 状态），`to-aax` 带 ECMP 标签、不显示主隧道 / 备隧道；展开行两张隧道卡片
+- [ ] 概览的「高可用节点」卡片（主备网关）：第一行「当前主节点」是上报的主节点（带上报时间）；下面两行是 keepalived 配置的角色「首选节点 / 备选节点」，此刻持有地址的那台带「当前活动」。切换过之后「当前主节点」可能是「备选节点」那台，这是正常的（`nopreempt`，不抢回）
+  > **回归点**（2026-10-16，R2-7）：配置角色原来也叫「主节点 / 备节点」，切换过之后卡片里有两行「主节点」、写的是不同的节点
 - [ ] 客户端标签（看 vpn-a）：`laptop-1`、`10.8.0.2`、握手时间
 - [ ] 操作记录标签：有本轮的创建 / 更新记录，文案是「为 VPN 网关 X 添加了站点连接」这类（动作 `vpn_gateway.*`）
 - [ ] 概览页「资源使用情况」有「VPN 网关」进度条（测试网关在时 5/5 标红）
@@ -555,6 +557,7 @@ api POST /vpn_gateways/<gw>/connections '{"name":"...","route_mode":"bgp","psk":
 - [ ] IKE 重传参数（只读）：`strongswan.conf` 里有 `retransmit_tries = 3`、`retransmit_timeout = 1.5`、`retransmit_base = 1.4`；新建连接的 `dpd_delay` 默认 10（vpn-a 的 `dummy-st` 可看）
 - [ ] BFD（两个 CloudLand 网关互为对端，work-01 `/root/bfd-setup.sh [间隔毫秒]` 建连接，`/root/bfd-fo.sh [秒数] [tunnel|keepalived]` 测切换，`/root/bfd-set.sh '<PATCH 内容>'` 改两端参数）：只读部分——主节点 `vtysh -N vpn-15 -c 'show bfd peers brief'` 每条隧道一个会话、状态 up（2026-09-28 核对：两个会话 169.254.110.2/.6 均 up），接口是 `ipsec-<id>`；接口返回的隧道 `bfd_state` 为 up；内核日志没有 bfdd 的 DENIED
 - [ ] BFD 切换：只阻断主隧道，300 毫秒 × 3 中断 ≤ 1.5 秒（实测 0.7 秒），1000 毫秒 × 3 ≤ 4 秒（实测 2.4 秒），关掉 BFD 约 24 秒；关掉 BFD 后 `show bfd peers` 为空、BGP 会话不中断（SKIP：要改保留网关的连接）
+  > **回归点**（2026-10-16，R2-3）：Ubuntu 24.04 的 FRR 8.4 上关掉 BFD 后 BFD 实际没关——frr-reload 先 `no neighbor X bfd`、再 `no neighbor X bfd profile P`，去掉 profile 又把默认参数的 BFD 打开，三个节点都留下 `neighbor X bfd` 和 down 的会话。现在 `create_vpn_bgp_conf.sh` 重载前先对不再用 BFD 的邻居执行 `no neighbor X bfd`。检查：关 BFD 后各节点 `vtysh -N vpn-<gw> -c 'show running-config' | grep 'neighbor .* bfd'` 为空、`show bfd peers` 为空；两端同时关时业务 0 中断（2026-10-16 实测）
   > **回归点**（2026-09-24）：keepalived 父进程被杀时，子进程自己摘掉公网地址却不调切换脚本，看护循环随之退出而不让位，其他节点的虚拟机要等 30 秒窗口（17.7 秒）；现在看护循环发现地址丢失会降级并立即上报
 - [ ] 没有节点持有公网地址（`/root/ibmx-nomaster.sh [秒数]`：两个节点的公网口 down 150 秒）：约 90 秒后 clapi 日志出现 `no node claimed its public address`，接口里主节点为空，连接为 down，每条连接一个 `VpnConnectionDown`；公网口恢复后 10 秒内主节点与状态复原、告警解除（SKIP：ibmx-gw 三条连接都会断）
   > **回归点**（2026-09-24）：原先只有持有地址的节点上报，两个节点都 FAULT 时 clapi 一直显示原来的主节点和全部 up（实际中断了 9 分钟）
@@ -577,8 +580,9 @@ api POST /vpn_gateways/<gw>/connections '{"name":"to-peer","route_mode":"static"
 
 - [ ] 创建：`ha_mode` 为 `active_active`，`public_ips` 两项 `node1` / `node2`，各带节点名（`aax-gw`：node1 .156 work-02、node2 .157 work-03），`addable_endpoint` = `vip1`，`master_hostname` 为空；配额扣 2 个公网 IP（开客户端 VPN 时 3 个）
 - [ ] 两个节点的公网口上各只有自己的地址，重启节点后地址与 `fip-<vlan>` 表的默认路由还在；没开客户端 VPN 时两个节点都没有 keepalived，`vrrp-<id>/` 目录为空（`aax-gw` 2026-09-28 只读核对：work-02 只有 .156、work-03 只有 .157，`vrrp-20/` 空、keepalived 0）
-- [ ] 两个节点都有 charon、FRR（5 个守护进程，含 bfdd）、看护循环；各自的 `swanctl.conf` 只有自己的隧道，`local_addrs` 是自己的地址
+- [ ] 两个节点都有 charon、FRR（含 bfdd；24.04 上 4 个守护进程、FRR 10.x 上 5 个，见 VPN-03）、看护循环；各自的 `swanctl.conf` 只有自己的隧道，`local_addrs` 是自己的地址
 - [ ] iBGP：`vtysh -N vpn-16 -c 'show bgp summary'` 有对端节点 VRRP 地址的会话（ASN 64999，描述 `ibgp`），Established；`show bfd peers brief` 有它、状态 up（间隔 300 毫秒）
+  > **回归点**（2026-10-16，R2-2）：iBGP 一直 `Connect`、0 条消息——work-03 的路由器里留着上一轮已删除的 VRRP 子网口（同是 `192.168.196.0/24`、另一个 VNI），旧口的直连路由排在前面。删子网时清网关口的命令原先从来没发出去（见 `TC-03` NET-03 回归点）。检查：两个网关节点 `ip netns exec router-<N> ip -o -4 addr | grep 192.168.196.` 只有一个 `ns-<vrrp vlan>`
 - [ ] 静态连接：SA 起来的节点有 `ip route <远端网段> ipsec-<id> tag 100`（主）或 `tag 101 211`（备）；没有主隧道的节点 `show ip route <远端网段>` 走 iBGP 到对端节点；两个节点都有 `Null0 254`（`aax-gw` 两条连接都是负载分担，各节点只有自己那条、都是 tag 100；2026-09-28 `show running-config` 核对一致）
 - [ ] 第三个节点：`/opt/cloudland/cache/router/router-<N>/vpn-<gw>/nexthops` 里主隧道所在节点排第一，路由经它的 VRRP 地址；负载分担的连接第二列是 `1`、路由是经两个 VRRP 地址的多路径（work-01 的 `router-52/vpn-16/nexthops` 2026-09-28 为 `192.168.93.0/24 1 192.168.196.2,192.168.196.3`）
 - [ ] 断开主隧道（节点还活着）：连接 `degraded`，主隧道所在节点改经 iBGP 转给另一个节点；clapi 把第三个节点的路由改到另一个节点（日志 `the preferred gateway node of a connection changed`）；测中断时间（SKIP）
@@ -603,7 +607,9 @@ api POST /vpn_gateways/<gw>/connections '{"name":"to-peer","route_mode":"static"
 - [ ] 双活网关的 `ecmp` 连接：两个节点各走自己的隧道，第三个节点的路由是经两个 VRRP 地址的多路径（只读，见 VPN-14）
 - [ ] 汇总状态：都 up 为 `up`，部分 up 为 `degraded`
 - [ ] **从 `ecmp`（负载分担）改回 `preferred`（主隧道优先）**（**新增/未跑过**，CLAUDE.md G22 的一半，假对端可跑）：在 vpn-a 上建 `{"name":"ecmp-t","route_mode":"static","remote_cidrs":"10.99.5.0/24","psk":"DummyPsk-2026","traffic_policy":"ecmp","tunnels":[{"remote_gateway":"198.51.100.51"},{"remote_gateway":"198.51.100.52"}]}` → 两条隧道 `priority` 都是 `primary`、都是 `vip1`，主节点 `tunnel_routes` 目标用 `+` 分隔；`PATCH {"traffic_policy":"preferred"}` → 隧道 1 `primary`、隧道 2 `standby`，`tunnel_routes` 变为 `,` 分隔、主在前；界面上连接的流量分配显示「主隧道优先」、隧道行带主 / 备
-- [ ] 全连接：主备双地址网关、对端两个地址，一条连接 4 条隧道；隧道 1 为主时 local-preference 200 / 100 / 90 / 80，前置次数逐级加一；逐条断开时按排名切换（要 2 个我方地址 + 2 个对端地址，SKIP；只有单元测试）
+- [ ] 全连接：主备双地址网关、对端两个地址，一条连接 4 条隧道；隧道 1 为主时 local-preference 200 / 100 / 90 / 80，前置次数逐级加一；逐条断开时按排名切换（要 2 个我方地址 + 2 个对端地址；2026-10-16 两个 CloudLand 网关互为对端跑通，每次切换业务中断 6.7–8.6 秒，没开 BFD）
+- [ ] **静态改 BGP 后的路由**（2026-10-16 新增）：一条静态连接改成 BGP 后，主节点 `ip netns exec router-<N> ip route show <对端网段>` 没有 `dev ipsec-X proto boot` 的残留，只有 BGP 装的路由；断主隧道时数据面跟着切
+  > **回归点**（2026-10-16，R2-5）：`vpn_apply_routes` 的 BGP 分支只删 `blackhole` 类型的 `proto boot` 路由，静态时装的单播路由留在主表里，zebra 当它是距离 0 的内核路由，BGP 路由装不进去：隧道切换在数据面不生效，第一次跑全连接时业务 76 秒不通
 - [ ] 与 IBM 的 `distribute_traffic` 配合：IBM 按源地址分流（方案 §16.3），两端都分担时单条隧道断开的影响（SKIP）
   > 2026-09-24 测过双活网关对 IBM（方案 §16.4，work-01 `/root/ibm-aax.sh`）：IBM 一条连接只认一个对端地址，要两条连接；两条路由同优先级会被 IBM 拒绝（`route_conflict`），回程只能按优先级主备，`distribute_traffic` 没有效果。阻断隧道或断网时回程中断 31–33 秒，有一次超过 65 秒
 
@@ -617,7 +623,7 @@ api POST /vpn_gateways/<gw>/connections '{"name":"to-peer","route_mode":"static"
 
 - [ ] 承载 VPC、但不是网关节点的节点上有**一个** `vpn_nexthop_watch.sh`（`ps -eo pid,ppid,args | grep '[v]pn_nexthop_watch'`，父进程是 1，与 `/run/cloudland/vpn-nexthop/watch.pid` 一致），`/run/cloudland/vpn-nexthop/` 下有各网关节点地址的状态文件（work-01 上是 `10.191.202.13`、`10.191.202.29`）；杀掉后下一次心跳被拉起
 - [ ] `nexthops` / `nexthop_hosts` 内容与网关节点一致：VRRP 地址 → 节点管理地址（work-01 的 `router-50/vpn-14/nexthop_hosts` 为 `192.168.196.2 10.191.202.29`、`192.168.196.3 10.191.202.13`），路由按 `nexthops` 装（`ip netns exec router-50 ip route` 的 `10.241.0.0/24 via 192.168.196.2 dev ns-<vlan> onlink`）
-- [ ] 网关节点断网：第三个节点约 1 秒内把路由改到另一个网关节点（节点日志 `vpn: gateway node <ip> does not answer, routing around it`），恢复后连续 10 次应答（3 秒）再切回，切回时不再断（SKIP）
+- [ ] 网关节点断网：第三个节点约 1 秒内把路由改到另一个网关节点，恢复后连续 10 次应答（3 秒）再切回，切回时不再断。判断看第三节点上 `ip netns exec router-<N> ip route` 的下一跳变化；节点日志 `vpn: gateway node <ip> does not answer, routing around it` / `answers again` 是 `log_debug` 写的，**只有节点上有调试标记文件 `/opt/cloudland/run/debug` 时才有**（默认没有，2026-10-16 核对；要看日志先 `touch` 它，测完删掉）。2026-10-16 实测：双活网关 node1 断网，第三节点 1.8–1.9 秒切走，切回不再断
   > **回归点**（2026-09-24）：原先连续 3 次应答就切回，节点网络刚恢复、BGP 会话还没起来，恢复时又断了 0.2 秒和 0.1 秒两次
 - [ ] 主备网关：切走后流量经备节点转给主节点（此时主节点没死只是 ping 不通时，业务仍通）；VRRP 切换完成后 clapi 下发的新顺序与本地状态一致（SKIP）
 - [ ] 所有网关节点都不通时保持偏好顺序的第一个，不删路由（SKIP）
@@ -707,11 +713,12 @@ api POST /vpn_gateways/$(lv gw_a)/clients '{"name":"sec-cl","preshared_key":true
 
 ## VPN-20 界面写操作（本机 5173，真实提交）
 
-**P1** · **新增/未跑过**（2026-09-28，CLAUDE.md G20：R2 / R3 界面、对端配置、密钥显示、单节点标签都只做过只读检查）。在本机 5173 上用 Playwright 真实提交，但**只放行测试网关的写请求**：`POST /vpn_gateways`（且请求体的 `vpc.id` 是 VPC A）、`/vpn_gateways/<vpn-a>/**`，其余写请求（尤其 `/vpn_gateways/<保留网关>/**`）一律按 pathname 拦截并计数，结束时被拦截的写请求应为 0（出现就说明界面往不该写的地方发了请求，记 FAIL 并附路径）。可以用来代替 VPN-01 的「接口建 vpn-a」（二选一，`.158` 只有一个）。
+**P1** · **新增/未跑过**（2026-09-28，CLAUDE.md G20：R2 / R3 界面、对端配置、密钥显示、单节点标签都只做过只读检查）。2026-10-16 第一次跑通（执行记录 `runs/2026-10-15-b07268e0+补测.md`）。在本机 5173 上用 Playwright 真实提交，但**只放行测试网关的写请求**：`POST /vpn_gateways`（且请求体的 `vpc.id` 是 VPC A）、`/vpn_gateways/<vpn-a>/**`，其余写请求（尤其 `/vpn_gateways/<保留网关>/**`）一律按 pathname 拦截并计数，结束时被拦截的写请求应为 0（出现就说明界面往不该写的地方发了请求，记 FAIL 并附路径）。可以用来代替 VPN-01 的「接口建 vpn-a」（二选一，`.158` 只有一个）。
 
 ### 检查项
 
-- [ ] 创建弹窗：选 VPC A、主备、公网子网 `public-756` → 地址下拉只有 `.158`；勾站点到站点与客户端 VPN、地址池 `10.8.0.0/24` → 创建成功，列表出现「创建中」，约 10 秒变「可用」
+- [ ] 创建弹窗：选 VPC A、主备、公网子网 `public-756` → 地址下拉只有 `.158`（不含网关 `.145`；地址列表是选子网后再请求的，脚本要等它回来，2026-10-16 第一次按 1.5 秒取到的是空）；已有网关的 VPC 在下拉里禁选；勾站点到站点与客户端 VPN、地址池 `10.8.0.0/24` → 创建成功，列表出现「创建中」，**不刷新页面**约 10–15 秒变「可用」
+  > **回归点**（2026-10-16，R2-6）：列表页原先不轮询，后端 12 秒就 `available` 了，列表一直停在「创建中」要手动刷新；现在有 `pending` / `deleting` 的网关时每 5 秒静默刷新（`composables/usePollWhile.ts`）
 - [ ] 编辑弹窗：改描述、改客户端路由（先填 `0.0.0.0/0` 被底栏拦下、不发请求，再填 `192.168.71.0/24` 保存成功）
 - [ ] 连接弹窗：建一条 2 条隧道的静态连接（对端 `198.51.100.71` / `.72`，远端网段 `10.99.7.0/24`，第二条隧道单独填预共享密钥）→ 表格出现，隧道行两条、主 / 备；编辑弹窗回填两条隧道与密钥状态；改成负载分担后连接带 ECMP 标签
 - [ ] 重启菜单：「重启全部隧道」与「重启隧道 2」各点一次，请求分别不带 / 带 `?tunnel=2`，都 200
@@ -732,7 +739,7 @@ api POST /vpn_gateways/$(lv gw_a)/clients '{"name":"sec-cl","preshared_key":true
 
 - [ ] **回归点 47 创建中不能加减地址**（可跑）：`POST /vpn_gateways` 建 vpn-a 后**立刻**（`pending` 期间，约 5–10 秒）`api_code POST /vpn_gateways/<id>/public_ips '{}'` → 400（132006 `Change the public addresses once the gateway is available`），`DELETE .../public_ips/vip2` 同样 400（132006）——**只对双地址网关成立**：单地址网关没有 vip2，网关删除前的 GET 先返回 404 `The gateway has no such public address`（2026-09-28 实测），单地址时只测 POST；网关、`floating_ips`、cpgateway 用量不变；界面上的添加 / 释放按钮在非「可用」时禁用
 - [ ] **回归点 49 删网关不留隧道**（可跑）：vpn-a 上还有连接时删网关（VPN-10），之后 `select count(*) from vpn_tunnels where vpn_gateway_id = <gwnum_a> and deleted_at is null` = 0；单独删一条连接后它的隧道行同样软删
-- [ ] **回归点 50 同一地址两条只响应隧道**（可跑）：在 vpn-a 上建 `{"name":"resp2","route_mode":"static","remote_cidrs":"10.99.4.0/24","psk":"DummyPsk-2026","initiator":false,"tunnels":[{"remote_id":"branch-a.example.com"},{"remote_id":"branch-b.example.com"}]}` → 200（两条都在 `vip1`、对端都空）；两条 `remote_id` 相同 → 400（`Responder-only tunnels of the same public address need different identities`）；再建一条连接用同一个 `remote_id` → 400（`remote_id must be unique among responder-only tunnels of the same public address`）；主节点 `swanctl.conf` 两个块都是 `remote_addrs = %any`、`id` 各自正确
+- [ ] **回归点 50 同一地址两条只响应隧道**（可跑）：在 vpn-a 上建 `{"name":"resp2","route_mode":"static","remote_cidrs":"10.99.4.0/24","psk":"DummyPsk-2026","initiator":false,"tunnels":[{"remote_id":"branch-a.example.com"},{"remote_id":"branch-b.example.com"}]}` → 200（两条都在 `vip1`、对端都空）。⚠️ 网关有两个公网地址（vip1 + vip2）时，两条隧道都要写 `"endpoint":"vip1"`：不写时第二条会被放到 vip2，就不是「同一地址」，后面「身份相同 400」那一步会变成 200（2026-10-16 第一次跑在双地址网关上就是这样）；两条 `remote_id` 相同 → 400（`Responder-only tunnels of the same public address need different identities`）；再建一条连接用同一个 `remote_id` → 400（`remote_id must be unique among responder-only tunnels of the same public address`）；主节点 `swanctl.conf` 两个块都是 `remote_addrs = %any`、`id` 各自正确
 - [ ] **回归点 52 伪造的 `node_liveness` 被忽略**（可跑，照 `/root/deploy-verify-20260927.sh` 第 7 项；clapi 容器里没有 `curl` 时 SKIP）：在 work-01 上 `docker exec cloudland-clapi curl -s -X POST http://127.0.0.1:5005/internal/execute -d '{"Id":0,"Extra":3,"Control":"callback","Command":"node_liveness.sh '\''1'\'' '\''gone'\''"}'`，clapi 日志 `Ignoring node_liveness about node 1 that came from node 3`，**没有** `cland reports node 1 as gone`、没有接管。⚠️ 被报失联的节点选 work-01（hostid 1）：万一修复回退、真被当成失联，work-01 上没有任何保留网关的主节点或双活隧道，影响最小（09-27 用的是节点 2，回退时会把 `aax-gw` 在 work-02 的隧道置 down）
 - [ ] **回归点 53 看护循环不双开**（可跑，在 vpn-a 主节点上）：
 
@@ -772,6 +779,7 @@ psql_c "select count(*) from vpn_tunnels where vpn_gateway_id = $n and deleted_a
 - [ ] 测试网关在三个节点上的 `vpn-<gw>` 目录、`vrrp-<id>` 目录、charon、FRR、keepalived、看护循环、`wg-<gw>` / `ipsec-*` 接口、INPUT 规则、fdb 条目全部清零；备节点与第三节点的路由、nonat 条目清零；`all_vpn_dirs` 回到 VPN-00 记的基线（每台 4 个）
 - [ ] 路由器上没有别的网关时，隔离与 MSS 规则随之删掉（测试 VPC 的 router-<A> 应清零）；保留网关所在路由器上的这些规则不受影响
 - [ ] `vrrp_instances` 行删除，VPC 里没有别的 VRRP 实例时 VRRP 子网一并删除、`router.vrrp_subnet_id` 清零
+- [ ] VRRP 子网删除后，**所有节点**（含第三节点）的这个路由器里都没有 `ns-<vrrp vlan>` 和 `192.168.196.x` 地址（删子网提交后 clapi 向全部节点下发 `clear_subnet_gw.sh <路由器> <vni> <网段> <网关> port`）；某台节点上路由器只剩这个口、没有别的使用者时，路由器 netns 一起回收（2026-10-16 起）。按网关核对用 `/root/reg2/vpn10-check.sh <网关 UUID>`（2026-10-16 写的，数据库 / 配额 / 四台节点一次看完）
 - [ ] **删完后 clapi 无条件重发同路由器的 fdb**（`common.ResyncRouterVrrpFdb`）：同 VPC 若还有 LB，其 VRRP 单播心跳不受影响、不出现双主
   > **回归点**：`clear_vrrp_ip.sh` 按 MAC 删 fdb，而同 VPC 同节点的所有 VRRP 接口共用一个 MAC，删一个实例会把另一个实例到对端的转发条目一起删掉 → 双主。见 `TC-06` LB-08
 - [ ] **先删网关节点上的虚拟机、网关还在时**（部署后做，只用测试 VPC）：网关节点上这个 VPC 的最后一台虚拟机删掉后，`router-<A>` netns、`vpn-<gw>` 目录、charon / keepalived 都还在，网关仍 `available`、隧道状态不变（节点调试日志 `clear_local_router.sh: router-<A> kept, used by VPN gateway vpn-<gw>`）；非网关节点（没有 `vrrp_id` 的 `vpn-*` 目录、只有路由）照常清掉
@@ -879,3 +887,8 @@ psql_c "select count(*) from vpn_tunnels where vpn_gateway_id = $n and deleted_a
 | 63 | VPN 网关公网地址的限速入出方向都从没生效（2026-09-30 修，2026-10-01 已部署） | 与负载均衡同一段 `create_lb_floating.sh`，见 `TC-06` 回归点 20 | VPN-01 带宽一项（可选） |
 | 64 | 🔴 Ubuntu 24.04 自带 FRR 8.4.4 没有 `mgmtd`，`vpn_frr_alive` 要求它存活，FRR 每几秒被重启，BGP 永远不 Established（2026-10-14 1.1.0 回归发现，R9，未部署） | `vpn_frr_has_mgmtd` | VPN-03 在 24.04 节点上 Established，`notify.log` 里 `frr: config loaded` 之后不再反复出现 `stopping leftovers` |
 | 65 | 部署脚本关系统服务的命令在 24.04 上整条失败（没有 `strongswan.service`），系统 frr / strongswan-starter 一直运行，宿主机 charon 占着 500 / 4500（R10，未部署） | 逐个 unit 关 | VPN-00 前置：四台节点 `systemctl is-enabled frr strongswan-starter` 都是 disabled，`ss -lunp` 里宿主机没有 500 / 4500 |
+| 66 | 双活网关两个节点之间的 iBGP 一直 `Connect`（2026-10-16，R2-2；已修，2026-10-16 已部署） | 删子网时清节点网关口的命令从来没发出去（`clearRouting` 只在 `router.Hyper >= 0` 时下发），删掉的 VRRP 子网口留在路由器里，直连路由压过新口 | VPN-14 iBGP 一项；`TC-03` NET-03 |
+| 67 | 关 BFD 后 BFD 仍开着（2026-10-16，R2-3；已修，2026-10-16 已部署） | FRR 8.4 去掉 profile 时把默认 BFD 打开 | VPN-13 BFD 切换 |
+| 68 | 静态改 BGP 后隧道切换在数据面不生效（2026-10-16，R2-5；已修，2026-10-16 已部署） | 静态时的 `proto boot` 单播路由留在主表 | VPN-15「静态改 BGP 后的路由」 |
+| 69 | 网关列表新建 / 删除后一直停在「创建中」/「删除中」（2026-10-16，R2-6；已修，前端只在本机验证） | 列表页不轮询 | VPN-20 创建弹窗一项 |
+| 70 | 「高可用节点」卡片里两行都叫「主节点」（2026-10-16，R2-7；已修，前端只在本机验证） | 上报的主节点和 keepalived 配置的角色用了同一个词 | VPN-07「高可用节点」一项 |
