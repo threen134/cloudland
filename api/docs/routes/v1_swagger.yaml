@@ -3642,7 +3642,13 @@ definitions:
       start_ip:
         type: string
       type:
-        $ref: '#/definitions/common.SubnetType'
+        allOf:
+        - $ref: '#/definitions/common.SubnetType'
+        enum:
+        - public
+        - internal
+        - private
+        - site
       vlan:
         maximum: 16777215
         minimum: 1

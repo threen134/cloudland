@@ -662,6 +662,17 @@ func lockTgwRouter(db *gorm.DB, routerID int64) (err error) {
 	return
 }
 
+// lockRouterRow locks a VPC row like lockTgwRouter, deleted or not: found is false when there is no such row
+func lockRouterRow(db *gorm.DB, routerID int64) (found bool, err error) {
+	if err = db.Unscoped().Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", routerID).Take(&model.Router{}).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, NewCLError(ErrDatabaseError, "Failed to lock the VPC", err)
+	}
+	return true, nil
+}
+
 // bumpTgwGeneration marks a change of the desired state; the gateway row must be locked
 func bumpTgwGeneration(db *gorm.DB, tgw *model.TransitGateway) (err error) {
 	if err = db.Model(&model.TransitGateway{}).Where("id = ?", tgw.ID).Update("generation", gorm.Expr("generation + 1")).Error; err != nil {
@@ -693,14 +704,19 @@ func tgwOfRouter(ctx context.Context, routerID int64) (att *model.TgwAttachment,
 // caller's transaction and returns the dispatch to run once it is committed (nil when the VPC belongs to no
 // gateway): a node must not apply a state the database may still roll back.
 func TgwRouterChanged(ctx context.Context, routerID int64) (after func(context.Context), err error) {
-	att, err := tgwOfRouter(ctx, routerID)
-	if err != nil || att == nil {
+	if routerID <= 0 {
 		return
 	}
 	_, db := GetContextDB(ctx)
-	// The VPC row first, then the gateway, as everywhere else (lockTgwRouter): a caller may go on to change the
-	// VPC row (a VPN gateway deleted with the VRRP subnet of the VPC) while a subnet is added to it
-	if err = lockTgwRouter(db, routerID); err != nil {
+	// The VPC row first, then the gateway, as everywhere else (lockTgwRouter). The attachment is read under the
+	// lock: attaching the VPC takes the same lock, so a gateway it is joining right now is seen, or waits for this
+	// transaction and then reads the changed networks itself
+	found, err := lockRouterRow(db, routerID)
+	if err != nil || !found {
+		return
+	}
+	att, err := tgwOfRouter(ctx, routerID)
+	if err != nil || att == nil {
 		return
 	}
 	tgw, err := lockTgw(db, att.TgwID)
@@ -1091,11 +1107,8 @@ func TgwAsymmetries(ctx context.Context, tgw *model.TransitGateway) (pairs []*Tg
 
 // tgwReservedConflict reports a network of a member VPC that may not take part in a gateway
 func tgwReservedConflict(cidr string) error {
-	if cidrsOverlap(cidr, vrrpSubnetCidr) {
-		return NewCLError(ErrTgwCidrConflict, fmt.Sprintf("Network %s overlaps the VRRP subnet %s, which every VPC of a transit gateway keeps for load balancers and VPN gateways", cidr, vrrpSubnetCidr), nil)
-	}
-	if cidrsOverlap(cidr, TgwLinkCidr) {
-		return NewCLError(ErrTgwCidrConflict, fmt.Sprintf("Network %s overlaps the transit gateway link range %s", cidr, TgwLinkCidr), nil)
+	if reserved, what := routerReservedOverlap(cidr); reserved != "" {
+		return NewCLError(ErrTgwCidrConflict, fmt.Sprintf("Network %s overlaps %s %s, which the routers of every VPC use", cidr, what, reserved), nil)
 	}
 	return nil
 }

@@ -76,7 +76,7 @@ type SubnetPayload struct {
 	VPC         *BaseReference `json:"vpc" binding:"omitempty"`
 	Group       *BaseReference `json:"group" binding:"omitempty"`
 	Vlan        int            `json:"vlan" binding:"omitempty,gte=1,lte=16777215"`
-	Type        SubnetType     `json:"type" binding:"omitempty"`
+	Type        SubnetType     `json:"type" binding:"omitempty,oneof=public internal private site"`
 	Priority    int32          `json:"priority" binding:"omitempty,gte=0,lte=100000"`
 }
 

@@ -103,3 +103,20 @@ func TestFloatingIpPatchBandwidthRange(t *testing.T) {
 		t.Errorf("patch without bandwidth refused: %v", err)
 	}
 }
+
+// A subnet created through the API is public, private, internal or site: "vrrp" is for the VRRP subnet clapi creates
+// itself and skips the checks of the reserved ranges, anything else used to be stored as is
+func TestSubnetPayloadType(t *testing.T) {
+	for _, typ := range []string{"", "public", "private", "internal", "site"} {
+		body := `{"name":"sn","network_cidr":"192.168.10.0/24","type":"` + typ + `"}`
+		if err := binding.JSON.BindBody([]byte(body), &SubnetPayload{}); err != nil {
+			t.Errorf("type %q refused: %v", typ, err)
+		}
+	}
+	for _, typ := range []string{"vrrp", "junk", "Internal"} {
+		body := `{"name":"sn","network_cidr":"192.168.10.0/24","type":"` + typ + `"}`
+		if err := binding.JSON.BindBody([]byte(body), &SubnetPayload{}); err == nil {
+			t.Errorf("type %q accepted", typ)
+		}
+	}
+}

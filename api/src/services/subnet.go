@@ -70,22 +70,21 @@ func getValidVni(ctx context.Context) (vni int, err error) {
 }
 
 // checkVpcSubnet checks a subnet about to be created in a VPC. Its network must not overlap another subnet of the
-// VPC nor a range its routers use: on a node every gateway port holds the connected route of its network, and of
-// two ports for overlapping networks one is unreachable. A VXLAN ID given by the caller must be in the VXLAN range
-// and used by no other subnet: on a node everything on a VNI shares its bridge and uplink, so the VNI of another
-// VPC (or a VLAN ID) would join its layer 2; and a second subnet of the same VPC on a VNI gets no gateway address
-// on a node that has the port already (add_fwrule.sh only builds a missing port). The VPC row is locked first (the
-// order of lockTgwRouter), so two subnets created at the same time see each other
+// VPC, a range its routers use, nor a network its VPN gateway routes: on a node every gateway port holds the
+// connected route of its network, and of two ports for overlapping networks one is unreachable. A VXLAN ID given
+// for an internal or VRRP subnet must be in the VXLAN range and used by no other subnet: on a node everything on
+// a VNI shares its bridge and uplink, so the VNI of another VPC (or a VLAN ID) would join its layer 2; and a second
+// subnet of the same VPC on a VNI gets no gateway address on a node that has the port already (add_fwrule.sh only
+// builds a missing port). The VPC row is locked first (the order of lockTgwRouter), so two subnets created in it
+// at the same time see each other; a VXLAN ID is unique across VPCs, so its check also takes a global lock
 func checkVpcSubnet(ctx context.Context, routerID int64, rtype, network string, vni int) (err error) {
 	ctx, db := GetContextDB(ctx)
 	if err = lockTgwRouter(db, routerID); err != nil {
 		return
 	}
 	if rtype != "vrrp" {
-		for _, reserved := range []string{vrrpSubnetCidr, TgwLinkCidr} {
-			if cidrsOverlap(network, reserved) {
-				return NewCLError(ErrSubnetCidrConflict, fmt.Sprintf("Network %s overlaps %s, which the routers of the VPC use", network, reserved), nil)
-			}
+		if reserved, what := routerReservedOverlap(network); reserved != "" {
+			return NewCLError(ErrSubnetCidrConflict, fmt.Sprintf("Network %s overlaps %s %s, which the routers of the VPC use", network, what, reserved), nil)
 		}
 	}
 	others := []*model.Subnet{}
@@ -97,11 +96,25 @@ func checkVpcSubnet(ctx context.Context, routerID int64, rtype, network string, 
 			return NewCLError(ErrSubnetCidrConflict, fmt.Sprintf("Network %s overlaps %s of subnet %s in the VPC", network, other.Network, other.Name), nil)
 		}
 	}
-	if vni <= 0 {
+	prefixes, err := vpnPrefixesOfRouter(ctx, routerID)
+	if err != nil {
+		return
+	}
+	for _, prefix := range prefixes {
+		if cidrsOverlap(network, prefix.Cidr) {
+			return NewCLError(ErrSubnetCidrConflict, fmt.Sprintf("Network %s overlaps %s (%s), which the VPN gateway of the VPC routes", network, prefix.Cidr, prefix.Source), nil)
+		}
+	}
+	if vni <= 0 || (rtype != "internal" && rtype != "vrrp") {
 		return
 	}
 	if vni < vniMin || vni > vniMax {
 		return NewCLError(ErrInvalidParameter, fmt.Sprintf("The VXLAN ID of a VPC subnet must be between %d and %d", vniMin, vniMax), nil)
+	}
+	if db.Dialector.Name() == "postgres" {
+		if err = db.Exec("SELECT pg_advisory_xact_lock(hashtext(?))", "cloudland-subnet-vni").Error; err != nil {
+			return NewCLError(ErrDatabaseError, "Failed to lock the VXLAN IDs", err)
+		}
 	}
 	var count int64
 	if err = db.Model(&model.Subnet{}).Where("vlan = ?", vni).Count(&count).Error; err != nil {
@@ -111,28 +124,6 @@ func checkVpcSubnet(ctx context.Context, routerID int64, rtype, network string, 
 		return NewCLError(ErrSubnetVniInUse, fmt.Sprintf("VXLAN ID %d is used by another subnet", vni), nil)
 	}
 	return
-}
-
-func checkIfExistVni(ctx context.Context, vni int64) (result bool, err error) {
-	logger.Ctx(ctx).Infof("ENTER checkIfExistVni: vni=%d", vni)
-	defer func() {
-		if err != nil {
-			logger.Ctx(ctx).Errorf("EXIT checkIfExistVni: error=%v", err)
-		} else {
-			logger.Ctx(ctx).Infof("EXIT checkIfExistVni: result=%t", result)
-		}
-	}()
-	ctx, db := GetContextDB(ctx)
-	var count int64
-	if err = db.Model(&model.Subnet{}).Where("vlan = ?", vni).Count(&count).Error; err != nil {
-		logger.Ctx(ctx).Error("Failed to query existing vlan, %v", err)
-		return
-	}
-	if count > 0 {
-		return true, nil
-	} else {
-		return false, nil
-	}
 }
 
 func generateIPAddresses(ctx context.Context, subnet *model.Subnet, start net.IP, end net.IP, preSize int) (err error) {
@@ -457,12 +448,14 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	var tgwAfter func(context.Context)
+	// The VPN and transit gateways of the VPC learn about the subnet once the outermost transaction is committed
+	var afters []func(context.Context)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
-		// The transit gateway of the VPC learns about the subnet once the outermost transaction is committed
-		if err == nil && tgwAfter != nil {
-			AfterCommit(ctx, tgwAfter)
+		if err == nil {
+			for _, f := range afters {
+				AfterCommit(ctx, f)
+			}
 		}
 		if newTransaction {
 			EndTransaction(ctx, err)
@@ -519,7 +512,7 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 	if rtype == "" {
 		rtype = "internal"
 	}
-	if routerID > 0 && (rtype == "internal" || rtype == "vrrp") {
+	if routerID > 0 {
 		if err = checkVpcSubnet(ctx, routerID, rtype, ipNet.String(), givenVni); err != nil {
 			return
 		}
@@ -616,15 +609,16 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 			return
 		}
 		// The VPN gateway's default local networks, BGP network statements and client routes follow the VPC
-		if err = VpnResyncRouter(ctx, subnet.RouterID); err != nil {
-			logger.Ctx(ctx).Error("Failed to resync the VPN gateway after adding a subnet", err)
-			return
-		}
+		afters = append(afters, vpnResyncAfter(subnet.RouterID, "adding"))
 		// So do the routes of its transit gateway
 		if rtype != "vrrp" {
+			var tgwAfter func(context.Context)
 			if tgwAfter, err = TgwRouterChanged(ctx, subnet.RouterID); err != nil {
 				logger.Ctx(ctx).Error("Failed to resync the transit gateway after adding a subnet", err)
 				return
+			}
+			if tgwAfter != nil {
+				afters = append(afters, tgwAfter)
 			}
 		}
 	}
@@ -686,13 +680,21 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 			return
 		}
 	}
-	// Another subnet on the same VXLAN ID keeps the gateway port, the bridge and the uplink of the VNI on the nodes
+	// Another subnet of the VPC on the same VXLAN ID keeps the gateway port of the VNI in its routers (subnets from
+	// before the VXLAN ID check). The VPC row is locked first, so of two such subnets deleted at the same time the
+	// second sees the first gone and takes the port. Whether the bridge and the uplink are still used by another
+	// VPC is for the node to tell (clear_link.sh)
 	var sharing int64
-	err = db.Model(&model.Subnet{}).Where("vlan = ? AND id <> ?", subnet.Vlan, subnet.ID).Count(&sharing).Error
-	if err != nil {
-		logger.Ctx(ctx).Error("Database failed to count subnet", err)
-		err = NewCLError(ErrDatabaseError, "Database failed to count subnet", err)
-		return
+	if subnet.RouterID > 0 {
+		if _, err = lockRouterRow(db, subnet.RouterID); err != nil {
+			return
+		}
+		err = db.Model(&model.Subnet{}).Where("vlan = ? AND router_id = ? AND id <> ?", subnet.Vlan, subnet.RouterID, subnet.ID).Count(&sharing).Error
+		if err != nil {
+			logger.Ctx(ctx).Error("Database failed to count subnet", err)
+			err = NewCLError(ErrDatabaseError, "Database failed to count subnet", err)
+			return
+		}
 	}
 	err = db.Delete(subnet).Error
 	if err != nil {
@@ -747,10 +749,7 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 	if subnet.RouterID > 0 {
 		routerID, deleted, shared := subnet.RouterID, *subnet, sharing > 0
 		afters = append(afters, func(c context.Context) { _ = clearRouting(c, routerID, &deleted, shared) })
-		if err = VpnResyncRouter(ctx, subnet.RouterID); err != nil {
-			logger.Ctx(ctx).Error("Failed to resync the VPN gateway after deleting a subnet", err)
-			return
-		}
+		afters = append(afters, vpnResyncAfter(routerID, "deleting"))
 		if subnet.Type != "vrrp" {
 			var tgwAfter func(context.Context)
 			if tgwAfter, err = TgwRouterChanged(ctx, subnet.RouterID); err != nil {
@@ -763,6 +762,17 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 		}
 	}
 	return
+}
+
+// vpnResyncAfter returns the push of the VPN gateway configuration of a VPC, to run once the subnet change is
+// committed: the nodes must not apply a configuration the database may still roll back. A failure is only logged,
+// the subnet change stands; the next change or resync of the gateway pushes it again
+func vpnResyncAfter(routerID int64, change string) func(context.Context) {
+	return func(ctx context.Context) {
+		if err := VpnResyncRouter(ctx, routerID); err != nil {
+			logger.Ctx(ctx).Errorf("Failed to resync the VPN gateway of VPC %d after %s a subnet: %v", routerID, change, err)
+		}
+	}
 }
 
 // vpnSubnetInUse reports whether a static VPN connection of the VPC lists the subnet explicitly in its

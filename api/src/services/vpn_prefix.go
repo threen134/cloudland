@@ -24,6 +24,24 @@ const (
 	routerLinkCidr = "169.0.0.0/8"
 )
 
+// routerReservedRanges are the networks the routers of a VPC use themselves; the transit gateway links come
+// before the router links that contain them, so a conflict names the more specific one
+var routerReservedRanges = []struct{ cidr, what string }{
+	{vrrpSubnetCidr, "the VRRP subnet"},
+	{TgwLinkCidr, "the transit gateway link range"},
+	{routerLinkCidr, "the router link range"},
+}
+
+// routerReservedOverlap returns the first reserved range that cidr overlaps, empty if none
+func routerReservedOverlap(cidr string) (reserved, what string) {
+	for _, r := range routerReservedRanges {
+		if cidrsOverlap(cidr, r.cidr) {
+			return r.cidr, r.what
+		}
+	}
+	return "", ""
+}
+
 // ParseCidrList parses a comma separated list of IPv4 CIDRs and returns them normalized (host bits
 // cleared, duplicates dropped) so the stored value never carries the user's spelling
 func ParseCidrList(value string) (cidrs []string, err error) {
@@ -131,11 +149,8 @@ func validateVpnPrefixes(ctx context.Context, routerID, gatewayID int64, cidrs [
 				return conflict(cidr, "VPC subnet "+vpc)
 			}
 		}
-		if cidrsOverlap(cidr, vrrpSubnetCidr) {
-			return conflict(cidr, "the VRRP subnet "+vrrpSubnetCidr)
-		}
-		if cidrsOverlap(cidr, routerLinkCidr) {
-			return conflict(cidr, "the router link range "+routerLinkCidr)
+		if reserved, what := routerReservedOverlap(cidr); reserved != "" {
+			return conflict(cidr, what+" "+reserved)
 		}
 		for _, prefix := range existing {
 			if vpnPrefixExcluded(prefix, excludeRef, excludeSources) {
