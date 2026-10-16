@@ -141,6 +141,8 @@ const hasClientAddress = computed(() => publicAddresses.value.some((p) => p.endp
 const nodeLabel = (node: { hostid: number; role: string }) => {
     const fixed = isAA.value ? nodeAddress(node.hostid) : undefined
     if (fixed) return addressName(fixed.endpoint)
+    // The role keepalived starts the node with (MASTER has the higher priority, nopreempt): which node holds the
+    // address now is the master row above and the active badge, they differ once the gateway failed over
     return node.role === 'MASTER' ? t('dashboard.vpnGateway.roleMaster') : t('dashboard.vpnGateway.roleBackup')
 }
 

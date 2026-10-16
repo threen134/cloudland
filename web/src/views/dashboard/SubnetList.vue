@@ -650,10 +650,16 @@ onMounted(() => {
                                 type="number"
                                 class="form-input"
                                 :placeholder="$t('dashboard.forms.placeholder.auto')"
-                                min="1"
+                                :min="newSubnetForm.type === 'internal' ? 4096 : 1"
                                 max="16777215"
                             />
-                            <div class="form-hint">{{ $t('dashboard.vpcDetail.vlanHint') }}</div>
+                            <div class="form-hint">
+                                {{
+                                    newSubnetForm.type === 'internal'
+                                        ? $t('dashboard.vpcDetail.vxlanHint')
+                                        : $t('dashboard.vpcDetail.vlanHint')
+                                }}
+                            </div>
                         </div>
                         <div class="form-group flex-1" v-if="newSubnetForm.type === 'public'">
                             <label class="form-label">{{ $t('dashboard.forms.priority') }}</label>

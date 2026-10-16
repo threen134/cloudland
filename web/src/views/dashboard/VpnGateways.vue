@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useToast } from '../../composables/useToast'
 import { useCopyId } from '../../composables/useCopyId'
 import { useListQuery } from '../../composables/useListQuery'
+import { usePollWhile } from '../../composables/usePollWhile'
 import { useRegionStore } from '../../stores/region'
 import { vpcsApi, subnetsApi, type VPC, type Subnet } from '../../api/networks'
 import { zonesApi, type Zone } from '../../api/zones'
@@ -86,6 +87,12 @@ const {
         return { items: response.vpn_gateways || [], total: response.total ?? 0 }
     },
     { watchSources: [computed(() => region.currentRegionId)] }
+)
+
+// Gateways being set up or torn down: refresh quietly so their status moves on its own (as the detail page does)
+usePollWhile(
+    computed(() => gateways.value.some((g) => g.status === 'pending' || g.status === 'deleting')),
+    () => fetchGateways(true)
 )
 
 const fetchVpcs = async () => {

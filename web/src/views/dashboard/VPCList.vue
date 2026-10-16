@@ -705,10 +705,10 @@ onMounted(() => {
                             type="number"
                             class="form-input"
                             :placeholder="$t('dashboard.forms.placeholder.auto')"
-                            min="1"
+                            min="4096"
                             max="16777215"
                         />
-                        <div class="form-hint">{{ $t('dashboard.vpcDetail.vlanHint') }}</div>
+                        <div class="form-hint">{{ $t('dashboard.vpcDetail.vxlanHint') }}</div>
                     </div>
                 </div>
             </div>

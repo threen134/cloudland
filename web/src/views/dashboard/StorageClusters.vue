@@ -2,7 +2,7 @@
 // Storage clusters (shared-storage-design.md §13.3), the tasks that build and change them, and the package repository
 // their software comes from (?tab=packages): the creation wizard, the precheck of hosts and the selftest of the task
 // path start here; a cluster is changed on its detail page.
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -23,6 +23,7 @@ import {
     type StorageTask,
 } from '../../api/storageClusters'
 import { useListQuery } from '../../composables/useListQuery'
+import { usePollWhile } from '../../composables/usePollWhile'
 import { useRegionStore } from '../../stores/region'
 import { formatDateTime } from '../../utils/format'
 import CapacityBar from '../../components/storage/CapacityBar.vue'
@@ -107,23 +108,10 @@ const taskColumns = computed<Column[]>(() => [
 ])
 
 // Tasks still going: refresh quietly so their status moves on its own
-let timer: ReturnType<typeof setInterval> | null = null
-const anyLive = computed(() => taskQuery.items.value.some((task) => TASK_LIVE_STATUSES.includes(task.status)))
-watch(
-    anyLive,
-    (live) => {
-        if (live && !timer) {
-            timer = setInterval(() => taskQuery.load(true), 5000)
-        } else if (!live && timer) {
-            clearInterval(timer)
-            timer = null
-        }
-    },
-    { immediate: true }
+usePollWhile(
+    computed(() => taskQuery.items.value.some((task) => TASK_LIVE_STATUSES.includes(task.status))),
+    () => taskQuery.load(true)
 )
-onUnmounted(() => {
-    if (timer) clearInterval(timer)
-})
 
 const refresh = () => {
     clusterQuery.load()
