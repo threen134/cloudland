@@ -2,6 +2,7 @@
 
 cd `dirname $0`
 source ../cloudrc
+source ./bridge_lib.sh
 
 [ $# -lt 3 ] && echo "$0 <router> <vlan> <gateway>" && exit -1
 
@@ -17,6 +18,17 @@ gateway=$3
 ./create_local_router.sh $router
 cat /proc/net/dev | grep -q "^\<ln-$vlan\>"
 if [ $? -ne 0 ]; then
+    # A port of the router left by a subnet deleted while this node did not hear of it, with a network that
+    # overlaps this one, would keep the connected route (and the fip- table routes) of the network: it goes
+    # first. Under the router lock, taken after create_local_router.sh (it takes it itself) and given back
+    # before the DHCP server starts (a daemon must not inherit it)
+    exec 8>$(router_lock_file $router)
+    flock -w 60 8 || log_debug $router "set_subnet_gw.sh: lock busy, stale ports overlapping $gateway are not checked"
+    for stale in $(router_overlapping_ports $router $vlan $gateway); do
+        log_debug $router "set_subnet_gw.sh: removing ns-$stale, a stale port with a network overlapping $gateway"
+        clear_router_port $router $stale
+    done
+    exec 8>&-
     ./create_veth.sh $router ln-$vlan ns-$vlan
     apply_vnic -I ln-$vlan
     ip netns exec $router ip link set ns-$vlan address $(subnet_gw_mac $vlan)

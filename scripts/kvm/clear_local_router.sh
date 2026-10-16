@@ -70,10 +70,7 @@ if [ -n "$user" ]; then
 fi
 
 for vlan in $vlans; do
-    ./clear_link.sh $vlan unused
-    apply_vnic -D ln-$vlan
-    dnsmasq_pid=$(ps -ef | grep dnsmasq | grep "\<interface=ns-$vlan\>" | awk '{print $2}')
-    [ -n "$dnsmasq_pid" ] && kill -9 $dnsmasq_pid
+    clear_router_port $router $vlan
 done
 
 ip netns exec $router ip link set lo down

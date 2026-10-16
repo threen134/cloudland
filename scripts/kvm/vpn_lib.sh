@@ -656,6 +656,8 @@ vpn_apply_routes()
                     # or not), drop ours: zebra only installs its own route when no kernel route competes
                     if [ "$type" = "bgp" ] && vpn_frr_alive $gw_id && timeout 5 vtysh -N $(vpn_frr_ns $gw_id) -c "show ip route $cidr" 2>/dev/null | grep -q 'Known via "static"'; then
                         ip netns exec $router ip route del blackhole $cidr proto boot 2>/dev/null
+                        # The route to the tunnel left from when the connection was static hides BGP's the same way
+                        ip netns exec $router ip route del $cidr proto boot 2>/dev/null
                     else
                         ip netns exec $router ip route replace blackhole $cidr
                     fi

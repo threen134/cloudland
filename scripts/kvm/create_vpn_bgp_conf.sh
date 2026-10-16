@@ -282,6 +282,19 @@ retimed=$(comm -13 <(echo "$old_timers" | sort) <(echo "$new_timers" | sort) | a
     mv -f $vpn_dir/bgp_peers.new $vpn_dir/bgp_peers
     rm -f $vpn_dir/bgp.reported
     if vpn_runs_tunnels $router $vpn_dir && ! vpn_disabled $vpn_dir; then
+        # BFD of a neighbor that no longer has it goes first: frr-reload removes "neighbor X bfd" before
+        # "neighbor X bfd profile P", and on FRR 8.4 (Ubuntu 24.04) taking the profile away turns plain BFD
+        # with the default timers back on, so BFD was never switched off
+        if vpn_frr_alive $gw; then
+            running=$(timeout 5 vtysh -N $ns -c "show running-config" 2>/dev/null)
+            running_asn=$(awk '/^router bgp / {print $3; exit}' <<<"$running")
+            nobfd=()
+            for peer in $(awk '/^ neighbor [0-9.]+ bfd$/ {print $2}' <<<"$running"); do
+                grep -q "^ neighbor $peer bfd$" /etc/frr/$ns/frr.conf || nobfd+=(-c "no neighbor $peer bfd")
+            done
+            [ -n "$running_asn" ] && [ ${#nobfd[@]} -gt 0 ] &&
+                timeout 10 vtysh -N $ns -c "configure terminal" -c "router bgp $running_asn" "${nobfd[@]}" >/dev/null 2>&1
+        fi
         vpn_reload_frr $router $gw
         [ -n "$old_timers" ] && for peer in $retimed; do
             timeout 5 vtysh -N $ns -c "clear bgp $peer" >/dev/null 2>&1

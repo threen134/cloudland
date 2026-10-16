@@ -69,3 +69,55 @@ function router_vrrp_user()
         echo "VRRP address"
     fi
 }
+
+# The dnsmasq of gateway port ns-<vni> of router <router> (each router and VNI has its own, set_subnet_dhcp.sh
+# starts it with the directory of the router): router_port_dnsmasq <router> <vni> prints its pids. The VNI alone
+# is not enough, it would also match the port of another router
+function router_port_dnsmasq()
+{
+    ps -eo pid=,args= | awk -v i="--interface=ns-$2" -v c="$router_dir/$1/$2/dnsmasq.conf" \
+        '{ n = 0; for (k = 2; k <= NF; k++) if ($k == i || $k == c) n++ } n == 2 {print $1}'
+}
+
+# Takes gateway port ns-<vni> of router <router> down on this node: clear_router_port <router> <vni>. Its DHCP
+# server and directory go; when the router has the port (or no netns any more: after a reboot NetworkManager
+# brings the bridge back without it), the veth ln- / ns-, the FORWARD rules of ln- and the bridge and VXLAN uplink
+# of the VNI (clear_link.sh <vni> unused). The caller holds the router lock and made sure nothing uses the port.
+# Shared by clear_local_router.sh, clear_subnet_gw.sh and set_subnet_gw.sh
+function clear_router_port()
+{
+    local router=$1 vlan=$2 pid
+    for pid in $(router_port_dnsmasq $router $vlan); do
+        kill -9 $pid
+    done
+    rm -rf $router_dir/$router/$vlan
+    if ip netns exec $router true 2>/dev/null; then
+        ip netns exec $router ip link show ns-$vlan >/dev/null 2>&1 || return 0
+        ip netns exec $router ip link del ns-$vlan
+    fi
+    ./clear_link.sh $vlan unused >/dev/null 2>&1
+    apply_vnic -D ln-$vlan
+}
+
+# Whether two IPv4 networks overlap: nets_overlap <a/len> <b/len>. One contains the other when both give the
+# same network at the shorter prefix
+function nets_overlap()
+{
+    local p=${1#*/}
+    [ ${2#*/} -lt $p ] && p=${2#*/}
+    [ "$(ipcalc -n -b ${1%/*}/$p | awk '/^Network:/ {print $2}')" = "$(ipcalc -n -b ${2%/*}/$p | awk '/^Network:/ {print $2}')" ]
+}
+
+# The VNIs of the other gateway ports of router <router> with an address in a network that overlaps <network>:
+# router_overlapping_ports <router> <vni> <network>. clapi refuses overlapping subnets in a VPC, so such a port
+# belongs to a subnet deleted while this node did not hear of it (offline, or before clear_subnet_gw.sh existed);
+# its connected route would win over the new port
+function router_overlapping_ports()
+{
+    local dev addr
+    [[ "$3" == */* ]] || return 0
+    ip netns exec $1 ip -o -4 addr show 2>/dev/null | awk -v d="ns-$2" '{ sub(/@.*/, "", $2); if ($2 != d && $2 ~ /^ns-[0-9]+$/) print $2, $4 }' |
+        while read dev addr; do
+            nets_overlap $addr $3 && echo ${dev#ns-}
+        done | sort -u
+}
