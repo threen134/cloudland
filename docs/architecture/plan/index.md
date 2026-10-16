@@ -28,6 +28,7 @@
 | P10 | [network-behavior.md](network-behavior.md) | 网络行为说明：VPC、子网、可用区、IP 组、安全组、弹性公网 IP、负载均衡 | 2026-10-14 功能域对齐 03 时按代码与 `CLAUDE.md` 整理 |
 | P11 | [operations-behavior.md](operations-behavior.md) | 运维功能行为说明：告警、控制台、部署与计算节点、任务列表 | 2026-10-14 功能域对齐 04 时按代码与 `CLAUDE.md` 整理 |
 | P12 | [admin-frontend-design.md](admin-frontend-design.md) | 系统管理前端：导航、三层权限、区域 / 可用区 / 计算节点 / 热迁移 / 节点告警各页调的接口，及其他仅管理员可见的入口 | 2026-10-15 按代码重写 |
+| P20 | [internal-dns-plan.md](internal-dns-plan.md) | 内部 DNS：控制面 dnsmasq 解析节点主机名与 MinIO / clapi 内部域名、上游转发 | 2026-10-15 按代码重写（原在「历史」） |
 
 ## 历史
 
@@ -39,8 +40,7 @@
 | P16 | [vm-alarm-multi-level-support.md](vm-alarm-multi-level-support.md) | VM 告警规则多级阈值 | 同上 |
 | P17 | [prometheus-auto-discovery-plan.md](prometheus-auto-discovery-plan.md) | Prometheus 自动发现计算节点 | 代码与 [`deploy/docker/config/`](https://github.com/threen134/cloudland/tree/stage-01/deploy/docker/config) |
 | P18 | [consoleproxy-direct-expose-plan.md](consoleproxy-direct-expose-plan.md) | 多区域下的 consoleproxy 暴露方式 | 控制台 2026-09-17 改为自带页面，见 `CLAUDE.md`「VNC 控制台」「文本控制台」 |
-| P19 | [dns-upstream-settings-plan.md](dns-upstream-settings-plan.md) | DNS 上游转发的界面配置 | 已实施（系统设置 `DNS_UPSTREAM`） |
-| P20 | [internal-dns-plan.md](internal-dns-plan.md) | 控制面 dnsmasq 解析节点主机名 | 已实施，以代码为准 |
+| P19 | [dns-upstream-settings-plan.md](dns-upstream-settings-plan.md) | DNS 上游转发的界面配置 | 已实施（系统设置 `DNS_UPSTREAM`）；dnsmasq 加载与重载上游的做法见 P20 §6 |
 | P21 | [dynamic-system-settings.md](dynamic-system-settings.md) | 动态系统设置与通知渠道（Python 网关时期） | Go 网关的系统设置；Slack / 通用 Webhook 备用值 2026-09-17 已删除 |
 | P22 | [image-repository-minio-plan.md](image-repository-minio-plan.md) | S3 兼容镜像仓库 | 已实施（`S3_ENDPOINT`），[部署文档 06](../../deployment/06-configuration.md) |
 | P23 | [image-visibility-plan.md](image-visibility-plan.md) | 镜像公共 / 私有 | 已实施，以代码为准 |
