@@ -32,6 +32,6 @@ wsl.exe -u root --exec bash $R/test-items/sandbox/storage/stc-all.sh
 | `sim2.sh` | `apply_tgw.sh` 与 `create_local_router.sh` / `clear_local_router.sh` 并发 10 轮 |
 | `sim3.sh <pg-*.json>` | 喂 clapi 服务层生成的状态（`TGW_SIM_DIR=<目录> go test ./src/services -run TgwSimulationStates` 生成 `pg-*.json`），按状态里的可达 / 黑洞清单核对 |
 | `gotest.sh` | 在 WSL 里装 Go 与 gcc，跑要 CGO 的测试：cpgateway 全部、api `src/dbs` 与 `src/utils/tracing` |
-| `subnet-gw.sh` | VPC 路由器的网关口（2026-10-16 补测发现的 R2-2 及之后的复查）：`set_subnet_gw.sh` 建新口时拆掉同一路由器里网段重叠的残留口（同网段、/25 在 /24 里、/24 包住 /25），连同它的 dnsmasq、目录、网桥，`fip-` 表路由改指新口；`clear_subnet_gw.sh` 的 `port` 模式拆口、拆网桥、删 `nonat`，`address` 模式（同一 VXLAN 还有别的子网）只摘网关地址与它的 `fip-` 路由和 DHCP 配置；不碰别的路由器的同 VNI 口、网桥、dnsmasq，包括本路由器已经不在这台节点上时；路由器没有使用者后连口一起回收；参数校验（29 项） |
+| `subnet-gw.sh` | VPC 路由器的网关口（2026-10-16 补测发现的 R2-2 及之后的复查）：`set_subnet_gw.sh` 建新口时拆掉同一路由器里网段重叠的残留口（同网段、/25 在 /24 里、/24 包住 /25），连同它的 dnsmasq、目录、网桥，`fip-` 表路由改指新口；`clear_subnet_gw.sh` 的 `port` 模式拆口、拆网桥、删 `nonat`，`address` 模式（同一 VXLAN 还有别的子网）只摘网关地址与它的 `fip-` 路由和 DHCP 配置；不碰别的路由器的同 VNI 口、网桥、dnsmasq，包括本路由器已经不在这台节点上时；路由器没有使用者后连口一起回收；节点重启后口已经没了（路由器重建了但没这个口、或连 netns 都没了）时照样清网桥、上联口、FORWARD 规则和目录，路由器回收时也清；netns 名字被删、还被 dnsmasq 占着时，口的另一端不算别的路由器；参数校验（36 项） |
 
 依赖：`ipset jq net-tools ipcalc tcpdump rsync`（`sim.sh` 会建假的 `/opt/fakebin`）。

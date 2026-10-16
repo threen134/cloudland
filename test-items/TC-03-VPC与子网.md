@@ -234,8 +234,10 @@ api GET "/subnets?limit=100" | jq -r ".subnets[].name" | grep wp-bad || echo "no
 - [ ] `/30`（4 个地址）、`/22`（1024 个地址）→ **400**，error_code **100012**
 - [ ] CIDR 漏掩码、`999.0.0.0/8` → **400**
 - [ ] 管理员往 VPC 里放 VLAN 子网 → **400**，error_code **131110**
-- [ ] 与本 VPC 已有子网（`wp-subnet` 的 192.168.200.0/24）重叠——在它里面的 /25、包住它的 /23 都算 → **400**，error_code **131111**（`Network X overlaps Y of subnet Z in the VPC`）；落在 `192.168.196.0/24`（VRRP 子网）或 `169.254.254.0/24`（中转网关互联）里 → **400** 131111（2026-10-16 起，回归点 19）
+- [ ] 与本 VPC 已有子网（`wp-subnet` 的 192.168.200.0/24）重叠——在它里面的 /25、包住它的 /23 都算 → **400**，error_code **131111**（`Network X overlaps Y of subnet Z in the VPC`）；落在 `192.168.196.0/24`（VRRP 子网）、`169.254.254.0/24`（中转网关互联）或 `169.0.0.0/8`（路由器之间的互联口）里 → **400** 131111（2026-10-16 起，回归点 19、23）；与本 VPC 的 VPN 网关路由的网段（静态连接的对端网段、BGP 汇总网段、客户端地址池）重叠 → **400** 131111（`... which the VPN gateway of the VPC routes`，2026-10-16 起，回归点 23）
 - [ ] 指定任何子网正在用的 VXLAN（别的 VPC 的，或本 VPC 的）→ **409**，error_code **131112**（`VXLAN ID N is used by another subnet`）；指定 4095 以下的值（VLAN 范围，例如公网的 756）→ **400** 100003（2026-10-16 起，回归点 18）。本 VPC 的也不行：节点上口已存在时 `add_fwrule.sh` 不再调 `set_subnet_gw.sh`，第二个子网的网关地址根本配不上去
+- [ ] 两个 VPC 同时用同一个没人用的 VXLAN 建子网 → 一个成功、一个 **409** 131112（回归点 24，只有 PG 测试 `TestSubnetCreateInVpcPG`）
+- [ ] `type` 填 `vrrp` 或 `public` / `private` / `internal` / `site` 以外的值 → **400**（`Invalid input JSON`；回归点 22）。`vrrp` 只给 clapi 自己建 VRRP 子网用
 - [ ] 界面：三处新建子网弹窗（子网页、VPC 详情页、VPC 列表行内）的 VXLAN 输入框最小值 4096，提示「4096-16777215，留空自动分配；不能用其他子网已在用的 VXLAN」
 - [ ] 以上都没有留下 `wp-bad*` 子网
 - [ ] 名称 1 个字符或 65 个字符 → 400（子网名后端是 2–64；VPC 名是 2–32）
@@ -248,7 +250,7 @@ api GET "/subnets?limit=100" | jq -r ".subnets[].name" | grep wp-bad || echo "no
 
 ## NET-12 删子网时节点上的网关口（2026-10-16 新增）
 
-**P1** · 2026-10-16 补测发现（R2-2）：删 VPC 里的子网时，节点上的网关口从来不清，只在整个路由器被回收时才消失；留下的口带着直连路由，之后同 VPC 用同网段（或下一个 VRRP 子网，固定 `192.168.196.0/24`）建子网时，这台节点上新子网的云服务器不通、DHCP 起不来。修复后：删子网提交之后 clapi 向**所有节点**下发 `clear_subnet_gw.sh <路由器> <VNI> <网段> <网关> port|address`；节点上建新口时（`set_subnet_gw.sh`）顺带拆掉同一路由器里网段重叠的残留口（离线时没收到删除命令的节点靠这一条恢复）。节点脚本另有 WSL 沙箱 `sandbox/tgw/subnet-gw.sh`（29 项）。
+**P1** · 2026-10-16 补测发现（R2-2）：删 VPC 里的子网时，节点上的网关口从来不清，只在整个路由器被回收时才消失；留下的口带着直连路由，之后同 VPC 用同网段（或下一个 VRRP 子网，固定 `192.168.196.0/24`）建子网时，这台节点上新子网的云服务器不通、DHCP 起不来。修复后：删子网提交之后 clapi 向**所有节点**下发 `clear_subnet_gw.sh <路由器> <VNI> <网段> <网关> port|address`；节点上建新口时（`set_subnet_gw.sh`）顺带拆掉同一路由器里网段重叠的残留口（离线时没收到删除命令的节点靠这一条恢复）。节点脚本另有 WSL 沙箱 `sandbox/tgw/subnet-gw.sh`（36 项）。
 
 1. 在一个 VPC 里建子网 S1 和一台 cirros（指定节点 A），等它 `running`；记下各节点 `router-<N>` 里的 `ns-<VNI>`（有这个 VPC 云服务器、负载均衡或中转网关的节点都会有）
 2. 删云服务器、再删 S1；30 秒内在**每个节点**看：`ns-<VNI>`、`br<VNI>`、`ln-<VNI>` 的 FORWARD 规则、dnsmasq（`ps -eo args | grep '[i]nterface=ns-<VNI>'`）、`/opt/cloudland/cache/router/router-<N>/<VNI>/`、`nonat` 里的网段
@@ -257,6 +259,8 @@ api GET "/subnets?limit=100" | jq -r ".subnets[].name" | grep wp-bad || echo "no
 5. **残留口**：在节点 A 的这个路由器里手工造一个同网段的旧口（`/opt/cloudland/scripts/backend/set_subnet_gw.sh router-<N> <没人用的 VNI> <S2 的网关>/<前缀>`，用 9000000 以上的数免得撞上真实的），再在这个 VPC 建一个与它重叠的子网并在节点 A 放一台云服务器
 6. **最后一个负载均衡 / VPN 网关删掉时**：VPC 的 VRRP 子网一起删除；看第三节点（只因为 VPC 里有云服务器才有这个路由器的节点）
 7. 节点上路由器只剩这一个口、没有别的使用者时删掉子网（例如只有一个子网、云服务器已删的节点）
+8. **节点重启后**：在节点 A 有这个 VPC 的云服务器时重启 A，开机后（开机同步重建路由器之前，或路由器重建了但没有这个子网的口）删掉子网（只有沙箱覆盖；真实环境要重启节点）
+9. **两个 VPC 共用一个 VXLAN**（只对 2026-10-16 之前建的数据有意义）：在库里把另一个 VPC 的子网 S6 的 `vlan` 改成 S5 的，删 S5
 
 **预期**：
 - 第 2 步：所有节点上这几样都没了；只有 S1 用过的节点有动作，别的节点什么都不做；**同节点别的 VPC 的口、网桥、dnsmasq 不受影响**（回归点 20）
@@ -265,6 +269,9 @@ api GET "/subnets?limit=100" | jq -r ".subnets[].name" | grep wp-bad || echo "no
 - 第 5 步：新口建出来之前，旧口连同它的 dnsmasq、目录、网桥、FORWARD 规则一起被拆掉；新子网的云服务器能访问，`fip-` 表里有新口的路由（回归点 20）
 - 第 6 步：所有节点上 `192.168.196.x` 的口都没了；只为负载均衡 / VPN 网关留着的路由器一起回收
 - 第 7 步：路由器 netns、`int-<N>`、SNAT 规则、目录一起回收（`clear_subnet_gw.sh` 拆完口后调 `clear_local_router.sh`，它自己判断有没有使用者）
+- 第 8 步：口已经随重启没了，留下的网桥、VXLAN 上联口、`ln-<VNI>` 的 FORWARD 规则、目录照样清掉；路由器 netns 也没了时不会因此建出路由器；之后路由器整个回收时，重启前那些口的网桥也一起清（回归点 26，沙箱 `subnet-gw.sh`）
+- 第 9 步：发的是 `port`（只看同一 VPC 有没有别的子网用这个 VXLAN，回归点 25）；S5 的路由器在 A 上没有这个口（`ln-<VNI>` 的另一端在 S6 的路由器里）时只清 S5 的 dnsmasq 和目录，S6 的口、网桥、dnsmasq 都在
+- 同一 VPC 里共用一个 VXLAN 的两个子网同时删：一个发 `address`、一个发 `port`，口最终被拆掉（回归点 25，只有 PG 测试）
 - 删除子网的事务失败（回滚）时不下发；子网是更大删除的一部分（删负载均衡 / VPN 网关时连带删 VRRP 子网）时，等外层事务提交后才下发（回归点 21，只有 PG 测试 `TestSubnetDeleteClearsGatewayPortPG`）
 
 **扫描残留口**：work-01 `/root/reg2/stale-scan.sh`（2026-10-16 写的）列出四台节点各路由器里、数据库已没有对应子网的 `ns-<VNI>`。
@@ -508,6 +515,11 @@ docker exec cloudland-postgres psql -U postgres -d cloudland -Atc "select count(
 | 19 | 同一 VPC 里能建网段重叠的子网（既有，2026-10-16 核实；已修，2026-10-16 已部署） | 只有中转网关成员之间查重叠 | NET-04 重叠一项 |
 | 20 | 🔴 删一个借用了别的 VPC 的 VXLAN 的子网，会把那个 VPC 在各节点上的网关口、网桥、dnsmasq、FORWARD 规则一起拆掉（2026-10-16 核实，第一版 R2-2 修复引入、已部署过；2026-10-16 实测时误伤了 r2-tb，已恢复；已修，2026-10-16 已部署） | 清理脚本按 VXLAN 杀 dnsmasq、拆网桥，不看是哪个路由器的；不管口在不在都拆网桥 | NET-12 第 2、5 步；沙箱 `subnet-gw.sh` |
 | 21 | 删子网时的节点命令在事务提交失败、或外层事务（删负载均衡 / VPN 网关）回滚时照样下发（2026-10-16，`/code-review`；已修，2026-10-16 已部署） | 下发写在 `Delete` 自己的 defer 里，只看 `err` | NET-12 最后一项（PG 测试） |
+| 22 | 建子网接口不校验 `type`：填 `vrrp` 或任意字符串就绕过网段、VXLAN 校验；填 `vrrp` 的子网删掉时还把 VPC 的 `vrrp_subnet_id` 清零（既有，2026-10-16 第二轮 `/code-review`；已修，未部署） | `SubnetPayload.Type` 只有 `omitempty`（PATCH 的有 `oneof`），网段与 VXLAN 校验只对 `internal` / `vrrp` 做 | NET-04 `type` 一项；`TestSubnetPayloadType` |
+| 23 | 子网网段没和路由器互联口 `169.0.0.0/8`、本 VPC 的 VPN 网关网段比对，重叠后两边都坏（反方向原来就查）（2026-10-16 第二轮 `/code-review`；已修，未部署） | 保留网段写了三份（子网、中转网关、VPN），彼此不同步 | NET-04 重叠一项；`TestSubnetCreateInVpcPG` |
+| 24 | 两个 VPC 同时指定同一个 VXLAN 建子网都能成功（2026-10-16 第二轮 `/code-review`；已修，未部署） | 只锁了各自的 VPC 行 | NET-04 并发一项（PG 测试） |
+| 25 | 删子网时判断「VXLAN 还有没有别的子网」不限定 VPC、也不加锁：别的 VPC 共用这个 VXLAN 时只摘地址、口留下；同一 VPC 两个共用 VXLAN 的子网同时删，两个都只摘地址（2026-10-16 第二轮 `/code-review`；已修，未部署） | 计数条件只有 `vlan`，读之前没锁 VPC 行 | NET-12 第 9 步与最后一项（PG 测试） |
+| 26 | 节点重启后删子网，网桥、VXLAN 上联口永远漏清；路由器回收时同样漏（2026-10-16 第二轮 `/code-review`；已修，未部署） | 口不在就当作「不是自己的 VNI」；名字被删、还被进程占着的 netns 里的口也被当成别的路由器的 | NET-12 第 8 步；沙箱 `subnet-gw.sh` |
 
 ---
 

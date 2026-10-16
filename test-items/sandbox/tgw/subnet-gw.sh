@@ -1,7 +1,8 @@
 #!/bin/bash
 # Netns simulation of the gateway ports of a VPC router on one node (local WSL sandbox, not a CloudLand environment):
 # set_subnet_gw.sh removing stale ports whose network overlaps a new one, clear_subnet_gw.sh in its port and address
-# modes, and that neither touches the port or the DHCP server of another router.
+# modes, and that neither touches the port or the DHCP server of another router. A router that lost the port in a
+# reboot (bridge and directory of the VNI left) is cleaned up all the same.
 SIM="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$(cd "$SIM/../../../scripts" && pwd)"
 pass=0; failn=0
@@ -102,6 +103,38 @@ check "nothing uses router-21 any more: the router is removed (ports, netns, dir
 check "router-22 untouched" "ip netns list | grep -q '^router-22' && has router-22 5009"
 $K/clear_subnet_gw.sh 21 5009 10.9.0.0/24 10.9.0.1/24 port
 check "router-21 gone from this node: the bridge and FORWARD rules of VNI 5009 (router-22's) stay" "has router-22 5009 && ip link show br5009 >/dev/null 2>&1 && iptables -S FORWARD | grep -q ln-5009 && dns router-22 5009"
+
+# --- after a reboot the router came back without the port: the bridge, FORWARD rules and directory of the VNI stayed
+port router-23 5012 10.12.0.1/24
+port router-23 5014 10.14.0.1/24
+pkill -f "dnsmasq --interface=ns-5012 "
+pkill -f "dnsmasq --interface=ns-5014 "
+sleep 0.3
+ip netns del router-23
+$K/create_local_router.sh router-23 >/dev/null 2>&1
+check "reboot: router-23 back without ns-5012 / ns-5014, their bridges and directories still there" "ip netns list | grep -q '^router-23' && ! has router-23 5012 && ! has router-23 5014 && ip link show br5012 >/dev/null 2>&1 && ip link show br5014 >/dev/null 2>&1 && [ -d /opt/cloudland/cache/router/router-23/5012 ] && [ -d /opt/cloudland/cache/router/router-23/5014 ]"
+$K/clear_subnet_gw.sh 23 5012 10.12.0.0/24 10.12.0.1/24 port; rc=$?
+check "port mode after a reboot: br5012, the FORWARD rules of ln-5012 and the directory go" "[ $rc = 0 ] && ! ip link show br5012 >/dev/null 2>&1 && ! iptables -S FORWARD | grep -q ln-5012 && [ ! -d /opt/cloudland/cache/router/router-23/5012 ]"
+$K/clear_local_router.sh router-23 >/dev/null 2>&1
+check "the unused router after a reboot goes with the bridge of the VNI it lost the port of (br5014)" "! ip netns list | grep -q '^router-23' && ! ip link show br5014 >/dev/null 2>&1 && ! iptables -S FORWARD | grep -q ln-5014 && [ ! -d /opt/cloudland/cache/router/router-23 ]"
+# ... or without its netns at all
+port router-24 5013 10.13.0.1/24
+pkill -f "dnsmasq --interface=ns-5013 "
+sleep 0.3
+ip netns del router-24
+$K/clear_subnet_gw.sh 24 5013 10.13.0.0/24 10.13.0.1/24 port; rc=$?
+check "no netns after a reboot: br5013 and the directory go, no router is created" "[ $rc = 0 ] && ! ip link show br5013 >/dev/null 2>&1 && [ ! -d /opt/cloudland/cache/router/router-24/5013 ] && ! ip netns list | grep -q '^router-24'"
+# ... or with the name of its netns gone while its DHCP server keeps it alive (ln-5016 has a peer without a name)
+port router-26 5016 10.16.0.1/24
+ip netns del router-26
+check "netns name gone, ln-5016 still there with an unnamed peer" "ip -o link show ln-5016 2>/dev/null | grep -q link-netnsid && dns router-26 5016"
+$K/clear_subnet_gw.sh 26 5016 10.16.0.0/24 10.16.0.1/24 port; rc=$?
+sleep 0.3
+check "an unnamed peer is not another router: the DHCP server, ln-5016, br5016 and the directory go" "[ $rc = 0 ] && ! dns router-26 5016 && ! ip link show ln-5016 >/dev/null 2>&1 && ! ip link show br5016 >/dev/null 2>&1 && [ ! -d /opt/cloudland/cache/router/router-26/5016 ]"
+# a router without netns whose VNI another router holds here (two VPCs on one VNI)
+mkdir -p /opt/cloudland/cache/router/router-25/5009
+$K/clear_subnet_gw.sh 25 5009 10.9.0.0/24 10.9.0.1/24 port
+check "no netns, VNI held by router-22: its port, bridge, FORWARD rules and DHCP server stay, only the directory of router-25 goes" "has router-22 5009 && ip link show br5009 >/dev/null 2>&1 && iptables -S FORWARD | grep -q ln-5009 && dns router-22 5009 && [ ! -d /opt/cloudland/cache/router/router-25/5009 ]"
 
 # --- nodes without the router or the port, bad input
 $K/clear_subnet_gw.sh 99 5010 10.1.0.0/24 10.1.0.1/24 port; rc=$?
