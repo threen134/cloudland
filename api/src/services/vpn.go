@@ -787,9 +787,16 @@ func (a *VpnGatewayAdmin) Delete(ctx context.Context, gateway *model.VpnGateway)
 		err = NewCLError(ErrVpnGatewayDeleteFailed, "Failed to delete VPN tunnels", err)
 		return
 	}
-	if err = db.Where("vpn_gateway_id = ?", gateway.ID).Delete(&model.VpnRemotePrefix{}).Error; err != nil {
+	cleared := db.Where("vpn_gateway_id = ?", gateway.ID).Delete(&model.VpnRemotePrefix{})
+	if err = cleared.Error; err != nil {
 		err = NewCLError(ErrDatabaseError, "Failed to clear VPN prefixes", err)
 		return
+	}
+	// The member routers of a transit gateway stop throwing the VPN networks out of table 252
+	if cleared.RowsAffected > 0 {
+		if err = vpnPrefixesChanged(ctx, gateway.RouterID); err != nil {
+			return
+		}
 	}
 	if gateway.VrrpInstance != nil {
 		if err = dispatchVpnClear(ctx, gateway); err != nil {

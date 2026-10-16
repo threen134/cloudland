@@ -689,15 +689,20 @@ func tgwOfRouter(ctx context.Context, routerID int64) (att *model.TgwAttachment,
 	return
 }
 
-// TgwRouterChanged marks a change of the networks of a VPC (a subnet added or deleted) in the caller's transaction
-// and returns the dispatch to run once it is committed (nil when the VPC belongs to no gateway): a node must not
-// apply a state the database may still roll back.
+// TgwRouterChanged marks a change of the networks of a VPC (a subnet added or deleted, its VPN networks) in the
+// caller's transaction and returns the dispatch to run once it is committed (nil when the VPC belongs to no
+// gateway): a node must not apply a state the database may still roll back.
 func TgwRouterChanged(ctx context.Context, routerID int64) (after func(context.Context), err error) {
 	att, err := tgwOfRouter(ctx, routerID)
 	if err != nil || att == nil {
 		return
 	}
 	_, db := GetContextDB(ctx)
+	// The VPC row first, then the gateway, as everywhere else (lockTgwRouter): a caller may go on to change the
+	// VPC row (a VPN gateway deleted with the VRRP subnet of the VPC) while a subnet is added to it
+	if err = lockTgwRouter(db, routerID); err != nil {
+		return
+	}
 	tgw, err := lockTgw(db, att.TgwID)
 	if err != nil {
 		return

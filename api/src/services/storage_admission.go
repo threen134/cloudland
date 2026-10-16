@@ -113,12 +113,29 @@ func capacityLimit(pool *model.StoragePool, hsp *model.HyperStoragePool) int64 {
 	return int64(float64(hsp.CapacityBytes) * ratio)
 }
 
+// poolShortOfRoom tells whether a pool on a host may be the one an instance paused for space waits on. The node
+// resumes such instances once the pool has min(15% of it, 50 GiB) available (resume_nospace in pool_probe.sh), at
+// most every 5 minutes, and does not say which disk ran out. A pool under twice that room counts as the one: one
+// just over it can still be filled again before the node gets to resume. The other pools of a paused instance,
+// well above it, stay open
+func poolShortOfRoom(hsp *model.HyperStoragePool) bool {
+	need := (hsp.UsedBytes + hsp.AvailBytes) * 15 / 100
+	if need > 50*gib {
+		need = 50 * gib
+	}
+	return hsp.AvailBytes < 2*need
+}
+
 // storageFullPaused counts instances paused because a local pool of the host ran out of space and that
-// have a disk in this pool: while there are some, new allocations would eat the room they need to resume
-func storageFullPaused(db *gorm.DB, hostid int32, poolID int64) (count int64) {
+// have a disk in this pool, when this pool is short of room: while there are some, new allocations would
+// eat the room they need to resume
+func storageFullPaused(db *gorm.DB, hsp *model.HyperStoragePool) (count int64) {
+	if !poolShortOfRoom(hsp) {
+		return 0
+	}
 	db.Model(&model.Instance{}).
-		Where("instances.hyper = ? AND instances.status = ? AND instances.reason = ?", hostid, model.InstanceStatusPaused, InstanceReasonStorageFull).
-		Where("EXISTS (SELECT 1 FROM volumes v WHERE v.instance_id = instances.id AND v.storage_pool_id = ? AND v.deleted_at IS NULL)", poolID).
+		Where("instances.hyper = ? AND instances.status = ? AND instances.reason = ?", hsp.Hostid, model.InstanceStatusPaused, InstanceReasonStorageFull).
+		Where("EXISTS (SELECT 1 FROM volumes v WHERE v.instance_id = instances.id AND v.storage_pool_id = ? AND v.deleted_at IS NULL)", hsp.PoolID).
 		Count(&count)
 	return
 }
@@ -146,7 +163,7 @@ func admit(tx *gorm.DB, pool *model.StoragePool, hostid int32, addGB int64, lock
 		}
 		return nil, NewCLError(ErrStoragePoolUnavailable, fmt.Sprintf("Capacity of storage pool %s on %s is not known yet", pool.Name, host), nil)
 	}
-	if n := storageFullPaused(tx, hostid, pool.ID); n > 0 {
+	if n := storageFullPaused(tx, hsp); n > 0 {
 		return nil, NewCLError(ErrStorageCapacityExceeded, fmt.Sprintf("Storage pool %s on %s ran out of space and %d instances are paused; free some space first", pool.Name, host, n), nil)
 	}
 	if ratio := hsp.UsageRatio(); ratio >= poolAdmitUsageLimit {

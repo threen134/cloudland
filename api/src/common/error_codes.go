@@ -173,6 +173,8 @@ const (
 	ErrSiteSubnetUpdateFailed       ErrCode = 131108
 	ErrSubnetsCrossVPCInOneInstance ErrCode = 131109
 	ErrPublicSubnetCannotInVPC      ErrCode = 131110
+	ErrSubnetCidrConflict           ErrCode = 131111 // overlaps another subnet of the VPC or a reserved range
+	ErrSubnetVniInUse               ErrCode = 131112 // the VXLAN ID belongs to another subnet
 
 	// Interface related errors (1312xx)
 	ErrInterfaceNotFound             ErrCode = 131201
@@ -360,8 +362,10 @@ func (c ErrCode) ToHTTPStatus() int {
 	case c == ErrTgwExists || c == ErrTgwInUse || c == ErrTgwAttachmentExists || c == ErrTgwAttachmentLimit || c == ErrTgwAttachmentBusy ||
 		c == ErrTgwRouteTableExists || c == ErrTgwRouteTableInUse || c == ErrTgwRouteExists || c == ErrTgwPropagationExists || c == ErrRouterHasTgwAttachment:
 		return 409
-	case c == ErrTgwCidrConflict:
+	case c == ErrTgwCidrConflict || c == ErrSubnetCidrConflict:
 		return 400
+	case c == ErrSubnetVniInUse:
+		return 409
 	case c == ErrPlacementGroupNotFound:
 		return 404
 	case c == ErrPlacementGroupExists || c == ErrPlacementGroupInUse || c == ErrPlacementGroupNoHost ||

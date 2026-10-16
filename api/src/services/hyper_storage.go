@@ -83,7 +83,7 @@ func (a *HyperStorageAdmin) view(db *gorm.DB, row *model.HyperStoragePool, pool 
 	v.AllocatedBytes, _ = allocatedBytes(db, row.Hostid, row.PoolID)
 	v.ReservedBytes = reservedBytes(db, row.Hostid, row.PoolID)
 	db.Model(&model.Volume{}).Where("storage_pool_id = ? AND hyper = ?", row.PoolID, row.Hostid).Count(&v.VolumeCount)
-	v.StorageFullPaused = storageFullPaused(db, row.Hostid, row.PoolID)
+	v.StorageFullPaused = storageFullPaused(db, row)
 	return v
 }
 

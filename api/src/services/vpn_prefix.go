@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 
 	. "api/src/common"
@@ -226,6 +227,10 @@ func rebuildRemotePrefixes(ctx context.Context, gateway *model.VpnGateway) (pref
 	if gateway.ClientEnabled && gateway.ClientCidr != "" {
 		prefixes = append(prefixes, &model.VpnRemotePrefix{VpnGatewayID: gateway.ID, Cidr: gateway.ClientCidr, Source: model.VpnPrefixSourceClientPool, RefID: gateway.ID})
 	}
+	old, err := loadRemotePrefixes(ctx, gateway.ID)
+	if err != nil {
+		return
+	}
 	if err = db.Where("vpn_gateway_id = ?", gateway.ID).Delete(&model.VpnRemotePrefix{}).Error; err != nil {
 		err = NewCLError(ErrDatabaseError, "Failed to clear VPN prefixes", err)
 		return
@@ -235,6 +240,31 @@ func rebuildRemotePrefixes(ctx context.Context, gateway *model.VpnGateway) (pref
 			err = NewCLError(ErrDatabaseError, "Failed to store VPN prefix", err)
 			return
 		}
+	}
+	// After the rows are rewritten: without a transaction to wait for, the transit gateway state is built at once
+	if prefixCidrSet(old) != prefixCidrSet(prefixes) {
+		err = vpnPrefixesChanged(ctx, gateway.RouterID)
+	}
+	return
+}
+
+// prefixCidrSet is the sorted list of the networks of a prefix set, to tell whether it changed
+func prefixCidrSet(prefixes []*model.VpnRemotePrefix) string {
+	cidrs := make([]string, 0, len(prefixes))
+	for _, p := range prefixes {
+		cidrs = append(cidrs, normalizeCidr(p.Cidr))
+	}
+	sort.Strings(cidrs)
+	return strings.Join(cidrs, ",")
+}
+
+// vpnPrefixesChanged tells the transit gateway of the VPC, if it is attached to one, that its VPN networks
+// changed: the member routers throw them out of table 252 (vpc-transit-gateway-plan.md §2.6). The generation
+// moves on in the caller's transaction and the nodes get the state once it is committed
+func vpnPrefixesChanged(ctx context.Context, routerID int64) (err error) {
+	after, err := TgwRouterChanged(ctx, routerID)
+	if err == nil && after != nil {
+		AfterCommit(ctx, after)
 	}
 	return
 }

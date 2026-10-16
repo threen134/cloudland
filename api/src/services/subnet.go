@@ -69,6 +69,50 @@ func getValidVni(ctx context.Context) (vni int, err error) {
 	return
 }
 
+// checkVpcSubnet checks a subnet about to be created in a VPC. Its network must not overlap another subnet of the
+// VPC nor a range its routers use: on a node every gateway port holds the connected route of its network, and of
+// two ports for overlapping networks one is unreachable. A VXLAN ID given by the caller must be in the VXLAN range
+// and used by no other subnet: on a node everything on a VNI shares its bridge and uplink, so the VNI of another
+// VPC (or a VLAN ID) would join its layer 2; and a second subnet of the same VPC on a VNI gets no gateway address
+// on a node that has the port already (add_fwrule.sh only builds a missing port). The VPC row is locked first (the
+// order of lockTgwRouter), so two subnets created at the same time see each other
+func checkVpcSubnet(ctx context.Context, routerID int64, rtype, network string, vni int) (err error) {
+	ctx, db := GetContextDB(ctx)
+	if err = lockTgwRouter(db, routerID); err != nil {
+		return
+	}
+	if rtype != "vrrp" {
+		for _, reserved := range []string{vrrpSubnetCidr, TgwLinkCidr} {
+			if cidrsOverlap(network, reserved) {
+				return NewCLError(ErrSubnetCidrConflict, fmt.Sprintf("Network %s overlaps %s, which the routers of the VPC use", network, reserved), nil)
+			}
+		}
+	}
+	others := []*model.Subnet{}
+	if err = db.Where("router_id = ?", routerID).Find(&others).Error; err != nil {
+		return NewCLError(ErrDatabaseError, "Failed to query the subnets of the VPC", err)
+	}
+	for _, other := range others {
+		if cidrsOverlap(network, other.Network) {
+			return NewCLError(ErrSubnetCidrConflict, fmt.Sprintf("Network %s overlaps %s of subnet %s in the VPC", network, other.Network, other.Name), nil)
+		}
+	}
+	if vni <= 0 {
+		return
+	}
+	if vni < vniMin || vni > vniMax {
+		return NewCLError(ErrInvalidParameter, fmt.Sprintf("The VXLAN ID of a VPC subnet must be between %d and %d", vniMin, vniMax), nil)
+	}
+	var count int64
+	if err = db.Model(&model.Subnet{}).Where("vlan = ?", vni).Count(&count).Error; err != nil {
+		return NewCLError(ErrDatabaseError, "Failed to query the subnets of the VXLAN ID", err)
+	}
+	if count > 0 {
+		return NewCLError(ErrSubnetVniInUse, fmt.Sprintf("VXLAN ID %d is used by another subnet", vni), nil)
+	}
+	return
+}
+
 func checkIfExistVni(ctx context.Context, vni int64) (result bool, err error) {
 	logger.Ctx(ctx).Infof("ENTER checkIfExistVni: vni=%d", vni)
 	defer func() {
@@ -335,7 +379,7 @@ func (a *SubnetAdmin) Update(ctx context.Context, subnet *model.Subnet, name, su
 	return
 }
 
-func clearRouting(ctx context.Context, routerID int64, subnet *model.Subnet) (err error) {
+func clearRouting(ctx context.Context, routerID int64, subnet *model.Subnet, shared bool) (err error) {
 	logger.Ctx(ctx).Infof("ENTER clearRouting: routerID=%d, subnetID=%d", routerID, subnet.ID)
 	defer func() {
 		if err != nil {
@@ -344,28 +388,19 @@ func clearRouting(ctx context.Context, routerID int64, subnet *model.Subnet) (er
 			logger.Ctx(ctx).Info("EXIT clearRouting: success")
 		}
 	}()
-	ctx, db := GetContextDB(ctx)
-	router := &model.Router{Model: model.Model{ID: routerID}}
-	err = db.Take(router).Error
-	if err != nil {
-		logger.Ctx(ctx).Error("DB failed to query router", err)
-		err = NewCLError(ErrRouterNotFound, "Router not found", err)
-		return
+	// The VPC router is per node and any node may hold the gateway port of the subnet: one with an instance in
+	// it, a third node routing through the VRRP subnet to a VPN gateway, a member node of a transit gateway.
+	// Every node is asked; one without the port does nothing. A port left behind keeps the connected route of
+	// the network, which wins over the port of a subnet created again with the same CIDR. A VNI another subnet still
+	// uses keeps its port: only the address of this network goes from it
+	mode := "port"
+	if shared {
+		mode = "address"
 	}
-	if router.Hyper >= 0 {
-		control := fmt.Sprintf("toall=router-%d:%d", router.ID, router.Hyper)
-		if router.Peer >= 0 {
-			control = fmt.Sprintf("%s,%d", control, router.Peer)
-		}
-		if router.Hyper == router.Peer {
-			control = fmt.Sprintf("inter=%d", router.Hyper)
-		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_gateway.sh '%d' '%s' '%d'", router.ID, ShellEscape(subnet.Gateway), subnet.Vlan)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Ctx(ctx).Error("Set gateway failed")
-			return
-		}
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_subnet_gw.sh '%d' '%d' '%s' '%s' '%s'",
+		routerID, subnet.Vlan, ShellEscape(normalizeCidr(subnet.Network)), ShellEscape(subnet.Gateway), ShellEscape(mode))
+	if err = HyperExecute(ctx, "toall=", command); err != nil {
+		logger.Ctx(ctx).Error("Failed to clear the gateway port of the subnet", err)
 	}
 	return
 }
@@ -422,18 +457,15 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
-	// The transit gateway of the VPC learns about the subnet once it is committed
-	outerCtx := ctx
 	var tgwAfter func(context.Context)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
+		// The transit gateway of the VPC learns about the subnet once the outermost transaction is committed
+		if err == nil && tgwAfter != nil {
+			AfterCommit(ctx, tgwAfter)
+		}
 		if newTransaction {
 			EndTransaction(ctx, err)
-			if err == nil && tgwAfter != nil {
-				tgwAfter(outerCtx)
-			}
-		} else if err == nil && tgwAfter != nil {
-			tgwAfter(ctx)
 		}
 	}()
 	permit := memberShip.CheckOrgPermission(model.OrgWriter)
@@ -455,6 +487,7 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 			return
 		}
 	}
+	givenVni := vlan
 	if vlan <= 0 {
 		vlan, err = getValidVni(ctx)
 		if err != nil {
@@ -463,13 +496,6 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 		}
 	}
 	owner := memberShip.OrgID
-	var count int64
-	err = db.Model(&model.Subnet{}).Where("vlan = ?", vlan).Count(&count).Error
-	if err != nil {
-		logger.Ctx(ctx).Error("Database failed to count network", err)
-		err = NewCLError(ErrDatabaseError, "Database failed to count network", err)
-		return
-	}
 	var routerID int64
 	if router != nil {
 		routerID = router.ID
@@ -492,6 +518,11 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 	}
 	if rtype == "" {
 		rtype = "internal"
+	}
+	if routerID > 0 && (rtype == "internal" || rtype == "vrrp") {
+		if err = checkVpcSubnet(ctx, routerID, rtype, ipNet.String(), givenVni); err != nil {
+			return
+		}
 	}
 	// A VPC on a transit gateway shares its address space with the other members (the VRRP subnet is per VPC)
 	if routerID > 0 && rtype != "vrrp" {
@@ -609,17 +640,18 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 			logger.Ctx(ctx).Info("EXIT SubnetAdmin.Delete: success")
 		}
 	}()
-	outerCtx := ctx
-	var tgwAfter func(context.Context)
+	// Sent to the nodes once the outermost transaction is committed: never when it rolls back, also when this
+	// deletion is part of a larger one (the VRRP subnet of a deleted load balancer or VPN gateway)
+	var afters []func(context.Context)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
+		if err == nil {
+			for _, f := range afters {
+				AfterCommit(ctx, f)
+			}
+		}
 		if newTransaction {
 			EndTransaction(ctx, err)
-			if err == nil && tgwAfter != nil {
-				tgwAfter(outerCtx)
-			}
-		} else if err == nil && tgwAfter != nil {
-			tgwAfter(ctx)
 		}
 	}()
 	memberShip := GetMemberShip(ctx)
@@ -634,7 +666,6 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the subnet", nil)
 		return
 	}
-	var count int64
 	if subnet.Type != "site" {
 		var count int64
 		err = db.Model(&model.Interface{}).Where("subnet = ? and type <> 'dhcp' and type <> 'gateway'", subnet.ID).Count(&count).Error
@@ -655,7 +686,9 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 			return
 		}
 	}
-	err = db.Model(&model.Subnet{}).Where("vlan = ?", subnet.Vlan).Count(&count).Error
+	// Another subnet on the same VXLAN ID keeps the gateway port, the bridge and the uplink of the VNI on the nodes
+	var sharing int64
+	err = db.Model(&model.Subnet{}).Where("vlan = ? AND id <> ?", subnet.Vlan, subnet.ID).Count(&sharing).Error
 	if err != nil {
 		logger.Ctx(ctx).Error("Database failed to count subnet", err)
 		err = NewCLError(ErrDatabaseError, "Database failed to count subnet", err)
@@ -712,19 +745,20 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 		return
 	}
 	if subnet.RouterID > 0 {
-		err = clearRouting(ctx, subnet.RouterID, subnet)
-		if err != nil {
-			logger.Ctx(ctx).Error("Failed to set routing for subnet")
-			return
-		}
+		routerID, deleted, shared := subnet.RouterID, *subnet, sharing > 0
+		afters = append(afters, func(c context.Context) { _ = clearRouting(c, routerID, &deleted, shared) })
 		if err = VpnResyncRouter(ctx, subnet.RouterID); err != nil {
 			logger.Ctx(ctx).Error("Failed to resync the VPN gateway after deleting a subnet", err)
 			return
 		}
 		if subnet.Type != "vrrp" {
+			var tgwAfter func(context.Context)
 			if tgwAfter, err = TgwRouterChanged(ctx, subnet.RouterID); err != nil {
 				logger.Ctx(ctx).Error("Failed to resync the transit gateway after deleting a subnet", err)
 				return
+			}
+			if tgwAfter != nil {
+				afters = append(afters, tgwAfter)
 			}
 		}
 	}
