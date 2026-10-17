@@ -70,6 +70,17 @@ count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)
 for (( i=1; i <= $count; i++ )); do
     vif_dev=$(echo $vm_xml | xmllint --xpath "string(/domain/devices/interface[$i]/target/@dev)" -)
     ./clear_sg_chain.sh $vif_dev >/dev/null 2>&1
+    # The DHCP host of the interface and its lease go too: dnsmasq of this host keeps the lease in memory for its
+    # lease time (2h), and an instance that gets the address next here is handed a dynamic address clapi does not
+    # know (deleting an instance releases it on the host it runs on, del_fwrule.sh; not here)
+    vif_mac=$(echo $vm_xml | xmllint --xpath "string(/domain/devices/interface[$i]/mac/@address)" -)
+    vif_vni=$(echo $vm_xml | xmllint --xpath "string(/domain/devices/interface[$i]/source/@bridge)" -)
+    vif_vni=${vif_vni#br}
+    dhcp_hosts=$cache_dir/router/router-${router#router-}/$vif_vni/dhcp_hosts
+    if [ -n "$vif_mac" ] && [[ "$vif_vni" =~ ^[0-9]+$ ]] && [ -f $dhcp_hosts ]; then
+        vif_ip=$(awk -F, -v m="$vif_mac" '$1 == m {print $NF; exit}' $dhcp_hosts)
+        [ -n "$vif_ip" ] && ./del_host.sh $router $vif_vni $vif_mac $vif_ip >/dev/null 2>&1
+    fi
 done
 ./clear_local_router.sh $router $ID >/dev/null 2>&1
 

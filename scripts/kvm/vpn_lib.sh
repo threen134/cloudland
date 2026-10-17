@@ -121,20 +121,28 @@ vpn_tunnel_sas()
 
 # One tunnel of vpn_ipsec_reconcile_now, the caller holding its lock: vpn_tunnel_reconcile <router> <vpn_dir> <name>.
 # Decided under the lock, so a reload and initiate that ran meanwhile is seen; at most once a minute.
+# Only selectors the configuration no longer has (stale) take the IKE SA down. Children that are merely missing
+# are initiated next to the installed ones: the peer may never accept them (its networks do not include a new
+# subnet of ours), and terminating would cut the working children every minute for as long as it does not
 vpn_tunnel_reconcile()
 {
-    local router=$1 vpn_dir=$2 name=$3 conf=$2/swanctl.conf want have sas stamp terminate=no
+    local router=$1 vpn_dir=$2 name=$3 conf=$2/swanctl.conf want have stale sas stamp terminate=no
     want=$(vpn_conn_pairs $conf $name)
     sas=$(vpn_tunnel_sas $router $vpn_dir $name) || return 0
     have=$(awk '/^    local  [0-9]/ {l = $2} /^    remote [0-9]/ {print l "|" $2}' <<<"$sas" | sort -u)
     [ "$have" = "$want" ] && return 0
-    # nothing installed and we are not the initiator: only the peer can bring it up
-    [ -z "$have" ] && ! vpn_conn_initiator $conf $name && return 0
+    stale=$(grep -vxF -f <(printf '%s\n' "$want") <<<"$have" | grep .)
+    # only missing children and we are not the initiator: only the peer can bring them up
+    [ -z "$stale" ] && ! vpn_conn_initiator $conf $name && return 0
     stamp=$vpn_dir/reconcile-$name
     [ -f $stamp ] && [ $(($(date +%s) - $(stat -c %Y $stamp))) -lt 60 ] && return 0
     touch $stamp
-    log_debug "$(basename $0)" "vpn: connection $name has selectors [$(echo $have)] but is configured for [$(echo $want)], re-initiating"
-    [ -n "$have" ] && terminate=yes
+    if [ -n "$stale" ]; then
+        terminate=yes
+        log_debug "$(basename $0)" "vpn: connection $name has selectors [$(echo $have)] but is configured for [$(echo $want)], re-initiating"
+    else
+        log_debug "$(basename $0)" "vpn: connection $name lacks children for [$(echo $(grep -vxF -f <(printf '%s\n' "$have") <<<"$want"))], initiating them"
+    fi
     vpn_tunnel_run $router $vpn_dir $name $terminate
 }
 
