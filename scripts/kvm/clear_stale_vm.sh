@@ -18,6 +18,7 @@ vm_ID=inst-$ID
 vm_rescue=$vm_ID-rescue
 
 reconcile_hold_remove $ID
+reconcile_last_remove $ID
 pending_start_remove $ID
 vm_xml=$(timeout 30 virsh dumpxml $vm_ID 2>/dev/null)
 nvram=$(echo "$vm_xml" | xmllint --xpath 'string(/domain/os/nvram)' - 2>/dev/null)

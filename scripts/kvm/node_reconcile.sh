@@ -1,7 +1,8 @@
 #!/bin/bash
 # Apply what clapi decided about the instances this host reported with node_recovered (shared-storage-design.md
 # §11.4). JSON on stdin: {"boot", "reason", "start": [ids], "stale": [{"id", "router"}]}
-#   start: still this host's: held ones may start (from the pending start list, once their pools are usable)
+#   start: still this host's: held ones may start (from the pending start list, once their pools are usable); one
+#          that was shut off or in rescue before the boot is reported in that state instead (reconcile_last)
 #   stale: owned elsewhere now, or deleted: the definition goes (clear_stale_vm.sh), no disk is touched
 # Instances in neither list stay as they are (a migration involving the host goes on, a delete was just sent); held
 # ones stay held, and the host asks again every minute (reason "leave") until each is decided
@@ -32,15 +33,23 @@ for id in $(jq -r '.start[]? | numbers' <<<"$input"); do
     [[ "$id" =~ ^[0-9]+$ ]] || continue
     if reconcile_held $id; then
         reconcile_hold_remove $id
-        # Started by the heartbeat from the pending start list, once its pools are usable
-        [ "$(timeout 30 virsh domstate inst-$id 2>/dev/null)" = "running" ] || pending_start_add $id
+        last=$(reconcile_last_get $id)
+        if [ -n "$last" ]; then
+            # Shut off or in rescue before the boot (sync_instance): left so, reported for its NICs to be rebuilt here
+            reconcile_last_remove $id
+            [ "$last" = rescuing ] && start_rescue_domain $id
+            echo "|:-COMMAND-:| launch_vm.sh '$id' '$last' '$NODE_ID' 'sync'"
+        else
+            # Started by the heartbeat from the pending start list, once its pools are usable
+            [ "$(timeout 30 virsh domstate inst-$id 2>/dev/null)" = "running" ] || pending_start_add $id
+        fi
     fi
 done
 # A held domain that is gone (its delete went through) is no longer waited for
 if [ -f $reconcile_hold_file ]; then
     for id in $(cat $reconcile_hold_file); do
         [[ "$id" =~ ^[0-9]+$ ]] || continue
-        timeout 30 virsh dominfo inst-$id >/dev/null 2>&1 || { reconcile_hold_remove $id; pending_start_remove $id; }
+        timeout 30 virsh dominfo inst-$id >/dev/null 2>&1 || { reconcile_hold_remove $id; reconcile_last_remove $id; pending_start_remove $id; }
     done
 fi
 echo "$current" >$run_dir/reconciled_boot

@@ -119,19 +119,57 @@ vpn_tunnel_sas()
     [ $? -ne 124 ]
 }
 
+# vpn_pairs_unmatched in|around <pairs> <other pairs>: the "<local net>|<remote net>" pairs of the first list
+# that lie inside no pair of the second (in), or that hold no pair of the second inside them (around); inside
+# means both networks are. A peer may narrow the selectors to a part of ours, which still matches either way.
+# 0.0.0.0/0 holds only itself: it is what the BGP route mode configures, and a child narrower than that is one left
+# from static selectors (the link addresses and the learned routes are outside it), never a narrowing to accept.
+vpn_pairs_unmatched()
+{
+    MODE=$1 A=$2 B=$3 awk '
+    function ip(s,  p) { split(s, p, "."); return ((p[1] * 256 + p[2]) * 256 + p[3]) * 256 + p[4] }
+    function inside(x, y,  xa, ya, xl, yl, m) {
+        split(x, xa, "/"); split(y, ya, "/"); xl = (xa[2] == "" ? 32 : xa[2]); yl = (ya[2] == "" ? 32 : ya[2])
+        if (yl + 0 == 0) return xl + 0 == 0
+        if (xl + 0 < yl + 0) return 0
+        m = 2 ^ (32 - yl)
+        return int(ip(xa[1]) / m) == int(ip(ya[1]) / m)
+    }
+    BEGIN {
+        na = split(ENVIRON["A"], a, "\n"); nb = split(ENVIRON["B"], b, "\n")
+        for (i = 1; i <= na; i++) {
+            if (a[i] == "") continue
+            split(a[i], x, "|"); found = 0
+            for (j = 1; j <= nb && !found; j++) {
+                if (b[j] == "") continue
+                split(b[j], y, "|")
+                if (ENVIRON["MODE"] == "in" && inside(x[1], y[1]) && inside(x[2], y[2])) found = 1
+                if (ENVIRON["MODE"] == "around" && inside(y[1], x[1]) && inside(y[2], x[2])) found = 1
+            }
+            if (!found) print a[i]
+        }
+    }'
+}
+
 # One tunnel of vpn_ipsec_reconcile_now, the caller holding its lock: vpn_tunnel_reconcile <router> <vpn_dir> <name>.
 # Decided under the lock, so a reload and initiate that ran meanwhile is seen; at most once a minute.
 # Only selectors the configuration no longer has (stale) take the IKE SA down. Children that are merely missing
 # are initiated next to the installed ones: the peer may never accept them (its networks do not include a new
-# subnet of ours), and terminating would cut the working children every minute for as long as it does not
+# subnet of ours), and terminating would cut the working children every minute for as long as it does not.
+# A child the peer narrowed to a part of the configured networks is neither stale nor missing (but see
+# vpn_pairs_unmatched for 0.0.0.0/0). So is one left with older, narrower selectors after our networks were widened:
+# the two can not be told apart here. create_vpn_ipsec_conf.sh terminates and re-initiates a block whose networks
+# changed, so after our reload such a child can only come from the peer still configured narrower.
 vpn_tunnel_reconcile()
 {
-    local router=$1 vpn_dir=$2 name=$3 conf=$2/swanctl.conf want have stale sas stamp terminate=no
+    local router=$1 vpn_dir=$2 name=$3 conf=$2/swanctl.conf want have stale missing sas stamp terminate=no
     want=$(vpn_conn_pairs $conf $name)
     sas=$(vpn_tunnel_sas $router $vpn_dir $name) || return 0
     have=$(awk '/^    local  [0-9]/ {l = $2} /^    remote [0-9]/ {print l "|" $2}' <<<"$sas" | sort -u)
     [ "$have" = "$want" ] && return 0
-    stale=$(grep -vxF -f <(printf '%s\n' "$want") <<<"$have" | grep .)
+    stale=$(vpn_pairs_unmatched in "$have" "$want")
+    missing=$(vpn_pairs_unmatched around "$want" "$have")
+    [ -z "$stale" ] && [ -z "$missing" ] && return 0
     # only missing children and we are not the initiator: only the peer can bring them up
     [ -z "$stale" ] && ! vpn_conn_initiator $conf $name && return 0
     stamp=$vpn_dir/reconcile-$name
@@ -141,7 +179,7 @@ vpn_tunnel_reconcile()
         terminate=yes
         log_debug "$(basename $0)" "vpn: connection $name has selectors [$(echo $have)] but is configured for [$(echo $want)], re-initiating"
     else
-        log_debug "$(basename $0)" "vpn: connection $name lacks children for [$(echo $(grep -vxF -f <(printf '%s\n' "$have") <<<"$want"))], initiating them"
+        log_debug "$(basename $0)" "vpn: connection $name lacks children for [$(echo $missing)], initiating them"
     fi
     vpn_tunnel_run $router $vpn_dir $name $terminate
 }
@@ -376,11 +414,12 @@ vpn_router_of()
 # Delete a device of the router, waiting 10 s at most: vpn_link_del <router> <dev>. Deleting an XFRM interface
 # can hang for good in the kernel (6.8: unregister_netdevice waiting on a reference count that dropped to 0,
 # R2-14), and the node runs its commands one at a time, so a hang here would hold every later command. The
-# background job has no stdout or stderr of the caller, the command runner waits for those to close.
+# background job has no stdout or stderr of the caller (the command runner waits for those to close) and none of
+# its lock descriptors (a process stuck in the kernel would hold the lb or next-hop lock for good).
 vpn_link_del()
 {
     local router=$1 dev=$2 pid i
-    ip netns exec $router ip link del $dev >/dev/null 2>&1 &
+    ip netns exec $router ip link del $dev >/dev/null 2>&1 8>&- 9>&- &
     pid=$!
     for i in $(seq 50); do
         kill -0 $pid 2>/dev/null || { wait $pid; return; }
@@ -388,6 +427,33 @@ vpn_link_del()
     done
     log_debug "$router" "deleting $dev did not finish in 10 s, left it to the kernel"
     return 1
+}
+
+# Remove the XFRM states and policies of some interface ids from a router: vpn_xfrm_drop <router> <if_id>... (as in
+# ipsec-<if_id>). A charon killed before it could tear down leaves them in the kernel, and deleting an interface
+# under such an SA can hang (R2-14). ip xfrm deleteall has no if_id selector, so each entry goes by its own id:
+# a state by src / dst / proto / spi, a policy by its selector line, direction and if_id
+vpn_xfrm_drop()
+{
+    local router=$1 ids="" id entry
+    shift
+    for id in "$@"; do
+        [[ "$id" =~ ^[0-9]+$ ]] && ids="$ids $(printf '0x%x' $id)"
+    done
+    [ -n "$ids" ] || return 0
+    ip netns exec $router ip xfrm state 2>/dev/null | awk -v ids="$ids " '
+        /^src / {e = "src " $2 " dst " $4; next}
+        /^\tproto / {e = e " proto " $2 " spi " $4; next}
+        /^\tif_id / {if (index(ids, " " $2 " ")) print e}' | while read -r entry; do
+        ip netns exec $router ip xfrm state delete $entry 2>/dev/null
+    done
+    ip netns exec $router ip xfrm policy 2>/dev/null | awk -v ids="$ids " '
+        /^src / {sel = $0; dir = ""; next}
+        /^\tdir / {dir = $2; next}
+        /^\tif_id / {if (dir != "" && index(ids, " " $2 " ")) print sel " dir " dir " if_id " $2}' | while read -r entry; do
+        ip netns exec $router ip xfrm policy delete $entry 2>/dev/null
+    done
+    return 0
 }
 
 # True when this node currently holds the gateway's floating IP (the VRRP master)

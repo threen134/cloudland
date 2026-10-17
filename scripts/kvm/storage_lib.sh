@@ -583,6 +583,41 @@ function reconcile_held()
     grep -qx "$1" $reconcile_hold_file 2>/dev/null
 }
 
+# A held instance that was shut off or in rescue before the boot that held it ("<id> shut_off|rescuing", written by
+# sync_instance): node_reconcile.sh leaves it so and reports it in that state instead of starting it
+reconcile_last_file=$cache_dir/reconcile_last
+
+function reconcile_last_set()
+{
+    reconcile_last_remove $1
+    echo "$1 $2" >>$reconcile_last_file
+}
+
+function reconcile_last_get()
+{
+    awk -v i=$1 '$1 == i {print $2; exit}' $reconcile_last_file 2>/dev/null
+}
+
+function reconcile_last_remove()
+{
+    [ -f $reconcile_last_file ] && sed -i "/^$1 /d" $reconcile_last_file
+    return 0
+}
+
+# Start the rescue system of an instance that was in rescue before a boot (rescue_vm.sh defines inst-<id>-rescue
+# persistently, end_rescue.sh undefines it): <instance id>. Its own domain stays off, its NICs are those of the
+# instance (same taps), rebuilt by the sync that follows
+function start_rescue_domain()
+{
+    local id=$1 err
+    timeout 30 sudo virsh dominfo inst-$id-rescue >/dev/null 2>&1 || return 0
+    sudo virsh autostart inst-$id-rescue --disable >/dev/null 2>&1
+    vnc_ensure_domain_passwd inst-$id-rescue
+    err=$(timeout 120 sudo virsh start inst-$id-rescue 2>&1 >/dev/null) ||
+        log_debug $id "starting the rescue system of instance $id failed: $(echo "${err:-timed out}" | head -c 200)"
+    return 0
+}
+
 # Start an instance of the pending start list once, keeping when it was tried and, when it fails, what libvirt
 # said (the heartbeat reports it as start_failed and retries with a back-off): <instance id>
 function try_start_instance()

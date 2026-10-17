@@ -96,20 +96,28 @@ function paused_nospace()
 function inst_status()
 {
     inst_list_file=$image_dir/old_inst_list
-    old_state_time=$(stat -c %W $inst_list_file)
-    [ -z "$old_state_time" ] && old_state_time=0
-    current_time=$(date +"%s")
-    [ $(( $current_time - $old_state_time )) -gt 600 ] && rm -f $inst_list_file
+    # The next boot starts what this list says ran (sync_instance, R2-16), so it is always there: replaced whole
+    # (a temporary file renamed over it), never deleted, and never from a failed listing. During a shutdown
+    # libvirt-guests stops the guests while a heartbeat may still be running (cloudlet-go leaves its children alone
+    # when it stops): nothing is reported or written then, the guests are not shut off by their users
+    [ "$(systemctl is-system-running 2>/dev/null)" = stopping ] && return 0
+    local domains
+    domains=$(timeout 30 sudo virsh list --all 2>/dev/null) || return 0
     old_inst_list=$(cat $inst_list_file 2>/dev/null)
-    all_inst_list=$(sudo virsh list --all | tail -n +3 | cut -d' ' -f3-)
-    shutoff_list=$(sudo virsh list --all | grep 'shut off' | awk '{print $2}')
-    for inst in $shutoff_list; do
-        echo "$all_inst_list" | grep -q $inst-rescue
-	[ $? -eq 0 ] && all_inst_list=$(echo "$all_inst_list" | grep -v $inst-rescue | sed "s/$inst.*shut off/$inst rescuing/")
-    done
+    # Every 10 minutes every state is reported again, whether it changed or not
+    full_report=$run_dir/inst_status_full
+    if [ $(( $(date +%s) - $(stat -c %Y $full_report 2>/dev/null || echo 0) )) -gt 600 ]; then
+        old_inst_list=""
+        touch $full_report
+    fi
+    # "<id> <state>" per instance, names compared whole. An instance whose own domain is shut off while its rescue
+    # system (inst-<id>-rescue) is defined is rescuing; the rescue domain has no line of its own
+    all_inst_list=$(awk 'NR > 2 && NF >= 3 {n = $2; $1 = $2 = ""; sub(/^ +/, ""); name[++c] = n; st[n] = $0}
+        END {for (i = 1; i <= c; i++) {n = name[i]; if (n ~ /-rescue$/) continue; s = st[n]
+            if (s == "shut off" && ((n "-rescue") in st)) s = "rescuing"
+            sub(/^inst-/, "", n); sub(/^shut off$/, "shut_off", s); print n, s}}' <<<"$domains")
     n=0
     export inst_list=""
-    all_inst_list=$(echo "$all_inst_list" | sed 's/inst-//g;s/-rescue//g;s/shut off/shut_off/g')
     # One "<id> <state>" per line; states only the storage code knows: paused_nospace, pending_storage
     pending_list=$cache_dir/pending_start
     all_inst_list=$(while read id st; do
@@ -142,7 +150,9 @@ function inst_status()
         fi
         let n=$n+1
     done <<<$all_inst_list
-    echo "$all_inst_list" >$inst_list_file
+    # A shutdown that began meanwhile: the guests listed may be the ones libvirt-guests is stopping
+    [ "$(systemctl is-system-running 2>/dev/null)" != stopping ] &&
+        echo "$all_inst_list" >$inst_list_file.new && mv -f $inst_list_file.new $inst_list_file
     inst_list=$(echo $inst_list)
     [ -n "$inst_list" ] && echo "|:-COMMAND-:| inst_status.sh '$NODE_ID' '$inst_list'"
 }
@@ -278,18 +288,35 @@ function sync_instance()
     sudo iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
     sudo iptables -A FORWARD -j REJECT --reject-with icmp-host-prohibited
     insts=$(ls $xml_dir)
+    # How each instance was at the last heartbeat before this boot (inst_status writes "<id> <state>" lines and runs
+    # after this): one that was shut off is not started (R2-16, 2026-10-17), one in rescue gets its rescue system
+    # started, not its own domain. Both are still reported with the sync control word, as a started one is: clapi
+    # rebuilds their NICs on this host from that (security group chains, the VPC router port, the DHCP binding,
+    # forwarding entries, floating IPs), and nothing does it when the guest is started later. Without the list (a new
+    # node) every instance is started
+    last_states=$(cat $image_dir/old_inst_list 2>/dev/null)
     for inst in $insts; do
         inst_id=${inst/inst-/}
         [[ "$inst_id" =~ ^[0-9]+$ ]] || continue
         # libvirtd would start an autostart domain at boot before its pools are checked
         sudo virsh autostart inst-$inst_id --disable >/dev/null 2>&1
+        last=$(awk -v i=$inst_id '$1 == i {print $2; exit}' <<<"$last_states")
+        [ "$last" = shut_off -o "$last" = rescuing ] || last=""
         if [ "$(sudo virsh domstate inst-$inst_id 2>/dev/null)" = "running" ]; then
             echo "|:-COMMAND-:| launch_vm.sh '$inst_id' 'running' '$NODE_ID' 'sync'"
         elif instance_shared $inst_id; then
             # A disk in a shared pool: the instance may have been recovered on another host while this one was down.
-            # It waits for clapi to say it is still this host's (reconcile_check, §11.4 of the shared storage design)
+            # It waits for clapi to say it is still this host's (reconcile_check, §11.4 of the shared storage design),
+            # reported to nobody meanwhile; node_reconcile.sh then starts it, or reports it as it was before the boot
             reconcile_hold_add $inst_id
-            pending_start_add $inst_id
+            if [ -n "$last" ]; then
+                reconcile_last_set $inst_id $last
+            elif [ -z "$(reconcile_last_get $inst_id)" ]; then
+                pending_start_add $inst_id
+            fi
+        elif [ -n "$last" ]; then
+            [ "$last" = rescuing ] && instance_pools_ok $inst_id && start_rescue_domain $inst_id
+            echo "|:-COMMAND-:| launch_vm.sh '$inst_id' '$last' '$NODE_ID' 'sync'"
         elif ! instance_pools_ok $inst_id; then
             # Waiting in the heartbeat for a pool would get the host taken offline: start it later
             pending_start_add $inst_id

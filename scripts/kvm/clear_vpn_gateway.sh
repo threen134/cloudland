@@ -43,8 +43,17 @@ if [ -f /var/run/netns/$router ]; then
         ip netns exec $router iptables -D INPUT -p tcp -s ${rule%>*} -d ${rule#*>} --dport 179 -j ACCEPT 2>/dev/null
         ip netns exec $router iptables -D INPUT -p udp -s ${rule%>*} -d ${rule#*>} --dport 3784 -j ACCEPT 2>/dev/null
     done
+    # charon may have been killed above (no exit in 5 s), leaving its SAs and policies in the kernel on the if_ids of
+    # these interfaces: deleting an interface under such an SA can hang for good (R2-14). Only this gateway's charon
+    # uses XFRM in the router, unless a replacement already runs here: then only the entries on this gateway's if_ids go
+    if ! vpn_router_has_other $router $vpn_dir; then
+        ip netns exec $router ip xfrm state flush 2>/dev/null
+        ip netns exec $router ip xfrm policy flush 2>/dev/null
+    else
+        vpn_xfrm_drop $router $(tr ' ' '\n' <$vpn_dir/ifaces 2>/dev/null | sed -n 's/^ipsec-//p')
+    fi
     for dev in $(cat $vpn_dir/ifaces 2>/dev/null) wg-$gw; do
-        ip netns exec $router ip link del $dev >/dev/null 2>&1
+        ip netns exec $router ip link show $dev >/dev/null 2>&1 && vpn_link_del $router $dev
     done
     vpn_isolate_pool_rules $router $vpn_dir del
     # MSS clamping and isolation match every ipsec+ / wg+ device of the router: keep them while another

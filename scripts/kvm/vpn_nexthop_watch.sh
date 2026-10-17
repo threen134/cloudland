@@ -12,8 +12,19 @@
 #
 # A false alarm costs little: an active_standby backup node forwards to the master, an active_active node
 # forwards over iBGP to the node with the better tunnel.
-# State per probed address in /run/cloudland/vpn-nexthop/<host ip> ("down" or "up"). Ends by itself once
-# no gateway routes are left on this node; restarted by set_vpn_route.sh and the heartbeat watchdog.
+#
+# Answering pings again is not always enough to come back: a node unreachable for a while ($hold_after seconds or
+# more, as a reboot is) answers long before its gateway is rebuilt, and while the control plane is down the order of
+# the lists is still the old one, with the old master first (just after clapi restarts it may be first too, until the
+# master reports in). Such a node comes back at once only where the traffic would not go to it: every list has a
+# hop before it that is up, and no prefix shared by ecmp has it among its hops (vpn_apply_nexthops takes the first
+# reachable hop, or every reachable one). Otherwise after answering for $hold seconds, a few lost probes allowed
+# (R2-18, 2026-10-17: the control node, master of two gateways, rebooted and was routed to again for 341 s before
+# its gateway was back). A node unreachable only briefly (lost probes, a network blip) kept its gateway running and
+# comes back after the ten answers.
+# State per probed address in /run/cloudland/vpn-nexthop/<host ip> ("down" or "up"; a "down" dates from the file's
+# time), kept when this loop is killed and restarted, removed when it ends by itself: once no gateway routes are left
+# on this node. Restarted by set_vpn_route.sh and the heartbeat watchdog.
 
 cd `dirname $0`
 source ../cloudrc
@@ -22,6 +33,8 @@ source ./vpn_lib.sh
 interval=0.3
 fail_limit=3
 ok_limit=10
+hold=${vpn_nexthop_hold:-600}
+hold_after=${vpn_nexthop_hold_after:-30}
 
 mkdir -p $vpn_nexthop_state
 # Check and claim under a lock, as vpn_watch.sh does: two starters a moment apart would otherwise both run a loop
@@ -31,7 +44,40 @@ mkdir -p $vpn_nexthop_state
     echo $$ >$vpn_nexthop_state/watch.pid
 ) 8>$vpn_nexthop_state/watch.lock || exit 0
 
-declare -A fails oks
+# carries <host>: whether traffic would go to a node once it is marked up, as vpn_apply_nexthops chooses: a prefix
+# shared by ecmp has it among its hops, or no hop before it in a list is up. nexthop_hosts maps the VRRP addresses
+# of a gateway to node addresses; nexthops has "<prefix> <ecmp 0|1> <hop>,<hop>..." in clapi's order
+carries()
+{
+    local host=$1 file vpn_dir addrs cidr ecmp hops hop
+    for file in $files; do
+        addrs=" $(awk -v h=$host '$2 == h {printf "%s ", $1}' $file)"
+        [ "$addrs" = " " ] && continue
+        vpn_dir=${file%/nexthop_hosts}
+        [ -f $vpn_dir/nexthops ] || continue
+        while read cidr ecmp hops; do
+            for hop in ${hops//,/ }; do
+                case "$addrs" in *" $hop "*) return 0 ;; esac
+                [ "$ecmp" = "1" ] && continue
+                vpn_hop_reachable $vpn_dir $hop && break
+            done
+        done <$vpn_dir/nexthops
+    done
+    return 1
+}
+
+# may_return <host>: a node marked down may come back (see the top)
+may_return()
+{
+    local host=$1 down=${down_at[$1]}
+    # marked down by an earlier loop: since then, by the state file
+    [ -n "$down" ] || down=$(stat -c %Y $vpn_nexthop_state/$host 2>/dev/null || date +%s)
+    [ $(( ${ok_since[$host]} - down )) -lt $hold_after ] && return 0
+    carries $host || return 0
+    [ $(( $(date +%s) - ${ok_since[$host]} )) -ge $hold ]
+}
+
+declare -A fails oks ok_since down_at
 idle=0
 while :; do
     files=$(ls $router_dir/router-*/vpn-*/nexthop_hosts 2>/dev/null)
@@ -55,8 +101,11 @@ while :; do
         state=$(cat $vpn_nexthop_state/$host 2>/dev/null)
         if [ "$result" = "ok" ]; then
             fails[$host]=0
+            [ -n "${ok_since[$host]}" ] || ok_since[$host]=$(date +%s)
             oks[$host]=$((${oks[$host]:-0} + 1))
-            if [ "$state" = "down" ] && [ ${oks[$host]} -ge $ok_limit ]; then
+            # checked about once a second: it reads the lists of every gateway
+            if [ "$state" = "down" ] && [ ${oks[$host]} -ge $ok_limit ] && [ $(( (${oks[$host]} - $ok_limit) % 3 )) -eq 0 ] &&
+                may_return $host; then
                 echo up >$vpn_nexthop_state/$host
                 changed="$changed $host"
                 log_debug "$(basename $0)" "vpn: gateway node $host answers again"
@@ -64,8 +113,11 @@ while :; do
         else
             oks[$host]=0
             fails[$host]=$((${fails[$host]:-0} + 1))
+            # a lost probe here and there does not restart the hold time, being down again does
+            [ ${fails[$host]} -ge $fail_limit ] && unset "ok_since[$host]"
             if [ "$state" != "down" ] && [ ${fails[$host]} -ge $fail_limit ]; then
                 echo down >$vpn_nexthop_state/$host
+                down_at[$host]=$(date +%s)
                 changed="$changed $host"
                 log_debug "$(basename $0)" "vpn: gateway node $host does not answer, routing around it"
             fi
@@ -87,5 +139,9 @@ while :; do
     fi
     sleep $interval
 done
-[ "$(cat $vpn_nexthop_state/watch.pid 2>/dev/null)" = "$$" ] && rm -f $vpn_nexthop_state/watch.pid
+if [ "$(cat $vpn_nexthop_state/watch.pid 2>/dev/null)" = "$$" ]; then
+    # No gateway routes left here: a state kept for the next loop would hold a node that answered all along
+    find $vpn_nexthop_state -maxdepth 1 -type f -regex '.*/[0-9.]+' -delete
+    rm -f $vpn_nexthop_state/watch.pid
+fi
 exit 0
