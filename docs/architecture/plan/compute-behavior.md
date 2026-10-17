@@ -111,13 +111,16 @@ clapi 只按网关转发来的身份判断（`X-Org-Role`、`X-System-Role`，�
 - `GET / POST /instances/:id/interfaces`、`GET / PATCH / DELETE /instances/:id/interfaces/:interface_id`
 - 每台最多 8 块；新网卡的子网 VLAN 不能与已有网卡重复，不能在 site 子网，VPC 内必须同一个 VPC
 - 可指定地址与 MAC、限速、`allow_spoofing`、安全组、辅助地址数；`site_subnets` 只给主网卡
+- 辅助地址在安全组的源地址链里放行，并由节点从虚拟机的 MAC 发一个免费 ARP（`send_spoof_arp.py`，`create_sg_chain.sh` / `attach_vm_nic.sh` 调用），让网桥、交换机与同网段的主机更新缓存。脚本原先依赖 `scapy`，部署从来没装，所有节点上一直失败；2026-10-17 补测改为只用 Python 标准库（R2-17，2026-10-17 已部署）
 - 主网卡不能删
 
 ## 5. 显示与监控
 
 ### 5.1 状态原因
 
-`reason` 的取值与界面文案：`storage_pending`「等待存储就绪」、`start_failed`「开机后启动失败」、`storage_full`「存储空间不足」（已暂停，空间回落后自动恢复）、`password_failed`「密码未设置成功」。开机同步的控制字 `sync` 不写进 `reason`。
+`reason` 的取值与界面文案：`storage_pending`「等待存储就绪」、`start_failed`「开机后启动失败」、`storage_full`「存储空间不足」（已暂停，空间回落后自动恢复）、`password_failed`「密码未设置成功」。开机同步的控制字 `sync` 与首次启动的 `init` 都不写进 `reason`（`init` 是 2026-10-17 补测修的 R2-15，原先每台新建的云服务器都带着它，直到下一次开机同步；2026-10-17 已部署，四台节点新建的云服务器 `reason` 都是空）。
+
+**节点重启后的开机同步**：第一次心跳的 `sync_instance`（`report_rc.sh`）按关机前最后一次心跳记下的状态（磁盘上的 `old_inst_list`，`<id> <state>`）启动云服务器：原来在运行、暂停、等待存储、启动失败的照常处理，**原来关机的不启动，救援中的只启动救援系统 `inst-<id>-rescue`**（原域不启动；`rescue_vm.sh` 持久定义了救援域，它用的就是原来的 tap，网卡随之后的同步重建），两种都照样按原状态回报一次开机同步（`launch_vm.sh '<id>' 'shut_off'|'rescuing' '<节点>' 'sync'`），让 clapi 重建它在这台节点上的网卡、安全组链、网关口、DHCP 绑定与浮动 IP——之后用户开机（`action_vm.sh start`）只做 `virsh start`，不补这些；没有这个文件（新节点）时全部启动。**带共享盘的不论原来是什么状态都先等对账、对账前不回报**（共享存储设计 §11.4）；对账确认它还归本节点后，原来关机或救援中的由 `node_reconcile.sh` 按原状态回报（`cache/reconcile_last` 记着），其余的进待启动列表（2026-10-17 第二轮代码审查第 12 条：第一版对关机的直接回报，绕过了对账）。这个文件由 `inst_status` 每次心跳用临时文件替换、永不删除（每 10 分钟的全量重报用标记文件 `run/inst_status_full` 计时）；`virsh list` 失败时不改写（第 7 条：原先 libvirtd 重启那一刻会写成空文件，之后一开机就全部启动）；系统关机时（libvirt-guests 已在停虚拟机）不改写、也不上报（第 15 条）。救援中按域名整字段认（第 3 条：原先 `inst-5` 救援时，用户关掉的 `inst-50`、`inst-500` 也被改写成 `5 rescuing`，下次开机就被启动）。2026-10-17 补测修的 R2-16（2026-10-17 已部署，真实重启没复测；同日第二轮代码审查的修改未部署）：原先所有定义了的都启动，TC-14 重启 work-03 / work-01 时关着的 `ece1`、`ece3`、`r110-c1` 都被开起来；池没就绪的进待启动列表（`storage_pending`），池好了由心跳启动；起不来的标 `start_failed`、每 5 分钟重试。逐台启动是串行的，9 台约 50 秒，这期间节点还没变回在线（TC-14 实测注册后 56 秒）。
 
 ### 5.2 监控曲线
 

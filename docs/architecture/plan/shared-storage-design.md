@@ -1791,7 +1791,7 @@ RBD 的 `image_base` 是副本的镜像名，不带快照名，驱动自己加 `
 
 - **共享盘的归池**（S2 / S3 已实现，`report_rc.sh` 的 `instance_pools`）：改造前只看 `source/@file`，不在 `/opt/cloudland/pools/` 下的路径一律算内置池、视为就绪，RBD 网络磁盘直接跳过。现在：文件路径在某个共享池根（清单的 `root`）下的，归到那个池；`<source protocol='rbd' name='<池>/...'>` 按池名和 `<config file>` 一起对上清单里的 `ceph_pool` 与 `conf`，归到对应的 Ceph 池，对不上的记为 `unknown-rbd`、照样等待（都查合并后的 `shared_pools.json`）；池是否就绪读探测状态（§9.2，状态必须是本次开机之后写的）
 - 所有判断都只读状态文件，**不能在心跳里等存储**（心跳被阻塞会让节点被判离线）
-- 开机前先关掉所有域的 autostart；**带共享盘的云服务器开机时一律先等对账**（S6 已实现，§11.4）：进待启动列表并加入对账等待（`reconcile_hold`），对账确认它还归本节点才启动；只有本地盘的照常按池是否就绪启动
+- 开机前先关掉所有域的 autostart；**带共享盘的云服务器开机时一律先等对账**（S6 已实现，§11.4）：进待启动列表并加入对账等待（`reconcile_hold`），对账确认它还归本节点才启动；开机前关机或救援中的不进待启动列表、对账前不回报，确认后由 `node_reconcile.sh` 按原状态回报开机同步（`reconcile_last`；救援中的启动救援系统），不启动（2026-10-17 第二轮代码审查第 12 条，未部署：第一版的开机同步对它们直接回报，绕过了对账）；只有本地盘的照常按池是否就绪启动
 
 ---
 
@@ -1860,7 +1860,7 @@ RBD 的 `image_base` 是副本的镜像名，不带快照名，驱动自己加 `
 1. **不只是开机时**：心跳（`report_rc.sh` 的 `reconcile_check`）在两种情况下发起对账：本次开机还没对账过（`reconciled_boot` 不是当前 boot_id），或两次心跳间隔超过 60 秒（心跳只在 cloudlet 连着时跑，间隔大说明 cloudlet 重启或断网后重连，期间节点可能已被判死、云服务器已被恢复到别处）。没收到答复就每分钟再问一次。只断管理网、节点没重启的情况下，旧的 QEMU 一直开着（写被黑名单或驱逐挡住），而 `report_rc.sh` 只上报相对 `old_inst_list` 有变化的云服务器，它永远不会被上报，只有对账能发现它。原设想的「cloudlet 每次向 cland 重新注册时触发」没有这样做，改为按心跳间隔判断
 2. 节点上报本机定义的所有域：`node_recovered '<NODE_ID>' '<boot_id>' '<boot|reconnect>' '<base64 JSON [{id, state}]>'`。开机时**带共享盘的**云服务器在对账结果回来之前不启动（`reconcile_hold`，上报为 `pending_reconcile`，clapi 显示为 `shut_off`、原因 `reconcile_pending`）；只有本地盘的不等
 3. clapi 逐台对账（`planReconcile`），答复 `node_reconcile.sh {boot, reason, start, stale}`：
-   - start：数据库里归属本节点且没删的，解除等待、按待启动列表启动（已在运行的不动）
+   - start：数据库里归属本节点且没删的，解除等待、按待启动列表启动（已在运行的不动；开机前关机或救援中的不启动，按原状态回报开机同步，见上面开机一条）
    - stale：已删除的、已疏散到别处的、带共享盘而数据库记在别的节点上的，节点执行 `clear_stale_vm.sh`：`virsh destroy`（还开着的话，含救援域）、取消域定义，删除 XML、配置盘 ISO、本地 NVRAM、安全组链和不再用的路由器，**不碰任何共享盘**（共享池里的 NVRAM 也保留）；节点本身不改数据库，只回报 `clear_stale_vm.sh '<ID>' 'done|error'`
    - 不动（leave）：有涉及本节点的迁移在进行、正在创建、只有本地盘而数据库记在别的节点上（两份写不到同一块盘，照旧不动）；还在等的节点每分钟再问一次
    - 重发：归属本节点、`deleting` 已超过 2 分钟的（删除命令在节点离线时丢了），clapi 重发 `clear_vm.sh`

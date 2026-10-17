@@ -70,5 +70,34 @@ sas 10.1.0.0/24 10.9.0.0/24
 rm -f $W/calls; touch $W/reconcile-c1-t1; vpn_tunnel_reconcile router-1 $W c1-t1
 check "at most once a minute" "$(cat $W/calls 2>/dev/null)" ""
 
+# A peer that accepts only a part of our networks narrows the selectors (code review of 2026-10-17)
+conf start 10.1.0.0/24 10.9.0.0/16
+sas 10.1.0.0/24 10.9.1.0/24
+check "the peer narrowed the remote network to a part of ours: neither stale nor missing, nothing" "$(run)" ""
+sas 10.1.0.128/25 10.9.1.0/24
+check "  both networks narrowed: nothing" "$(run)" ""
+sas 10.1.0.0/24 10.8.1.0/24
+check "  outside the configured network: stale, terminate" "$(run)" "run terminate=yes"
+conf start 10.1.0.0/24 10.9.0.0/16 10.2.0.0/24 10.9.0.0/16
+sas 10.1.0.0/24 10.9.1.0/24
+check "  one pair narrowed, the other missing: initiate the missing one only" "$(run)" "run terminate=no"
+grep -q "lacks children for \[10.2.0.0/24|10.9.0.0/16\]" $W/log; check "    logged with the missing pair only" "$?" 0
+
+# BGP route mode configures 0.0.0.0/0 on both sides: a narrower child is one left from static selectors (the link
+# addresses are outside it), not a narrowing to accept (second code review of 2026-10-17)
+conf start 0.0.0.0/0 0.0.0.0/0
+sas 10.4.0.0/24 10.9.0.0/24
+check "BGP mode, a child with old static selectors: stale, terminate and initiate" "$(run)" "run terminate=yes"
+sas 0.0.0.0/0 0.0.0.0/0
+check "  the 0.0.0.0/0 child installed: nothing" "$(run)" ""
+conf none 0.0.0.0/0 0.0.0.0/0
+sas 10.4.0.0/24 10.9.0.0/24
+check "  responder only, old static selectors: terminate" "$(run)" "run terminate=yes"
+# Our networks widened while the installed child keeps the older, narrower ones: taken as the peer narrowing them
+# (create_vpn_ipsec_conf.sh already terminated the block when our configuration changed)
+conf start 10.1.0.0/16 10.9.0.0/24
+sas 10.1.1.0/24 10.9.0.0/24
+check "local networks widened, the child narrower: nothing (can not be told from the peer narrowing)" "$(run)" ""
+
 echo "reconcile: $pass passed, $fail failed"
 [ $fail = 0 ]

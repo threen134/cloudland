@@ -40,11 +40,17 @@ wsl.exe -u root --exec bash $R/test-items/sandbox/storage/stc-all.sh
 
 | 文件 | 内容 |
 |---|---|
-| `reconcile.sh` | `vpn_lib.sh` 的 `vpn_tunnel_reconcile`（2026-10-16 补测发现的 R2-11）：只有已装的 SA 里有配置中没有的选择符（过时）时才关 IKE SA；只是缺子 SA 时发起方只补发缺的、只响应的一侧不动；每条隧道每分钟最多一次。swanctl 与 charon 是替身（10 项） |
+| `reconcile.sh` | `vpn_lib.sh` 的 `vpn_tunnel_reconcile`（2026-10-16 补测发现的 R2-11，10-17 代码审查补了对端缩窄）：只有已装的选择符落在所有配置的网段对之外（过时）时才关 IKE SA；只是缺子 SA 时发起方只补发缺的、只响应的一侧不动；对端把网段缩窄到我方配置的一部分时既不算过时也不算缺少，但 BGP 路由方式的 `0.0.0.0/0` 不接受缩窄（10-17 第二轮代码审查）；我方网段扩大后留着的较窄子 SA 不处理；每条隧道每分钟最多一次。swanctl 与 charon 是替身（19 项） |
 | `ipsec-conf-order.sh` | `create_vpn_ipsec_conf.sh` 删 XFRM 接口的时机（R2-14）：删隧道、隧道换了新的 if_id 时，先重载配置、终止 SA，最后才删接口；删接口卡住时 10 秒后照常往下走并记日志。替身 `ip` 与 charon；`KVM=<目录>` 跑另一份 `scripts/kvm`（如旧提交的脚本）（9 项） |
+| `nexthop-watch.sh` | `vpn_nexthop_watch.sh`（F7）的切回条件（R2-18 与 10-17 两轮代码审查）：不通约 1 秒判 down；只不通一会儿的连续 10 次通就恢复；不通了一阵子的（沙箱里 2 秒起），流量会落到它身上就保持 down——列表里还排第一（控制面停着、或 clapi 刚重启时的旧顺序），或排在它前面的节点也 down 着——clapi 把它排到在线节点后面就立即恢复；负载分担的网段里有它时要满保持时间，中途丢一次探测不重新计时；循环自己退出时删掉状态，新循环按状态文件的时间算 down 了多久。替身 `ping`（15 项） |
+| `xfrm-drop.sh` | `vpn_lib.sh` 的 `vpn_xfrm_drop`（10-17 第二轮代码审查）：删网关时路由器上还有别的网关目录，只按本网关接口的 if_id 逐条删 XFRM 状态与策略，别的 if_id 和没有 if_id 的不动。WSL 内核支持带 if_id 的 XFRM 状态与策略（只是没有 XFRM 接口），用临时网络命名空间里真实的 `ip xfrm`（4 项） |
 
 ## vm/ —— 云服务器
 
 | 文件 | 内容 |
 |---|---|
 | `finish-source-dhcp.sh` | `finish_source_migration.sh` 迁移后在源节点释放 DHCP（R2-13）：VPC 内部子网的每块网卡都调 `del_host.sh`（删绑定、`dhcp_release`），VLAN 网卡不动，在回收路由器之前做，源节点上还定义着这台时什么都不做。替身 cloudrc、`storage_lib.sh`、`virsh` 与被调用的脚本（5 项） |
+| `boot-sync.sh` | `report_rc.sh` 的开机同步（R2-16 与 10-17 代码审查）：按关机前的 `old_inst_list`，原来在运行、暂停、等待存储的启动，原来关机、救援中的不启动但照样按原状态回报同步（clapi 据此重建网卡），救援中的启动救援系统；带共享盘的不论原来什么状态都先等对账、对账前不回报，原来关机或救援中的记进 `reconcile_last`（10-17 第二轮代码审查）；没有这个文件时全部启动；`inst_status` 用临时文件替换这个文件、永不删除，每 10 分钟全量重报，`virsh list` 失败时与系统关机（`stopping`）时不改写也不上报，救援按域名整字段认（`inst-5` 救援时 `inst-50` 不受影响）。替身 `sudo`、`virsh`、`iptables`、`systemctl` 与存储函数，`reconcile_last` 的函数是真的（16 项） |
+| `spoof-arp.sh` | `send_spoof_arp.py` 只用标准库发免费 ARP（R2-17）：独立网络命名空间里一对 veth，tcpdump 核对帧（从虚拟机 MAC 广播、`Reply <ip> is-at <mac>`）、标准输出为空、接口不存在时报到标准错误（6 项） |
+| `dhcp-hosts.sh` | `set_host.sh` / `del_host.sh` 的 DHCP 绑定（10-17 代码审查）：按地址与 MAC 字段整字段删行，主机名里含这个地址的别的云服务器（`ip-192-168-30-5`）不受影响；子网没有绑定文件时不留空文件；`set_host.sh` 连同一 MAC 的旧绑定一起删，umask 077 下文件仍是 644（dnsmasq 以 nobody 运行），不留临时文件（10-17 第二轮代码审查）。替身 `ip`（8 项） |
+| `node-reconcile.sh` | `node_reconcile.sh` 收到 clapi 的对账答复（10-17 第二轮代码审查）：仍归本节点的，原来在运行的进待启动列表，原来关机或救援中的（`reconcile_last`）按原状态回报同步、不启动，救援中的启动救援系统；域已不在的不再等；归别处的交给 `clear_stale_vm.sh`。替身 `virsh`、`sudo`、`clear_stale_vm.sh`，列表函数与 `start_rescue_domain` 是 `storage_lib.sh` 里真的（7 项） |

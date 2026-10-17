@@ -515,11 +515,13 @@ docker exec cloudland-postgres psql -U postgres -d cloudland -Atc "select count(
 | 19 | 同一 VPC 里能建网段重叠的子网（既有，2026-10-16 核实；已修，2026-10-16 已部署） | 只有中转网关成员之间查重叠 | NET-04 重叠一项 |
 | 20 | 🔴 删一个借用了别的 VPC 的 VXLAN 的子网，会把那个 VPC 在各节点上的网关口、网桥、dnsmasq、FORWARD 规则一起拆掉（2026-10-16 核实，第一版 R2-2 修复引入、已部署过；2026-10-16 实测时误伤了 r2-tb，已恢复；已修，2026-10-16 已部署） | 清理脚本按 VXLAN 杀 dnsmasq、拆网桥，不看是哪个路由器的；不管口在不在都拆网桥 | NET-12 第 2、5 步；沙箱 `subnet-gw.sh` |
 | 21 | 删子网时的节点命令在事务提交失败、或外层事务（删负载均衡 / VPN 网关）回滚时照样下发（2026-10-16，`/code-review`；已修，2026-10-16 已部署） | 下发写在 `Delete` 自己的 defer 里，只看 `err` | NET-12 最后一项（PG 测试） |
-| 22 | 建子网接口不校验 `type`：填 `vrrp` 或任意字符串就绕过网段、VXLAN 校验；填 `vrrp` 的子网删掉时还把 VPC 的 `vrrp_subnet_id` 清零（既有，2026-10-16 第二轮 `/code-review`；已修，未部署） | `SubnetPayload.Type` 只有 `omitempty`（PATCH 的有 `oneof`），网段与 VXLAN 校验只对 `internal` / `vrrp` 做 | NET-04 `type` 一项；`TestSubnetPayloadType` |
-| 23 | 子网网段没和路由器互联口 `169.0.0.0/8`、本 VPC 的 VPN 网关网段比对，重叠后两边都坏（反方向原来就查）（2026-10-16 第二轮 `/code-review`；已修，未部署） | 保留网段写了三份（子网、中转网关、VPN），彼此不同步 | NET-04 重叠一项；`TestSubnetCreateInVpcPG` |
-| 24 | 两个 VPC 同时指定同一个 VXLAN 建子网都能成功（2026-10-16 第二轮 `/code-review`；已修，未部署） | 只锁了各自的 VPC 行 | NET-04 并发一项（PG 测试） |
-| 25 | 删子网时判断「VXLAN 还有没有别的子网」不限定 VPC、也不加锁：别的 VPC 共用这个 VXLAN 时只摘地址、口留下；同一 VPC 两个共用 VXLAN 的子网同时删，两个都只摘地址（2026-10-16 第二轮 `/code-review`；已修，未部署） | 计数条件只有 `vlan`，读之前没锁 VPC 行 | NET-12 第 9 步与最后一项（PG 测试） |
-| 26 | 节点重启后删子网，网桥、VXLAN 上联口永远漏清；路由器回收时同样漏（2026-10-16 第二轮 `/code-review`；已修，未部署） | 口不在就当作「不是自己的 VNI」；名字被删、还被进程占着的 netns 里的口也被当成别的路由器的 | NET-12 第 8 步；沙箱 `subnet-gw.sh` |
+| 22 | 建子网接口不校验 `type`：填 `vrrp` 或任意字符串就绕过网段、VXLAN 校验；填 `vrrp` 的子网删掉时还把 VPC 的 `vrrp_subnet_id` 清零（既有，2026-10-16 第二轮 `/code-review`；已修，2026-10-16 已部署） | `SubnetPayload.Type` 只有 `omitempty`（PATCH 的有 `oneof`），网段与 VXLAN 校验只对 `internal` / `vrrp` 做 | NET-04 `type` 一项；`TestSubnetPayloadType` |
+| 23 | 子网网段没和路由器互联口 `169.0.0.0/8`、本 VPC 的 VPN 网关网段比对，重叠后两边都坏（反方向原来就查）（2026-10-16 第二轮 `/code-review`；已修，2026-10-16 已部署） | 保留网段写了三份（子网、中转网关、VPN），彼此不同步 | NET-04 重叠一项；`TestSubnetCreateInVpcPG` |
+| 24 | 两个 VPC 同时指定同一个 VXLAN 建子网都能成功（2026-10-16 第二轮 `/code-review`；已修，2026-10-16 已部署） | 只锁了各自的 VPC 行 | NET-04 并发一项（PG 测试） |
+| 25 | 删子网时判断「VXLAN 还有没有别的子网」不限定 VPC、也不加锁：别的 VPC 共用这个 VXLAN 时只摘地址、口留下；同一 VPC 两个共用 VXLAN 的子网同时删，两个都只摘地址（2026-10-16 第二轮 `/code-review`；已修，2026-10-16 已部署） | 计数条件只有 `vlan`，读之前没锁 VPC 行 | NET-12 第 9 步与最后一项（PG 测试） |
+| 26 | 节点重启后删子网，网桥、VXLAN 上联口永远漏清；路由器回收时同样漏（2026-10-16 第二轮 `/code-review`；已修，2026-10-16 已部署） | 口不在就当作「不是自己的 VNI」；名字被删、还被进程占着的 netns 里的口也被当成别的路由器的 | NET-12 第 8 步；沙箱 `subnet-gw.sh` |
+| 27 | 加 / 删 DHCP 绑定时误删主机名里含这个地址的别的云服务器（如 `ip-192-168-30-5`）的绑定（2026-10-17 代码审查第 4 条，既有；R2-13 之后每次迁移都会触发；已修，2026-10-17 已部署） | `set_host.sh` / `del_host.sh` 用行内正则 `\<ip\>` 删行，点号没转义 | 同一子网里建一台主机名 `ip-<a>-<b>-<c>-<d>` 的云服务器，再建 / 迁走 / 删掉地址为 `a.b.c.d` 的另一台：前者的 `dhcp_hosts` 行还在；沙箱 `sandbox/vm/dhcp-hosts.sh` |
+| 28 | 同一块网卡换了地址后 `dhcp_hosts` 里同一 MAC 有两条绑定；umask 严时重写出的文件是 600，以 nobody 运行的 dnsmasq 读不到，整个 VNI 的 DHCP 停掉；`set_host` 与 `del_host` 同时跑时共用一个 `.new` 临时文件（2026-10-17 第二轮代码审查第 9、10 条，既有 / 第一轮引入；已修，未部署） | `set_host.sh` 只按地址删旧行；`awk > .new && mv` 换掉 `sed -i` 后文件权限随 umask | 改一块网卡的地址后 `dhcp_hosts` 里这个 MAC 只有一行、文件 644；沙箱 `sandbox/vm/dhcp-hosts.sh` |
 
 ---
 
