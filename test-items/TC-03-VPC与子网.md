@@ -521,7 +521,7 @@ docker exec cloudland-postgres psql -U postgres -d cloudland -Atc "select count(
 | 25 | 删子网时判断「VXLAN 还有没有别的子网」不限定 VPC、也不加锁：别的 VPC 共用这个 VXLAN 时只摘地址、口留下；同一 VPC 两个共用 VXLAN 的子网同时删，两个都只摘地址（2026-10-16 第二轮 `/code-review`；已修，2026-10-16 已部署） | 计数条件只有 `vlan`，读之前没锁 VPC 行 | NET-12 第 9 步与最后一项（PG 测试） |
 | 26 | 节点重启后删子网，网桥、VXLAN 上联口永远漏清；路由器回收时同样漏（2026-10-16 第二轮 `/code-review`；已修，2026-10-16 已部署） | 口不在就当作「不是自己的 VNI」；名字被删、还被进程占着的 netns 里的口也被当成别的路由器的 | NET-12 第 8 步；沙箱 `subnet-gw.sh` |
 | 27 | 加 / 删 DHCP 绑定时误删主机名里含这个地址的别的云服务器（如 `ip-192-168-30-5`）的绑定（2026-10-17 代码审查第 4 条，既有；R2-13 之后每次迁移都会触发；已修，2026-10-17 已部署） | `set_host.sh` / `del_host.sh` 用行内正则 `\<ip\>` 删行，点号没转义 | 同一子网里建一台主机名 `ip-<a>-<b>-<c>-<d>` 的云服务器，再建 / 迁走 / 删掉地址为 `a.b.c.d` 的另一台：前者的 `dhcp_hosts` 行还在；沙箱 `sandbox/vm/dhcp-hosts.sh` |
-| 28 | 同一块网卡换了地址后 `dhcp_hosts` 里同一 MAC 有两条绑定；umask 严时重写出的文件是 600，以 nobody 运行的 dnsmasq 读不到，整个 VNI 的 DHCP 停掉；`set_host` 与 `del_host` 同时跑时共用一个 `.new` 临时文件（2026-10-17 第二轮代码审查第 9、10 条，既有 / 第一轮引入；已修，未部署） | `set_host.sh` 只按地址删旧行；`awk > .new && mv` 换掉 `sed -i` 后文件权限随 umask | 改一块网卡的地址后 `dhcp_hosts` 里这个 MAC 只有一行、文件 644；沙箱 `sandbox/vm/dhcp-hosts.sh` |
+| 28 | 同一块网卡换了地址后 `dhcp_hosts` 里同一 MAC 有两条绑定；umask 严时重写出的文件是 600，以 nobody 运行的 dnsmasq 读不到，整个 VNI 的 DHCP 停掉；`set_host` 与 `del_host` 同时跑时共用一个 `.new` 临时文件（2026-10-17 第二轮代码审查第 9、10 条，既有 / 第一轮引入；已修，2026-10-17 已部署（0f739ea7）） | `set_host.sh` 只按地址删旧行；`awk > .new && mv` 换掉 `sed -i` 后文件权限随 umask | 改一块网卡的地址后 `dhcp_hosts` 里这个 MAC 只有一行、文件 644；沙箱 `sandbox/vm/dhcp-hosts.sh` |
 
 ---
 
