@@ -367,29 +367,59 @@ func StartVpnMasterWatchdog() {
 func vpnCheckMasters(ctx context.Context) {
 	ctx, db := GetContextDB(ctx)
 	stale := []*model.VpnGateway{}
-	if err := db.Select("id").Where("status = ? AND disabled = ? AND master_hyper >= 0 AND master_reported_at < ?",
-		model.VpnGatewayStatusAvailable, false, time.Now().Add(-vpnMasterStale)).Find(&stale).Error; err != nil {
+	if err := db.Select("id").Where(vpnStaleMasterCond, model.VpnGatewayStatusAvailable, false, time.Now().Add(-vpnMasterStale)).
+		Find(&stale).Error; err != nil {
 		logger.Ctx(ctx).Errorf("Failed to query the VPN gateways for stale masters: %v", err)
 		return
 	}
 	for _, g := range stale {
-		gateway, err := loadVpnGateway(ctx, g.ID)
-		if err != nil {
-			continue
-		}
-		// Updated only while the claim is still the stale one: a claim that just came in wins
-		result := db.Model(&model.VpnGateway{}).Where("id = ? AND master_hyper = ? AND master_reported_at = ?",
-			gateway.ID, gateway.MasterHyper, gateway.MasterReportedAt).Update("master_hyper", -1)
-		if result.Error != nil || result.RowsAffected == 0 {
-			continue
-		}
-		if VpnIsActiveActive(gateway) {
-			logger.Ctx(ctx).Infof("VPN gateway %d: node %d stopped claiming the client VPN address %s ago, clearing the master",
-				gateway.ID, gateway.MasterHyper, time.Since(*gateway.MasterReportedAt).Round(time.Second))
-			continue
-		}
-		logger.Ctx(ctx).Warningf("VPN gateway %d: no node claimed its public address for %s (last master node %d), marking its tunnels down",
-			gateway.ID, time.Since(*gateway.MasterReportedAt).Round(time.Second), gateway.MasterHyper)
-		vpnTunnelsDown(ctx, gateway.ID, func(*model.VpnTunnel) bool { return true }, "no gateway node holds the public address")
+		vpnClearStaleMaster(ctx, g.ID)
 	}
+}
+
+const vpnStaleMasterCond = "status = ? AND disabled = ? AND master_hyper >= 0 AND master_reported_at < ?"
+
+// vpnClearStaleMaster clears the master of one gateway vpnCheckMasters found stale and, for an active_standby
+// gateway, marks its tunnels down, in one transaction that holds the gateway row and checks again under it that the
+// claim is still stale. A claim takes the same lock before it reads the gateway (VpnGatewayMaster): one handled
+// meanwhile has refreshed the claim and wins, one that comes now waits and then sees the master cleared, and sets
+// it again. Without this (2026-10-17, work-01 reboot, R2-19) a claim committed between the query and the clear was
+// taken for the stale one, and the tunnels of a healthy gateway went down for a second with VpnConnectionDown
+// alarms; a claim that had read the gateway before the clear set the master again while its tunnels were marked down.
+func vpnClearStaleMaster(ctx context.Context, gatewayID int64) (cleared bool) {
+	ctx, db, newTransaction := StartTransaction(ctx)
+	var err error
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+		if err != nil {
+			cleared = false
+		}
+	}()
+	g := &model.VpnGateway{}
+	if err = db.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id", "ha_mode", "master_hyper", "master_reported_at").
+		Where("id = ?", gatewayID).Where(vpnStaleMasterCond, model.VpnGatewayStatusAvailable, false, time.Now().Add(-vpnMasterStale)).
+		Find(g).Error; err != nil || g.ID == 0 {
+		// not stale any more (a claim came in), or gone
+		return
+	}
+	if err = db.Model(&model.VpnGateway{}).Where("id = ?", gatewayID).Update("master_hyper", -1).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to clear the master of VPN gateway %d: %v", gatewayID, err)
+		return
+	}
+	ago := time.Since(*g.MasterReportedAt).Round(time.Second)
+	if VpnIsActiveActive(g) {
+		logger.Ctx(ctx).Infof("VPN gateway %d: node %d stopped claiming the client VPN address %s ago, clearing the master",
+			gatewayID, g.MasterHyper, ago)
+		return true
+	}
+	logger.Ctx(ctx).Warningf("VPN gateway %d: no node claimed its public address for %s (last master node %d), marking its tunnels down",
+		gatewayID, ago, g.MasterHyper)
+	if vpnTunnelsDown(ctx, gatewayID, func(*model.VpnTunnel) bool { return true }, "no gateway node holds the public address") == nil {
+		// the master stays as it was and the next round tries again
+		err = fmt.Errorf("marking the tunnels of VPN gateway %d down failed", gatewayID)
+		return
+	}
+	return true
 }

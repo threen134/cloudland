@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/crypto/curve25519"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var (
@@ -1022,6 +1023,18 @@ func vpnHostName(ctx context.Context, hostid int32) string {
 // of the other nodes. Two different nodes claiming master within a minute is a split brain: the routes
 // are left alone (flipping them every heartbeat only spreads the damage) and the event is logged.
 func VpnGatewayMaster(ctx context.Context, gatewayID int64, hostid int32) (err error) {
+	// The gateway row first, as the status reports do: the master watchdog checks and clears a stale claim under
+	// the same lock (vpnClearStaleMaster), so it can not clear the master between this read and the write below
+	ctx, ldb, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	if err = ldb.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", gatewayID).Take(&model.VpnGateway{}).Error; err != nil {
+		logger.Ctx(ctx).Errorf("Failed to lock VPN gateway %d: %v", gatewayID, err)
+		return
+	}
 	gateway, err := loadVpnGateway(ctx, gatewayID)
 	if err != nil {
 		return
