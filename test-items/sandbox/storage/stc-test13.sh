@@ -32,7 +32,9 @@ rm -f $FAKE/fs-$1
 EOF
 cat >$fake/mmlsnsd <<'EOF'
 #!/bin/bash
-cat $FAKE/nsds 2>/dev/null
+# -Y as GPFS prints it (gpfs_nsd_exists reads diskName of the nsd section, checked on work-01 2026-10-12), from the "<name> ..." lines of nsds
+echo "mmlsnsd:nsd:HEADER:version:reserved:reserved:fileSystem:diskName:"
+awk '{print "mmlsnsd:nsd:0:1:::-:" $1 ":"}' $FAKE/nsds 2>/dev/null
 EOF
 cat >$fake/mmdelnsd <<'EOF'
 #!/bin/bash
@@ -98,7 +100,9 @@ for n in ${2//;/ }; do sed -i "/^$n$/d" $FAKE/disks-$1; done
 EOF
 cat >$fake/mmlsnsd <<'EOF'
 #!/bin/bash
-cat $FAKE/nsds 2>/dev/null
+# -Y as GPFS prints it (gpfs_nsd_exists reads diskName of the nsd section, checked on work-01 2026-10-12), from the "<name> ..." lines of nsds
+echo "mmlsnsd:nsd:HEADER:version:reserved:reserved:fileSystem:diskName:"
+awk '{print "mmlsnsd:nsd:0:1:::-:" $1 ":"}' $FAKE/nsds 2>/dev/null
 EOF
 chmod +x $fake/*
 touch $fake/fs-fs1 $fake/fs-fs2

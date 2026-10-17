@@ -35,3 +35,16 @@ wsl.exe -u root --exec bash $R/test-items/sandbox/storage/stc-all.sh
 | `subnet-gw.sh` | VPC 路由器的网关口（2026-10-16 补测发现的 R2-2 及之后的复查）：`set_subnet_gw.sh` 建新口时拆掉同一路由器里网段重叠的残留口（同网段、/25 在 /24 里、/24 包住 /25），连同它的 dnsmasq、目录、网桥，`fip-` 表路由改指新口；`clear_subnet_gw.sh` 的 `port` 模式拆口、拆网桥、删 `nonat`，`address` 模式（同一 VXLAN 还有别的子网）只摘网关地址与它的 `fip-` 路由和 DHCP 配置；不碰别的路由器的同 VNI 口、网桥、dnsmasq，包括本路由器已经不在这台节点上时；路由器没有使用者后连口一起回收；节点重启后口已经没了（路由器重建了但没这个口、或连 netns 都没了）时照样清网桥、上联口、FORWARD 规则和目录，路由器回收时也清；netns 名字被删、还被 dnsmasq 占着时，口的另一端不算别的路由器；参数校验（36 项） |
 
 依赖：`ipset jq net-tools ipcalc tcpdump rsync`（`sim.sh` 会建假的 `/opt/fakebin`）。
+
+## vpn/ —— VPN 网关节点脚本
+
+| 文件 | 内容 |
+|---|---|
+| `reconcile.sh` | `vpn_lib.sh` 的 `vpn_tunnel_reconcile`（2026-10-16 补测发现的 R2-11）：只有已装的 SA 里有配置中没有的选择符（过时）时才关 IKE SA；只是缺子 SA 时发起方只补发缺的、只响应的一侧不动；每条隧道每分钟最多一次。swanctl 与 charon 是替身（10 项） |
+| `ipsec-conf-order.sh` | `create_vpn_ipsec_conf.sh` 删 XFRM 接口的时机（R2-14）：删隧道、隧道换了新的 if_id 时，先重载配置、终止 SA，最后才删接口；删接口卡住时 10 秒后照常往下走并记日志。替身 `ip` 与 charon；`KVM=<目录>` 跑另一份 `scripts/kvm`（如旧提交的脚本）（9 项） |
+
+## vm/ —— 云服务器
+
+| 文件 | 内容 |
+|---|---|
+| `finish-source-dhcp.sh` | `finish_source_migration.sh` 迁移后在源节点释放 DHCP（R2-13）：VPC 内部子网的每块网卡都调 `del_host.sh`（删绑定、`dhcp_release`），VLAN 网卡不动，在回收路由器之前做，源节点上还定义着这台时什么都不做。替身 cloudrc、`storage_lib.sh`、`virsh` 与被调用的脚本（5 项） |

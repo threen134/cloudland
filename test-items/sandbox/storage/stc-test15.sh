@@ -1,7 +1,7 @@
 #!/bin/bash
 # sandbox tests of the changes of the GPFS erasure code layout (shared-storage-design.md §7.9) with stub mm commands:
-# servers joining a recovery group (configured into the class, the add, the completion when the callback does not run),
-# a server leaving (its file system share, the group, the class), a pdisk replaced (with and without a slot map, a
+# servers joining a recovery group (configured like the class, the add that puts them in it, the completion when the
+# callback does not run), a server leaving (its file system share, the group, which takes it out of the class), a pdisk replaced (with and without a slot map, a
 # working one refused, a retry found done), new disks on every server (the resize, a vdisk set sized from the free
 # share, smaller when the definition does not fit), mixed media vdisk sets, the placement rule, the slot map made by
 # ecedrivemapping; the upgrade of a recovery group server (suspended, resumed, waited for), the finalize of the group's
@@ -75,7 +75,7 @@ done <$FAKE/pdisks
 EOF
 cat >$fake/mmaddpdisk <<'EOF'
 #!/bin/bash
-echo "mmaddpdisk $1 $4 $5 $6" >>$FAKE/calls
+echo "mmaddpdisk $1 $4 $5 $6 $7 $8" >>$FAKE/calls
 cat $3 >>$FAKE/stanzas
 read -r _ p d a <$3; p=${p#pdiskName=}; d=${d#device=//}; node=${d%%/*}; dev=${d##*/}; a=${a#da=}
 awk -v p="$p" -v node="$node" -v dev="$dev" -v da="$a" '$1 == p { print p "#0010", $2, $3, $4, "draining", $6; print p, node, dev, "naa.NEW", "ok", da; next } { print }' $FAKE/pdisks >$FAKE/pdisks.x
@@ -87,15 +87,24 @@ echo "mmvdisk $*" >>$FAKE/calls
 arg() { local k=$1; shift; while [ $# -gt 0 ]; do [ "$1" = "$k" ] && { echo "$2"; return; }; shift; done; }
 case "$1 $2" in
     "server configure")
-        [ -f $FAKE/configure_noadd ] && exit 0
-        for ip in $(arg -N "$@" | tr ',' ' '); do echo "n${ip##*.}.cl" >>$FAKE/nc; done ;;
-    "nodeclass add") for ip in $(arg -N "$@" | tr ',' ' '); do echo "n${ip##*.}.cl" >>$FAKE/nc; done ;;
-    "nodeclass delete") ip=$(arg -N "$@"); grep -vx "n${ip##*.}.cl" $FAKE/nc >$FAKE/nc.x; mv $FAKE/nc.x $FAKE/nc ;;
+        # configured like the class, not put in it (a class with a recovery group can not be changed)
+        for ip in $(arg -N "$@" | tr ',' ' '); do echo "n${ip##*.}.cl" >>$FAKE/configured; done ;;
     "server list")
-        echo "mmvdisk:serverDiskTopology:HEADER:version:reserved:reserved:nodeName:needsAttention:diskTopology:"
-        while read -r n; do echo "mmvdisk:serverDiskTopology:0:1:::$n:no:$(cat $FAKE/topo-$n 2>/dev/null || echo 'ECE 5 HDD'):"; done <$FAKE/nc ;;
+        if [[ " $* " == *" --disk-topology "* ]]; then
+            echo "mmvdisk:serverDiskTopology:HEADER:version:reserved:reserved:nodeName:needsAttention:diskTopology:"
+            # -N <class>[,<address>...]: the members of the class and the nodes named besides
+            for n in $(arg -N "$@" | tr ',' ' '); do
+                if [ "$n" = cl1_nc ]; then cat $FAKE/nc; else echo "n${n##*.}.cl"; fi
+            done | while read -r n; do echo "mmvdisk:serverDiskTopology:0:1:::$n:no:$(cat $FAKE/topo-$n 2>/dev/null || echo 'ECE 5 HDD'):"; done
+        else
+            [ -f $FAKE/serverlist_fail ] && exit 1
+            echo "mmvdisk:serverSummary:HEADER:version:reserved:reserved:nodeName:configured:nodeClass:"
+            sort -u $FAKE/configured | while read -r n; do echo "mmvdisk:serverSummary:0:1:::$n:yes:cl1_nc:"; done
+        fi ;;
     "recoverygroup add")
         if [ "$3 $4 $5" = "--recovery-group cl1_rg --complete-node-add" ]; then rm -f $FAKE/addnode; echo 9 >$FAKE/lg; exit 0; fi
+        # the servers it adds go into the class of the group
+        for ip in $(arg -N "$@" | tr ',' ' '); do echo "n${ip##*.}.cl" >>$FAKE/nc; done
         arg -N "$@" >$FAKE/addnode
         echo complete >$FAKE/rebalance
         cat $FAKE/new_pdisks >>$FAKE/pdisks ;;
@@ -109,7 +118,9 @@ case "$1 $2" in
                 echo "mmvdisk:rgSummary:0:1:::cl1_rg:yes:n1.cl:no:3:yes:no:scaleOut:$(cat $FAKE/addnode 2>/dev/null):$(cat $FAKE/rebalance 2>/dev/null):$(cat $FAKE/suspended 2>/dev/null || echo no):cl1_nc::ok:" ;;
         esac ;;
     "recoverygroup delete")
-        ip=$(arg -N "$@"); awk -v n="n${ip##*.}.cl" '$2 != n' $FAKE/pdisks >$FAKE/pdisks.x; mv $FAKE/pdisks.x $FAKE/pdisks ;;
+        # its pdisks go, then the node leaves the class
+        ip=$(arg -N "$@"); awk -v n="n${ip##*.}.cl" '$2 != n' $FAKE/pdisks >$FAKE/pdisks.x; mv $FAKE/pdisks.x $FAKE/pdisks
+        grep -vx "n${ip##*.}.cl" $FAKE/nc >$FAKE/nc.x; mv $FAKE/nc.x $FAKE/nc ;;
     "recoverygroup resize") cat $FAKE/new_pdisks >>$FAKE/pdisks ;;
     "recoverygroup change")
         case "$*" in
@@ -202,8 +213,9 @@ run() {
     )
 }
 reset() {
-    rm -f $fake/calls $fake/stanzas $fake/addnode $fake/rebalance $fake/configure_noadd $fake/define_max $fake/policy $fake/fs_made $fake/suspended
+    rm -f $fake/calls $fake/stanzas $fake/addnode $fake/rebalance $fake/define_max $fake/policy $fake/fs_made $fake/suspended
     printf 'n1.cl\nn2.cl\nn3.cl\n' >$fake/nc
+    cp $fake/nc $fake/configured
     : >$fake/calls; : >$fake/config
     echo 7 >$fake/lg
     : >$fake/da_bg
@@ -212,7 +224,8 @@ reset() {
     for k in 1 2 3; do for p in 1 2 3 4 5; do echo "n00${k}p00$p n$k.cl sd$(printf "\\x$(printf %x $((97 + p)))") naa.$k$p ok DA1" >>$fake/pdisks; done; done
 }
 
-# ---- add_servers: configured into the class, slots, topology, the add, completed by hand when the callback does not ----
+# ---- add_servers: configured like the class, slots, topology, the add (which puts it in the class), completed by hand
+# when the callback does not ----
 reset
 for p in 1 2 3 4 5; do echo "n004p00$p n4.cl sd$(printf "\\x$(printf %x $((97 + p)))") naa.4$p ok DA1"; done >$fake/new_pdisks
 printf 'nsdRAIDStrictPdiskSlotLocation 0\nnsdRAIDDiskCheckVWCE 0\n' >$fake/config.stuck
@@ -226,8 +239,10 @@ grep -qx "mmstartup -N 10.0.0.4" $fake/calls && ! grep -q "mmstartup -N 10.0.0.1
 grep -qx "mmvdisk recoverygroup add --recovery-group cl1_rg -N 10.0.0.4 --disk-list 10.0.0.4:sdb,sdc,sdd,sde,sdf" $fake/calls &&
     grep -qx "mmvdisk recoverygroup add --recovery-group cl1_rg --complete-node-add" $fake/calls &&
     ok "add_servers: added, and completed when the callback did not after the rebalance" || ko "add: $(grep recoverygroup $fake/calls)"
-grep -q "mmvdisk server list --node-class cl1_nc --disk-list $full --disk-topology -Y" $fake/calls &&
+grep -q "mmvdisk server list -N cl1_nc,10.0.0.4 --disk-list $full --disk-topology -Y" $fake/calls &&
     ok "add_servers: the topology of every server, the new one too" || ko "topology: $(cat $fake/calls)"
+! grep -q "nodeclass" $fake/calls && grep -qx n4.cl $fake/nc &&
+    ok "add_servers: no nodeclass change of its own, the recovery group add put it in the class" || ko "class: $(grep nodeclass $fake/calls) / $(cat $fake/nc | xargs)"
 res=$(sed -n 's/^RESULT //p' <<<"$out")
 [ "$(jq '.pdisks | length' <<<"$res")" = 20 ] && [ "$(jq -r '.pdisks[] | select(.name == "n004p001") | .ip' <<<"$res")" = 10.0.0.4 ] &&
     ok "add_servers: every pdisk, the new server's by its address" || ko "pdisks: $out"
@@ -243,36 +258,56 @@ out=$(run do_add_servers "$addin")
 grep -q '^FAILED the servers have different disk topologies' <<<"$out" && ! grep -q "recoverygroup add" $fake/calls &&
     ok "add_servers: a different topology stops it before the add" || ko "topology differs: $out"
 rm -f $fake/topo-n4.cl
-# server configure that does not put it into the class: added to it
+# configured already (an add that stopped after the configure): not configured again
 reset
-touch $fake/configure_noadd
+echo n4.cl >>$fake/configured
 out=$(run do_add_servers "$addin")
-grep -qx "mmvdisk nodeclass add --node-class cl1_nc -N 10.0.0.4" $fake/calls && grep -q '^RESULT' <<<"$out" &&
-    ok "add_servers: put into the class when configuring did not" || ko "class add: $out"
+! grep -q "server configure" $fake/calls && grep -q "recoverygroup add --recovery-group cl1_rg -N 10.0.0.4" $fake/calls && grep -q '^RESULT' <<<"$out" &&
+    ok "add_servers: a server configured already is only added" || ko "configured already: $out / $(cat $fake/calls)"
+# the configured servers can not be listed: stop before anything is changed
+reset
+touch $fake/serverlist_fail
+out=$(run do_add_servers "$addin")
+grep -q '^FAILED mmvdisk server list failed' <<<"$out" && ! grep -q "server configure\|recoverygroup add" $fake/calls &&
+    ok "add_servers: an unreadable server list stops it" || ko "server list unreadable: $out"
+rm -f $fake/serverlist_fail
 
-# ---- remove_server: the file systems' share, the group, the class ----
+# ---- remove_server: the file systems' share, then the group, which takes it out of the class ----
 reset
 printf 'n4.cl\n' >>$fake/nc
 cat $fake/new_pdisks >>$fake/pdisks
 printf 'cl1_vs yes fs1 cl1_rg\ncl1_vs2 yes fs1 cl1_rg\nother yes fs9 other_rg\n' >$fake/vs
 out=$(run do_remove_server '{"cluster_uuid":"'$uuid'","node_class":"cl1_nc","recovery_group":"cl1_rg","ip":"10.0.0.4"}')
-grep -n . $fake/calls | grep -E "filesystem delete|recoverygroup delete|nodeclass delete" | cut -d: -f2- >$fake/order
+grep -n . $fake/calls | grep -E "filesystem delete|recoverygroup delete|nodeclass" | cut -d: -f2- >$fake/order
 [ "$(cat $fake/order)" = "mmvdisk filesystem delete --file-system fs1 --vdisk-set cl1_vs,cl1_vs2 --recovery-group cl1_rg -N 10.0.0.4 --confirm
-mmvdisk recoverygroup delete --recovery-group cl1_rg -N 10.0.0.4 --confirm
-mmvdisk nodeclass delete --node-class cl1_nc -N 10.0.0.4" ] && ! grep -q n4.cl $fake/pdisks && grep -q '^RESULT {}' <<<"$out" &&
-    ok "remove_server: the file system's members, the group, the class, in that order" || ko "remove: $out / $(cat $fake/order)"
+mmvdisk recoverygroup delete --recovery-group cl1_rg -N 10.0.0.4 --confirm" ] && ! grep -q n4.cl $fake/pdisks && ! grep -qx n4.cl $fake/nc && grep -q '^RESULT {}' <<<"$out" &&
+    ok "remove_server: the file system's members, then the group, which took it out of the class" || ko "remove: $out / $(cat $fake/order)"
 : >$fake/calls
 out=$(run do_remove_server '{"cluster_uuid":"'$uuid'","node_class":"cl1_nc","recovery_group":"cl1_rg","ip":"10.0.0.4"}')
 ! grep -q "delete" $fake/calls && grep -q '^RESULT' <<<"$out" && ok "remove_server again: nothing left to do" || ko "remove again: $out"
+# in the class without pdisks (an add that stopped between the two): the group delete still runs, to take it out
+reset
+printf 'n4.cl\n' >>$fake/nc
+out=$(run do_remove_server '{"cluster_uuid":"'$uuid'","node_class":"cl1_nc","recovery_group":"cl1_rg","ip":"10.0.0.4"}')
+grep -qx "mmvdisk recoverygroup delete --recovery-group cl1_rg -N 10.0.0.4 --confirm" $fake/calls && ! grep -q "filesystem delete" $fake/calls &&
+    ! grep -qx n4.cl $fake/nc && grep -q '^RESULT {}' <<<"$out" &&
+    ok "remove_server: a class member without pdisks leaves through the group delete" || ko "member only: $out / $(cat $fake/calls)"
 
 # ---- replace ----
 reset
 sed -i 's/^n002p002 \(.*\) ok DA1/n002p002 \1 missing DA1/' $fake/pdisks
+rin0='{"cluster_uuid":"'$uuid'","recovery_group":"cl1_rg","pdisk":"n002p002","ip":"10.0.0.2","device":"sdj","wwn":"0x5000NEW","slot_map":false}'
+out=$(run do_replace "$rin0")
+grep -q '^FAILED GNR has not marked pdisk n002p002 for replacement (state missing)' <<<"$out" && ! grep -q "mmaddpdisk\|pdisk replace" $fake/calls &&
+    ok "replace without a slot map: a pdisk GNR has not marked (missing) refused" || ko "unmarked: $out / $(cat $fake/calls)"
+# GNR marks a failed pdisk once the failed ones of its array reach the threshold
+sed -i 's/^n002p002 \(.*\) missing DA1/n002p002 \1 dead\/systemDrain\/replace DA1/' $fake/pdisks
+: >$fake/calls
 rin='{"cluster_uuid":"'$uuid'","recovery_group":"cl1_rg","pdisk":"n002p002","ip":"10.0.0.2","device":"sdj","wwn":"0x5000NEW","slot_map":false}'
 out=$(run do_replace "$rin")
-grep -qx "mmvdisk pdisk replace --prepare --recovery-group cl1_rg --pdisk n002p002" $fake/calls &&
-    [ "$(cat $fake/stanzas)" = "%pdisk: pdiskName=n002p002 device=//n2.cl/dev/sdj da=DA1" ] && grep -qx "mmaddpdisk cl1_rg --replace -v no" $fake/calls &&
-    ok "replace without a slot map: the new device named to mmaddpdisk --replace, in the array of the old pdisk" || ko "replace: $out / $(cat $fake/calls) / $(cat $fake/stanzas 2>/dev/null)"
+! grep -q "pdisk replace" $fake/calls &&
+    [ "$(cat $fake/stanzas)" = "%pdisk: pdiskName=n002p002 device=//n2.cl/dev/sdj da=DA1" ] && grep -qx "mmaddpdisk cl1_rg --replace -v no --class-mode vdisk" $fake/calls &&
+    ok "replace without a slot map: a marked pdisk, the new device named to mmaddpdisk --replace --class-mode vdisk, in the array of the old pdisk" || ko "replace: $out / $(cat $fake/calls) / $(cat $fake/stanzas 2>/dev/null)"
 res=$(sed -n 's/^RESULT //p' <<<"$out")
 [ "$(jq -r '.pdisks[] | select(.name == "n002p002") | .device' <<<"$res")" = sdj ] && jq -e '.pdisks[] | select(.name == "n002p002#0010")' <<<"$res" >/dev/null &&
     ok "replace: the new disk under the old name, the old one draining under a temporary name" || ko "replace result: $res"
