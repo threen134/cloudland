@@ -1182,7 +1182,7 @@ deploy/docker/scripts/cloudland-entrypoint.sh
 
 **没变、仍以 §12 为准的**：节点校验端点与 5 分钟刷新、鉴权（未配置 `GRPC_AUTH_TOKEN` 拒绝启动）、会话 ID、串行执行（`CLOUDLET_CONCURRENCY`）、断线立即重连、control 解析与调度、回调转发的重试（最多 3 次，所以 clapi 的回调 handler 要幂等）。
 
-**已知问题**（本文范围内，未修）：clapi → cland、cloudlet ↔ cland 的 gRPC 没有 TLS，令牌与下发的凭据在管理网上是明文（`CLAUDE.md` 待办 A6）；集群共用一对 cland SSH 密钥，`NodeAdd` 把私钥发给每个节点（待办 A1）。
+**已知问题**（本文范围内，未修）：clapi → cland、cloudlet ↔ cland 的 gRPC 没有 TLS，令牌与下发的凭据在管理网上是明文（`CLAUDE.md` 待办 A6）；集群共用一对 cland SSH 密钥，`NodeAdd` 把私钥发给每个节点（待办 A1）；**单条命令没有超时**：执行默认串行（`CLOUDLET_CONCURRENCY=1`），一条命令卡死时这台节点之后的命令全部排队，而心跳与快速上报不经执行器，节点照样显示在线、看不出异常；只能重启 cloudlet，排队的命令随之丢失、不会补发（2026-10-16 补测 R2-14：`ip link del` 卡在内核 D 状态 12 分钟，期间发给 work-01 的命令都没执行，改可用区的命令丢了以后可用区被心跳写回旧值）。只修了触发它的脚本；执行器即使加超时也杀不掉 D 状态的进程，要做就得改成到时放弃等待、接着执行下一条。
 
 ## 14. 回归用例对照
 
