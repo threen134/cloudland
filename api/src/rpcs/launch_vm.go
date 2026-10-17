@@ -111,10 +111,11 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	if reason == "evacuate" {
 		return evacuationLaunched(ctx, instance, int32(hyperID), serverStatus, args)
 	}
-	// "sync" is how the host reports an instance it found or started after a boot, not a reason to keep on the
-	// instance: the column gets cleared instead, which also drops start_failed or storage_pending once it runs
+	// "sync" (an instance the host found or started after a boot) and "init" (the first start of a new one) say how
+	// the host came to report the instance, not why it is in its state: the column gets cleared instead, which also
+	// drops start_failed or storage_pending once it runs
 	storedReason := reason
-	if reason == "sync" {
+	if reason == "sync" || reason == "init" {
 		storedReason = ""
 	}
 	instance.Hyper = int32(hyperID)
