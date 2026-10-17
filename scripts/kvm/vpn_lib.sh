@@ -373,6 +373,23 @@ vpn_router_of()
     echo ${dir##*/router-}
 }
 
+# Delete a device of the router, waiting 10 s at most: vpn_link_del <router> <dev>. Deleting an XFRM interface
+# can hang for good in the kernel (6.8: unregister_netdevice waiting on a reference count that dropped to 0,
+# R2-14), and the node runs its commands one at a time, so a hang here would hold every later command. The
+# background job has no stdout or stderr of the caller, the command runner waits for those to close.
+vpn_link_del()
+{
+    local router=$1 dev=$2 pid i
+    ip netns exec $router ip link del $dev >/dev/null 2>&1 &
+    pid=$!
+    for i in $(seq 50); do
+        kill -0 $pid 2>/dev/null || { wait $pid; return; }
+        sleep 0.2
+    done
+    log_debug "$router" "deleting $dev did not finish in 10 s, left it to the kernel"
+    return 1
+}
+
 # True when this node currently holds the gateway's floating IP (the VRRP master)
 vpn_holds_vip()
 {

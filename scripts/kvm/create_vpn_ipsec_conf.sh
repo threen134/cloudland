@@ -52,12 +52,6 @@ while [ $i -lt $nconn ]; do
     desired_ifaces="$desired_ifaces $dev"
     let i=$i+1
 done
-for dev in $(ip netns exec $router ip -o link show type xfrm | awk -F': ' '{print $2}' | cut -d@ -f1 | grep '^ipsec-'); do
-    case " $desired_ifaces " in
-    *" $dev "*) ;;
-    *) ip netns exec $router ip link del $dev ;;
-    esac
-done
 echo $desired_ifaces >$vpn_dir/ifaces
 
 # swanctl.conf: one connection per site, one child per (local, remote) pair in static mode (peers that
@@ -217,4 +211,13 @@ done
         fi
     fi
 ) 9>$lb_lock_file
+# XFRM interfaces no tunnel uses any more go last, once charon has dropped their tunnels (configuration
+# reloaded, the SAs of removed and changed tunnels terminated): an SA brought up under the old configuration on
+# the if_id of a device being deleted left the kernel waiting on that device for good (R2-14)
+for dev in $(ip netns exec $router ip -o link show type xfrm | awk -F': ' '{print $2}' | cut -d@ -f1 | grep '^ipsec-'); do
+    case " $desired_ifaces " in
+    *" $dev "*) ;;
+    *) vpn_link_del $router $dev ;;
+    esac
+done
 exit 0
