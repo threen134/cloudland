@@ -675,6 +675,7 @@ api POST /vpn_gateways '{"name":"sn-gw","vpc":{"id":"<vpc>"},"zone":"ztest","ips
 - [ ] 界面（本机 5173，只读）：详情页标题有「单节点」标签、黄色提示条；列表节点列有「单节点」（节点列 1280 宽以上才显示）；创建中（`pending`）不显示。前端没有 `single_node` 字段，是按「主备、不在创建 / 删除中、`nodes` 只有一个」算的（`single_node` 是负载均衡接口的字段，见 TC-06 LB-07b）
 - [ ] 连接能建、隧道能起（假对端即可看配置）；`kill -9` 该节点 keepalived：看护循环摘地址，守护脚本下次心跳拉起，约 3 秒后恢复（记中断时间）
 - [ ] **自动补备节点**：把 zone0 的另一个节点也移进 ztest，20 秒到 5 分钟内 clapi 日志 `VRRP instance <id> runs on node <n> alone, placing its BACKUP node in zone <z>`，BACKUP 网卡有了节点，`nodes` 两个，「单节点」标签消失；**补的过程中业务 0 丢包**（原节点 keepalived 保持 MASTER、只重载同样的配置；要测流量就先起 VPN-05 的 WireGuard 客户端，**新增/未跑过**）；之后 `kill -9` 主节点 keepalived，备节点接管（09-27 实测 2 秒）
+  > 移节点后核对 `GET /hypers` 与节点 `/etc/sysconfig/cloudlet` 的 `ZONE_NAME`：可用区被心跳按节点上报的旧值改回时，先看那台节点 cloudlet 的执行器里有没有卡住的命令（2026-10-16 补测 R2-14 时，改可用区的 `update_hyper.sh` 排在一条卡死的命令后面一直没执行），重新 PATCH 一次可用区即可
 - [ ] 补上的备节点如果之前是这个 VPC 的普通节点：它的 `vpn-<网关>/` 目录里不再有 `nexthops`、`nexthop_hosts`、`routes.current`，F7 探测循环不再改它的路由；之后 `kill -9` 主节点 keepalived，这个节点升主后路由指向自己的隧道、没有被改回经对端（回归点 45）
 - [ ] HA 两台 clapi 时（没有就跳过）：补备节点只下发一次，`interfaces` 里 BACKUP 网卡只落到一个节点
 - [ ] `error=resource`：ztest 里第二个节点在库里是可用、但 cloudlet 停着时建主备网关 → 不卡 `pending`，按单节点运行，clapi 日志 `set_vrrp_ip.sh for the BACKUP interface of VRRP instance <id> found no connected node`；恢复 cloudlet 后自动补备节点。**SKIP**：停哪个节点的 cloudlet 都会让保留网关失去上报（work-02 是三个保留网关的主节点，90 秒后被当成无主、隧道置 down 并告警；work-03 上跑着 `aax-gw` 的 node2，cland 3 秒判失联后会把它的隧道置 down 并改路由）
